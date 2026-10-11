@@ -26,12 +26,21 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
     }
     private fun status(value: String) = test.sendStatus(0, Bundle().apply { putString("stream", "$value\n") })
     private fun root(): View? = WindowInspector.getGlobalWindowViews().firstOrNull { it.tag == "mimi-overlay" }
-    fun run() {
-        check(!MimiService.isRunning && SettingsStore.isConfigured(context))
+    fun run(arguments: Bundle?) {
+        check(!MimiService.isRunning)
         val mode = SettingsStore.displayMode(context)
         val immersed = SettingsStore.immersiveSubtitles(context)
-        val phases = listOf(CaptionDisplayMode.BILINGUAL to 90, CaptionDisplayMode.TRANSLATION to 60,
+        val seconds = arguments?.getString("phase_seconds")?.toIntOrNull()
+        check(seconds == null || seconds in 30..120)
+        val phases = if (seconds == null) listOf(CaptionDisplayMode.BILINGUAL to 90, CaptionDisplayMode.TRANSLATION to 60,
             CaptionDisplayMode.ORIGINAL to 60, CaptionDisplayMode.BILINGUAL to 60)
+            else listOf(CaptionDisplayMode.BILINGUAL to seconds, CaptionDisplayMode.TRANSLATION to seconds,
+                CaptionDisplayMode.ORIGINAL to seconds)
+        val label = arguments?.getString("result_label") ?: "default"
+        check(label.matches(Regex("[a-z0-9-]{1,40}")))
+        var provider = SettingsStore.provider(context)
+        var models = emptyList<String>()
+        var temporary: TemporaryProviderAcceptance? = null
         val results = JSONArray()
         var failure: Throwable? = null
         val drawFailure = AtomicReference<String?>()
@@ -61,11 +70,19 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             }
         }
         try {
+            if (arguments?.getString("temporary_provider") == "true") {
+                temporary = TemporaryProviderAcceptance(context)
+                temporary.apply()
+            }
+            check(SettingsStore.isConfigured(context))
+            provider = SettingsStore.provider(context)
+            models = runtimeModelNames(SettingsStore.runtimeConfiguration(context))
             test.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            status("CAPTION_LIVE_READY; start native playback capture with fresh consent, then resume the same video; recording/history preferences retained.")
+            status("CAPTION_LIVE_READY provider=$provider models=${models.joinToString(",")}; start native playback capture with fresh consent, then resume the same video; recording/history preferences retained.")
             val deadline = SystemClock.elapsedRealtime() + 180000
             while ((!MimiService.isRunning || root() == null) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
             check(MimiService.isRunning && root() != null) { "native_start_timeout" }
+            check(MimiService.activeModelNames == models) { "active_model_mismatch" }
             ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(listener) }
             for ((selected, seconds) in phases) {
                 ui { SettingsStore.setImmersiveSubtitles(context, false); SettingsStore.setDisplayMode(context, selected) }
@@ -75,7 +92,13 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 var sourceUpdates = 0; var translationUpdates = 0
                 var sourceHash = 0; var translationHash = 0
                 var maximumSource = 0; var maximumTranslation = 0
+                var audioSamples = 0
+                var maximumSourceGapMs = 0L
+                var firstSourceMs: Long? = null; var firstTranslationMs: Long? = null
                 val start = SystemClock.elapsedRealtime()
+                var lastSourceAt = start
+                val feedbackEvents = JSONArray()
+                var lastFeedback: SubtitleBus.RuntimeFeedback? = null
                 status("CAPTION_LIVE_PHASE mode=${selected.id} seconds=$seconds")
                 var progress = start + 30000
                 while (SystemClock.elapsedRealtime() - start < seconds * 1000) {
@@ -83,8 +106,26 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                     drawFailure.get()?.let { error(it) }
                     val state = SubtitleBus.displaySnapshot()
                     val a = state.source.hashCode(); val b = state.translation.hashCode()
-                    if (state.source.isNotEmpty() && a != sourceHash) sourceUpdates++
-                    if (state.translation.isNotEmpty() && b != translationHash) translationUpdates++
+                    val now = SystemClock.elapsedRealtime()
+                    if (state.source.isNotEmpty() && a != sourceHash) {
+                        sourceUpdates++
+                        if (firstSourceMs == null) firstSourceMs = now - start
+                        maximumSourceGapMs = maxOf(maximumSourceGapMs, now - lastSourceAt)
+                        lastSourceAt = now
+                    }
+                    if (state.translation.isNotEmpty() && b != translationHash) {
+                        translationUpdates++
+                        if (firstTranslationMs == null) firstTranslationMs = now - start
+                    }
+                    if (MimiService.captureObservation?.state?.name == "AUDIO") audioSamples++
+                    if (state.feedback != lastFeedback && feedbackEvents.length() < 100) {
+                        feedbackEvents.put(JSONObject().put("elapsedMs", now - start)
+                            .put("connectionStatus", state.feedback.connectionStatus)
+                            .put("recoveryReason", state.feedback.recoveryReason ?: JSONObject.NULL)
+                            .put("retryScheduled", state.feedback.retryScheduled)
+                            .put("translationTimedOut", state.feedback.translationTimedOut))
+                        lastFeedback = state.feedback
+                    }
                     sourceHash = a; translationHash = b
                     maximumSource = maxOf(maximumSource, state.source.length)
                     maximumTranslation = maxOf(maximumTranslation, state.translation.length)
@@ -94,11 +135,15 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                     }
                     SystemClock.sleep(50)
                 }
-                check(sourceUpdates >= 3 && translationUpdates >= 3) { "insufficient_live_updates" }
-                check(changes.get() == 0) { "content_changed_window_height" }
                 results.put(JSONObject().put("mode", selected.id).put("seconds", seconds).put("sourceUpdates", sourceUpdates)
                     .put("translationUpdates", translationUpdates).put("nativeDraws", draws.get() - beforeDraws)
-                    .put("maximumSourceChars", maximumSource).put("maximumTranslationChars", maximumTranslation).put("heightChanges", changes.get()))
+                    .put("maximumSourceChars", maximumSource).put("maximumTranslationChars", maximumTranslation).put("heightChanges", changes.get())
+                    .put("audioSamples", audioSamples).put("firstSourceMs", firstSourceMs ?: JSONObject.NULL)
+                    .put("firstTranslationMs", firstTranslationMs ?: JSONObject.NULL).put("maximumSourceGapMs", maximumSourceGapMs)
+                    .put("connectionEvents", feedbackEvents))
+                check(sourceUpdates >= 3 && translationUpdates >= 3) { "insufficient_live_updates" }
+                check(audioSamples > 0) { "no_playback_audio" }
+                check(changes.get() == 0) { "content_changed_window_height" }
                 status("CAPTION_LIVE_PHASE_PASSED mode=${selected.id}")
             }
         } catch (error: Throwable) { failure = error }
@@ -109,11 +154,14 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             }
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_STOP))
             repeat(100) { if (MimiService.isRunning || MimiService.isStopping) SystemClock.sleep(100) }
-            File(context.getExternalFilesDir(null), "caption-live-reading.json").writeText(JSONObject()
-                .put("phases", results).put("passed", failure == null).put("failure", failure?.message ?: JSONObject.NULL).toString(2))
+            temporary?.close()
+            check(SettingsStore.flushPendingWritesForTests(context))
+            File(context.getExternalFilesDir(null), "caption-live-reading-$label.json").writeText(JSONObject()
+                .put("provider", provider).put("models", JSONArray(models)).put("phases", results)
+                .put("passed", failure == null).put("failure", failure?.message ?: JSONObject.NULL).toString(2))
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
-            putString("stream", if (failure == null) "Caption live reading passed: 270 seconds across all three display modes; no native tail reset, glyph clipping or content-driven height changes.\n"
+            putString("stream", if (failure == null) "Caption live reading passed: ${phases.sumOf { it.second }} seconds across all three display modes; no native tail reset, glyph clipping or content-driven height changes.\n"
                 else "Caption live reading failed: ${failure!!.stackTraceToString()}\n")
         })
     }

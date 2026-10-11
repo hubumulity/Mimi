@@ -73,7 +73,7 @@ class UiSmokeInstrumentation : Instrumentation() {
     override fun onStart() {
         super.onStart()
         if (captureArguments?.getString("live_caption_reading") == "true") {
-            CaptionLiveReadingChecks(this).run()
+            CaptionLiveReadingChecks(this).run(captureArguments)
             return
         }
         if (captureArguments?.getString("caption_streaming") == "true") {

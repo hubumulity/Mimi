@@ -424,7 +424,19 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             onUi {
                 test.sendStatus(0, Bundle().apply { putString("stream", "HEIGHT_GEOMETRY short=$shortHeight tall=${panel.height}\n") })
             }
-            waitFor { panel.height > shortHeight }
+            waitFor {
+                val wm = panel.context.getSystemService(android.view.WindowManager::class.java)
+                val available = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    val metrics = wm.currentWindowMetrics
+                    val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+                        android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                    metrics.bounds.height() - insets.top - insets.bottom
+                } else panel.resources.displayMetrics.heightPixels
+                val minimum = panel.chromeHeight() + panel.minimumReadingHeight()
+                val expectedShort = maxOf(minimum, available * 20 / 100).coerceAtMost(available)
+                val expectedTall = maxOf(minimum, available * 70 / 100).coerceAtMost(available)
+                shortHeight == expectedShort && panel.height == expectedTall
+            }
             assertCompleteInertPreview()
             setSlider(R.id.overlay_height, 30)
             setSlider(R.id.font_size, 17)
