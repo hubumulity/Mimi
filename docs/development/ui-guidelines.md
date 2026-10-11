@@ -313,6 +313,12 @@ injects a real tap, then verifies both saved color and the existing caption view
 `performClick` and correct saved values alone do not prove that a user can reach
 the control.
 
+Native ScrollView tests must distinguish main-loop idle from a completed fling
+or smooth scroll. Wait for a stable reading offset before checking that a new
+caption preserves it; wait for the actual bottom before injecting the return-to-
+live gesture. Reset options changed by an earlier history fixture before testing
+both switch directions, then verify the saved state and the visible control.
+
 A bottom floating editor must remove Material's centered-dialog background
 insets. Transparent top/bottom margins still count toward decor bounds and can
 consume the entire caption area at large fonts. Native checks compare selected
