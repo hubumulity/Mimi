@@ -2672,3 +2672,62 @@
   every language/font combination and independent semantic-quality acceptance
   remain outside these completed checks. Preserve private evidence and failed
   baselines outside Git.
+
+## 2026-10-12 — 1.5.24 preparation, screen changes and desktop regression
+
+- Product baseline: merged main `09d12d03`; live test extensions `a1e59068`
+  and window-coordinate correction `6bee097b`; clean 1.5.24 acceptance source
+  `aa24525d`. Installation receipts retain APK hashes, stable Dev certificate
+  and dirty test-file state where applicable. No new product defect was evidenced
+  in this round; changes prepare the version/notes and strengthen acceptance.
+- API 35 ARM64 emulator: 300 streaming cases, 4,608 updates and 7,766 actual
+  draws across eight writing systems, three modes, normal/immersive, height
+  endpoints and 36 orientation round trips. Covered 720×1600 default/dark and
+  font scale 1.5, plus 720×1280 at scale 2.0. Preview parity passed 451 native
+  comparisons: 41 default, 41 large-font and 369 short-screen comparisons across
+  all eight UI languages plus System. Actual resize/drag, quick-style, history,
+  alignment, one/two provider marks and immersion restoration passed at default
+  and short-screen/scale-2 settings. Native screenshots were inspected.
+- Same public Stanford video (`Hd_ptbiPoXM`, with the president's introduction):
+  Ali Audio3/Qwen-MT Lite and Gemini 3.5 live translate each ran three 90-second
+  modes with forced rotation, immersion and height/width changes. Ali then ran
+  another three 90-second modes using actual Firefox fullscreen entry and Back
+  exit. Total: 810 scored seconds, 45 layout transitions and 2,963 visible-caption
+  draws; every phase received AUDIO, retained native glyphs/tails, reported zero
+  unexpected height changes or recovery events, and restored exact portrait
+  dimensions and surface color/alpha. Ali original phases exercised 31 and 16
+  empty-ASR handoff draws; Gemini translated reading exercised two handoff draws.
+  Private 30-second clips and selected native frames were inspected. This is not
+  full-video or independent semantic-accuracy acceptance; incomplete recognition
+  and translation still revise. Phase counters do not establish speech latency.
+- Failed startup consent clicks and a test coordinate mismatch remain private
+  failed baselines. The clipping diagnostic compared screen coordinates with
+  root-window visible rectangles, despite an intact frame; coordinate correction
+  passed the same live check. A model-layout browser attempt was interrupted by
+  another navigation, then passed after serial rerun. Do not count these as
+  product failures or accepted playback. Native media state settles asynchronously;
+  media-key dispatch alone is not proof of playback or pause.
+- Desktop geometry: 2,432 browser cases across all eight languages, light/dark,
+  widths 520/760/952, platform presentations, profiles, language and model menus,
+  and settings states; no geometry failures. These are browser fixtures. Signed
+  canonical macOS Dev also covered Chinese/English/Japanese, minimum settings,
+  safe profile copy/use/delete/cancel, empty catalog, guide, save defaults and
+  detached controls. Roughly ten minutes of qualitative system-audio observation
+  covered all three modes and immersion using the same public video, including
+  paused input and normal Stop/restart. Screenshots show actual native reading;
+  no timed semantic benchmark or new native resize/pause-action claim is made.
+- Microphone, subtitle retention and audio recording remained off; OpenAI was
+  not called. Original Android preferences and device settings, and desktop Dev
+  preferences/profile selection were restored byte for byte, including restart
+  verification. Mac output remained muted. Latest canonical Dev is 1.5.24-dev;
+  Android Dev is 1.5.24 (10524), with unchanged independent app identities.
+- Canonical checks passed, including 2,043 frontend tests, 570 core and 712 runtime
+  tests. Android Debug/Release each passed 198 JVM/actual-JNI tests, both lint
+  variants and four-ABI Release assembly. Shared-runtime boundary verification
+  passed. PR #258 source `aa24525d` passed frontend/MSRV, macOS/Linux/Windows Rust,
+  Windows ARM64 smoke and Android CI. Packaging/publication jobs were skipped.
+- Concise bilingual v1.5.24 notes and synchronized version files are prepared.
+  No version tag, draft/public Release, release-workflow dispatch or public
+  updater change was made. Public latest remained v1.5.23. Physical Android,
+  API 29, split-screen, native Intel and manual Windows/Linux speech acceptance
+  remain unverified. Keep the private regression evidence outside Git.
