@@ -1012,11 +1012,12 @@ class MimiService : Service() {
             addView(scroll)
         }
         val content = android.widget.FrameLayout(themed).apply {
+            contentDescription = interfaceString(R.string.caption_style_controls)
             addView(workspace, android.widget.FrameLayout.LayoutParams(-1,
-                (overlayAvailableSize().second * .84f - dp(128)).toInt().coerceAtLeast(dp(128))))
+                (overlayAvailableSize().second * .92f - dp(72)).toInt().coerceAtLeast(dp(128))))
         }
         val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
-        val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface).setTitle(R.string.caption_style_controls)
+        val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface)
             .setView(content).setPositiveButton(R.string.guide_finish, null).create()
         dialog.setOnDismissListener { if (appearanceDialog === dialog) appearanceDialog = null }
         appearanceDialog = dialog

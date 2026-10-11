@@ -14,7 +14,9 @@ them in portrait and alongside them on a wide screen. Common style controls are
 directly visible, without an accordion, in both Captions and the floating dialog.
 Use the same native controls and never add a second preview or primary tab.
 Color choices are direct swatches with a selected ring; wrap on narrow surfaces
-to preserve 48dp touch targets.
+to preserve 48dp touch targets. The floating style dialog avoids a large redundant
+title and uses its own bounded workspace; native checks must keep the rendered
+source and translation rows visible at large fonts in landscape.
 Keep service selection/configuration and its ongoing session lock in Services;
 interface language, diagnostics and the setup guide in More. Keep the state and
 Start/Stop footer visible in every section, use one row when actual localized

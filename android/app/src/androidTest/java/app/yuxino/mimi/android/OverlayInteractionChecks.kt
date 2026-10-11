@@ -409,8 +409,25 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                         preview.getLocationOnScreen(previewPosition)
                         palette.requestRectangleOnScreen(android.graphics.Rect(0, 0, palette.width, palette.height), true)
                     }
+                    capture("$prefix-style-preview")
                     onUi {
                         check(preview.getGlobalVisibleRect(android.graphics.Rect())) { "Floating style controls hid their preview" }
+                        fun captionRows(view: View): List<TextView> =
+                            (if (view is app.yuxino.mimi.android.capture.LatestCaptionTextView) listOf(view) else emptyList()) +
+                                if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { captionRows(view.getChildAt(it)) } else emptyList()
+                        val rows = captionRows(preview).filter { it.isShown }
+                        val rowBounds = rows.map {
+                            val visible = android.graphics.Rect()
+                            val location = IntArray(2).also(it::getLocationOnScreen)
+                            val firstLine = (it.lineCount - it.maxLines).coerceAtLeast(0)
+                            val top = location[1] + it.totalPaddingTop + it.layout.getLineTop(firstLine) - it.scrollY
+                            val bottom = location[1] + it.totalPaddingTop + it.layout.getLineBottom(it.lineCount - 1) - it.scrollY
+                            val shown = it.getGlobalVisibleRect(visible)
+                            val windowOrigin = IntArray(2).also(it.rootView::getLocationOnScreen)
+                            visible.offset(windowOrigin[0], windowOrigin[1])
+                            Triple(shown && visible.top <= top && visible.bottom >= bottom, visible.toShortString(), "$top..$bottom; lines=${it.lineCount}; scroll=${it.scrollY}; padding=${it.totalPaddingTop}")
+                        }
+                        check(rows.size == 2 && rowBounds.all { it.first }) { "Floating preview clipped its caption rows: $rowBounds" }
                         check(IntArray(2).also(preview::getLocationOnScreen).contentEquals(previewPosition)) { "Floating style controls moved their preview" }
                         val touchSize = (48 * palette.resources.displayMetrics.density).toInt()
                         for (index in 0 until palette.childCount) {

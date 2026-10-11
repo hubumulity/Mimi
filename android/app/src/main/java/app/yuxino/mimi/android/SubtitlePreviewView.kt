@@ -20,6 +20,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
 ) : LinearLayout(context, attrs) {
     private val exampleLabel = TextView(context)
     private val previewLabel = TextView(context)
+    private var livePreview = false
     private var widthPercent = 92
     private var displayMode = CaptionDisplayMode.BILINGUAL
     private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
@@ -78,6 +79,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
     }
 
     fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92, live: Boolean = false) {
+        livePreview = live
         if (!live) {
             previewLabel.setText(R.string.preview_label)
             exampleLabel.setText(R.string.preview_example)
@@ -115,6 +117,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
     }
 
     fun showLive(original: String, translated: String, hidden: Boolean, waiting: String) {
+        livePreview = true
         previewLabel.setText(R.string.home_title)
         exampleLabel.text = ""
         source.text = if (hidden) "" else original
@@ -129,6 +132,17 @@ class SubtitlePreviewView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         updateWidth()
+    }
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val compact = MeasureSpec.getSize(widthMeasureSpec) < dp(320)
+        // A narrow preview needs one sample/live label, not two wrapped headings.
+        previewLabel.visibility = if (!compact || livePreview) VISIBLE else GONE
+        exampleLabel.visibility = if (livePreview) GONE else VISIBLE
+        minimumHeight = dp(if (compact) 132 else 152)
+        setPadding(dp(18), dp(if (compact) 8 else 16), dp(18), dp(if (compact) 8 else 18))
+        subtitle.setPadding(dp(12), dp(if (compact) 6 else 9), dp(12), dp(if (compact) 6 else 10))
+        (subtitle.layoutParams as LayoutParams).topMargin = dp(if (compact) 8 else 14)
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
     private fun updateWidth() {
         if (width <= 0) return

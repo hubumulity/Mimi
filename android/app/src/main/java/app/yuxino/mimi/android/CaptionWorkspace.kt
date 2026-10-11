@@ -17,7 +17,7 @@ class CaptionWorkspace @JvmOverloads constructor(context: Context, attrs: Attrib
         preview.visibility = if (showsPreview) View.VISIBLE else View.GONE
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val height = MeasureSpec.getSize(heightMeasureSpec)
-        val sideBySide = showsPreview && width >= dp(600) && width > height
+        val sideBySide = showsPreview && width >= dp(480) && width > height
         orientation = if (sideBySide) HORIZONTAL else VERTICAL
         if (sideBySide) {
             preview.layoutParams = LayoutParams((width * .4f).toInt().coerceAtMost(dp(400)), -1)

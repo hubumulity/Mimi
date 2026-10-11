@@ -249,3 +249,11 @@ then restore width and display mode as well as the older appearance preferences.
 Live native checks inspect external overlay labels only after their window is
 visible. Mimi intentionally hides the overlay over its own activities; checking
 the hidden model label before returning to the playback app is not acceptance.
+
+Android pinned-preview acceptance checks the rendered source/translation rows,
+not only the preview container. A short large-font dialog can retain a visible
+background while clipping every caption. Inspect the floating dialog separately
+from the main page, with its actual width and available height. Normalize
+`getGlobalVisibleRect` root coordinates with the root window origin before
+comparing them with `getLocationOnScreen` glyph positions. Use side-by-side
+preview/controls when a wide dialog fits and avoid a large redundant title.
