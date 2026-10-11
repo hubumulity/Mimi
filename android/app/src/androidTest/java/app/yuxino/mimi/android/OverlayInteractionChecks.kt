@@ -571,6 +571,10 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             capture("panel-after-immersive")
             onUi { running(false); host!!.finish(); host = null }
             waitFor { home.hasWindowFocus() }
+            // This fixture explicitly shows an overlay over Mimi's own UI.
+            // Stop that fixture before testing ordinary primary-page touches.
+            context.stopService(Intent(context, MimiService::class.java))
+            waitFor { WindowInspector.getGlobalWindowViews().none { it.tag == "mimi-overlay" } }
             onUi {
                 home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption)
                 // The history fixture enabled dividers above. Establish the
