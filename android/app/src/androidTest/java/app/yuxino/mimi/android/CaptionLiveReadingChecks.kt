@@ -93,10 +93,18 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                         val tail = layout.getLineTop(first)
                         if (row.scrollY != tail) drawFailure.set("native_tail_reset")
                         val visible = Rect()
-                        val location = IntArray(2).also(row::getLocationOnScreen)
-                        val origin = location[1] + row.compoundPaddingTop - row.scrollY
+                        // Visible rectangles use root-view coordinates, not
+                        // screen coordinates; floating windows have an offset.
+                        val location = IntArray(2).also(row::getLocationInWindow)
+                        val rootLocation = IntArray(2).also(row.rootView::getLocationInWindow)
+                        val origin = location[1] - rootLocation[1] + row.compoundPaddingTop - row.scrollY
                         if (!row.getGlobalVisibleRect(visible) || origin + layout.getLineTop(first) < visible.top ||
-                            origin + layout.getLineBottom(layout.lineCount - 1) > visible.bottom) drawFailure.set("native_glyph_clipping")
+                            origin + layout.getLineBottom(layout.lineCount - 1) > visible.bottom) {
+                            drawFailure.compareAndSet(null, "native_glyph_clipping row=${row.tag} " +
+                                "mode=${observedMode.get()?.id} visible=${visible.top},${visible.bottom} " +
+                                "glyphs=${origin + layout.getLineTop(first)},${origin + layout.getLineBottom(layout.lineCount - 1)} " +
+                                "lines=${layout.lineCount} limit=${row.maxLines} height=${row.height} scroll=${row.scrollY}")
+                        }
                     }
                     val size = current.width to current.height
                     // Immersion intentionally grows with its bounded live lines.
