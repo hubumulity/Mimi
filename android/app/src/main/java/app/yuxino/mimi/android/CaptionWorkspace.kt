@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 /** Keep the single caption preview in view while its settings scroll independently. */
 class CaptionWorkspace @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     LinearLayout(context, attrs) {
+    var preferredHeight: Int? = null
     var showsPreview = true
         set(value) { if (field != value) { field = value; requestLayout() } }
 
@@ -16,7 +17,10 @@ class CaptionWorkspace @JvmOverloads constructor(context: Context, attrs: Attrib
         val controls = getChildAt(1)
         preview.visibility = if (showsPreview) View.VISIBLE else View.GONE
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val height = MeasureSpec.getSize(heightMeasureSpec)
+        val availableHeight = MeasureSpec.getSize(heightMeasureSpec)
+        val height = preferredHeight?.let {
+            if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) it else it.coerceAtMost(availableHeight)
+        } ?: availableHeight
         val sideBySide = showsPreview && width >= dp(480) && width > height
         orientation = if (sideBySide) HORIZONTAL else VERTICAL
         if (sideBySide) {
@@ -28,7 +32,7 @@ class CaptionWorkspace @JvmOverloads constructor(context: Context, attrs: Attrib
             preview.layoutParams = LayoutParams(-1, if (showsPreview) preview.measuredHeight else 0)
             controls.layoutParams = LayoutParams(-1, 0, 1f)
         }
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()

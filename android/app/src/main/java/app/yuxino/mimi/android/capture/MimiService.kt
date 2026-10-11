@@ -1005,20 +1005,17 @@ class MimiService : Service() {
             addView(controls)
         }
         val workspace = app.yuxino.mimi.android.CaptionWorkspace(themed).apply {
+            preferredHeight = (overlayAvailableSize().second * .92f - dp(72)).toInt().coerceAtLeast(dp(128))
+            contentDescription = interfaceString(R.string.caption_style_controls)
             addView(app.yuxino.mimi.android.ControlScrollView(themed).apply {
-                setPadding(dp(20), dp(12), dp(20), dp(12))
+                setPadding(dp(20), dp(4), dp(20), dp(4))
                 addView(controls.takePreview())
             })
             addView(scroll)
         }
-        val content = android.widget.FrameLayout(themed).apply {
-            contentDescription = interfaceString(R.string.caption_style_controls)
-            addView(workspace, android.widget.FrameLayout.LayoutParams(-1,
-                (overlayAvailableSize().second * .92f - dp(72)).toInt().coerceAtLeast(dp(128))))
-        }
         val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
         val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface)
-            .setView(content).setPositiveButton(R.string.guide_finish, null).create()
+            .setView(workspace).setPositiveButton(R.string.guide_finish, null).create()
         dialog.setOnDismissListener { if (appearanceDialog === dialog) appearanceDialog = null }
         appearanceDialog = dialog
         try {

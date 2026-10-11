@@ -31,6 +31,24 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
     private fun captionPixels(sp: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_SP, sp.toFloat(), caption().resources.displayMetrics,
     )
+    private fun tapVisible(view: View) {
+        val origin = IntArray(2)
+        onUi {
+            val visible = android.graphics.Rect()
+            check(view.getGlobalVisibleRect(visible) && visible.width() == view.width && visible.height() == view.height) {
+                "Floating appearance action is clipped"
+            }
+            view.getLocationOnScreen(origin)
+        }
+        val time = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(time, SystemClock.uptimeMillis(), action,
+                origin[0] + view.width / 2f, origin[1] + view.height / 2f, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            try { check(test.uiAutomation.injectInputEvent(event, true)) } finally { event.recycle() }
+        }
+        idle()
+    }
     private fun onUi(action: () -> Unit) {
         val work = FutureTask { action() }
         Handler(Looper.getMainLooper()).post(work)
@@ -434,11 +452,11 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                             val choice = palette.getChildAt(index)
                             check(choice.width >= touchSize && choice.height >= touchSize && choice.contentDescription.isNotBlank())
                         }
-                        palette.findViewWithTag<View>("caption-color-3").performClick()
                     }
+                    tapVisible(palette.findViewWithTag("caption-color-3"))
                     waitFor { SettingsStore.translationColorIndex(context) == 3 && caption().currentTextColor == SettingsStore.translationColor(context) }
                     capture("$prefix-style-colors")
-                    onUi { palette.findViewWithTag<View>("caption-color-1").performClick() }
+                    tapVisible(palette.findViewWithTag("caption-color-1"))
                     waitFor { caption().currentTextColor == android.graphics.Color.WHITE }
                     onUi { check(root().findViewWithTag<View>("overlay-font").contentDescription == context.getString(R.string.caption_style_controls)) }
                     onUi { WindowInspector.getGlobalWindowViews().first { it.findViewWithTag<SeekBar>("overlay-font-slider") != null }.findViewById<View>(android.R.id.button1).performClick() }
