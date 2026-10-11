@@ -376,7 +376,9 @@ class UiSmokeInstrumentation : Instrumentation() {
         var settings: MainActivity? = null
         try {
             val homeEntry = home.findViewById<View>(R.id.immersive_subtitles)
-            onUi { check(homeEntry.performClick()) }
+            // CompoundButton toggles through its checked listener even when
+            // performClick returns false; verify the dialog and saved mode.
+            onUi { homeEntry.performClick() }
             check(!SettingsStore.immersiveSubtitles(targetContext)) {
                 "Home entry enabled immersion before acknowledgement"
             }
@@ -399,7 +401,7 @@ class UiSmokeInstrumentation : Instrumentation() {
             }
             onUi {
                 check((homeEntry as MaterialSwitch).isChecked) { "Home immersion switch did not show its active state" }
-                check(homeEntry.performClick())
+                homeEntry.performClick()
             }
             check(!SettingsStore.immersiveSubtitles(targetContext))
             prefs.edit().remove("immersive_seen").commit()
