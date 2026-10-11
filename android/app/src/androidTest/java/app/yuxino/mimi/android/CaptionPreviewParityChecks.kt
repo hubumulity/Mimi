@@ -274,7 +274,9 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                 compare(home, "$prefix-bilingual-small", true)
                 ui {
                     val panel = actual() as CaptionPanelView
-                    check(panel.translation.maxLines >= minOf(2, panel.translation.lineCount)) { "Minimum window leaves only a fragment of translation" }
+                    check(panel.translation.maxLines >= minOf(2, panel.translation.lineCount)) {
+                        "Minimum window leaves only a fragment of translation: reference=${panel.source.maxLines}, translation=${panel.translation.maxLines}, reading=${panel.transcriptScroll.height}, minimum=${panel.minimumReadingHeight()}"
+                    }
                 }
                 ui {
                     SettingsStore.setSubtitleTimestamps(context, true)

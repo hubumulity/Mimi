@@ -207,6 +207,20 @@ Android TextView's maxLines measures the first lines; a following tail must
 measure the actual last lines too. Fallback fonts can have different glyph
 heights within one sentence. Size and allocate from those native layout bounds,
 and check the first and last visible glyphs after wrapping, font and size changes.
+Continuous native checks must also inspect the visible tail at draw time.
+TextView's own pre-draw scroll reconciliation must finish before tail-following;
+do not cancel a whole-window draw to correct its position. Read one atomic
+shared display snapshot and skip identical text assignments on health/status
+updates. Coalesce pending paints without dropping shared final events. Keep the
+window minimum stable across incoming scripts by measuring multilingual font
+metrics from the chosen typography, while fitting actual visible glyphs inside
+that window. The selected size is the main reading size in either single-language
+mode and for the translation in bilingual mode; the original is a quieter 90%
+reference. Avoid an extra translated-size/bold boost. Verify all three modes
+through continuous updates, height edits and real portrait/landscape round trips.
+Cancel transient drag/resize state on configuration changes and ignore remaining
+events from the old gesture, so its final up cannot save dimensions measured in
+the previous screen or open an unintended editor.
 Sentence dividers and local confirmation time default off and are controlled in
 both appearance entry points. Use the shared final's time, including with history
 disabled, hide time on drafts, and avoid duplicating the current pair in history.

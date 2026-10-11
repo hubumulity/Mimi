@@ -30,6 +30,7 @@ internal object CaptionTypography {
         val sample = "Ag Éç 国語 한글 กำ ฐุ العربية हिन्दी"
         val layout = android.text.StaticLayout.Builder.obtain(sample, 0, sample.length, view.paint, 100000)
             .setIncludePad(view.includeFontPadding)
+            .setUseLineSpacingFromFallbacks(view.isFallbackLineSpacing)
             .setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
             .build()
         return layout.getLineBottom(0) - layout.getLineTop(0) + view.compoundPaddingTop + view.compoundPaddingBottom
