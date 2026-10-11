@@ -873,6 +873,7 @@ class MimiService : Service() {
             contentDescription = text; tooltipText = text
             tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
         }
+        val immersionMark = immersion.compoundDrawablesRelative[0]
         val provider = ServiceProvider.fromId(SettingsStore.provider(this))
         val providerRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER; tag = "overlay-providers"
@@ -905,9 +906,16 @@ class MimiService : Service() {
         val footer = object : FrameLayout(this) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val available = MeasureSpec.getSize(widthMeasureSpec)
-                val actionWidth = (kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
-                    immersion.compoundPaddingLeft + immersion.compoundPaddingRight)
-                    .coerceIn(dp(48), (available - dp(56)).coerceAtLeast(dp(48)))
+                val maximumActionWidth = (available - dp(56)).coerceAtLeast(dp(48))
+                val labelWidth = kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
+                    immersion.paddingLeft + immersion.paddingRight
+                val markWidth = (immersionMark?.bounds?.width() ?: 0) + immersion.compoundDrawablePadding
+                val visibleMark = immersionMark.takeIf { labelWidth + markWidth <= maximumActionWidth }
+                if (immersion.compoundDrawablesRelative[0] !== visibleMark) {
+                    immersion.setCompoundDrawablesRelative(visibleMark, null, null, null)
+                }
+                val actionWidth = (labelWidth + if (visibleMark != null) markWidth else 0)
+                    .coerceIn(dp(48), maximumActionWidth)
                 // Measure wrapping at the exact width FrameLayout will assign.
                 // AT_MOST can shrink to a rounded text width that gains another
                 // line during the subsequent exact pass after a locale change.

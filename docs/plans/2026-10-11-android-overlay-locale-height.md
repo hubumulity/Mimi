@@ -28,6 +28,7 @@ give the provider group its own centered row above the two actions. Bound long
 names with an ellipsis while retaining their complete accessible description.
 Measure the immersion action's wrapped height at its final assigned width so
 locale changes and large system fonts do not clip its label.
+Omit the immersion icon when it would squeeze the visible action label.
 The floating identity shows service brands and marks, deduplicating a built-in
 recognition/translation provider. Independent services keep both identities.
 Tapping it opens Services in the existing main activity; model details stay

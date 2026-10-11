@@ -309,6 +309,8 @@ Measure wrapped footer labels at the exact width assigned by their parent.
 An AT_MOST text measurement followed by a narrower exact width can add a line
 without reserving its height. Verify locale changes at font scale 2, including
 the complete action's rendered line height, rather than only its touch target.
+When space cannot fit both the immersion label and its redundant icon, omit
+the icon so the readable localized action takes precedence over decoration.
 Keep mobile floating service identities compact: show brands and marks, with
 model details available in Services. A tap opens that section in the existing
 main activity. Initialize background/opacity before adding the native window
