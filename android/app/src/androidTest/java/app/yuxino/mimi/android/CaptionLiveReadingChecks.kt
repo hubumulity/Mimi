@@ -30,6 +30,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         check(!MimiService.isRunning)
         val mode = SettingsStore.displayMode(context)
         val immersed = SettingsStore.immersiveSubtitles(context)
+        val originalSource = SettingsStore.sourceLang(context)
+        val originalTarget = SettingsStore.targetLang(context)
         val seconds = arguments?.getString("phase_seconds")?.toIntOrNull()
         check(seconds == null || seconds in 30..120)
         val phases = if (seconds == null) listOf(CaptionDisplayMode.BILINGUAL to 90, CaptionDisplayMode.TRANSLATION to 60,
@@ -40,6 +42,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         check(label.matches(Regex("[a-z0-9-]{1,40}")))
         var provider = SettingsStore.provider(context)
         var models = emptyList<String>()
+        var source = originalSource
+        var target = originalTarget
         var temporary: TemporaryProviderAcceptance? = null
         val results = JSONArray()
         var failure: Throwable? = null
@@ -75,10 +79,17 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 temporary.apply()
             }
             check(SettingsStore.isConfigured(context))
+            arguments?.getString("test_target")?.let { requested ->
+                check(requested in listOf("ja", "ko", "th"))
+                val selected = SettingsStore.configuration(context).provider
+                check(selected.supportsPair("en", requested, SettingsStore.textTranslationProvider(context)))
+                SettingsStore.setSourceLang(context, "en"); SettingsStore.setTargetLang(context, requested)
+            }
             provider = SettingsStore.provider(context)
+            source = SettingsStore.sourceLang(context); target = SettingsStore.targetLang(context)
             models = runtimeModelNames(SettingsStore.runtimeConfiguration(context))
             test.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            status("CAPTION_LIVE_READY provider=$provider models=${models.joinToString(",")}; start native playback capture with fresh consent, then resume the same video; recording/history preferences retained.")
+            status("CAPTION_LIVE_READY provider=$provider models=${models.joinToString(",")} source=$source target=$target; start native playback capture with fresh consent, then resume the same video; recording/history preferences retained.")
             val deadline = SystemClock.elapsedRealtime() + 180000
             while ((!MimiService.isRunning || root() == null) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
             check(MimiService.isRunning && root() != null) { "native_start_timeout" }
@@ -155,9 +166,10 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_STOP))
             repeat(100) { if (MimiService.isRunning || MimiService.isStopping) SystemClock.sleep(100) }
             temporary?.close()
+            SettingsStore.setSourceLang(context, originalSource); SettingsStore.setTargetLang(context, originalTarget)
             check(SettingsStore.flushPendingWritesForTests(context))
             File(context.getExternalFilesDir(null), "caption-live-reading-$label.json").writeText(JSONObject()
-                .put("provider", provider).put("models", JSONArray(models)).put("phases", results)
+                .put("provider", provider).put("models", JSONArray(models)).put("source", source).put("target", target).put("phases", results)
                 .put("passed", failure == null).put("failure", failure?.message ?: JSONObject.NULL).toString(2))
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
