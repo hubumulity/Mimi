@@ -125,12 +125,11 @@ class MimiService : Service() {
     private var expandedSourceView: TextView? = null
     private var expandedTranslationView: TextView? = null
     private var transcriptScrollView: ScrollView? = null
-    private var relayoutExpandedHeader: (() -> Unit)? = null
     private var scrollToCurrentOnLayout = false
     private var interfaceLocaleTags = ""
     private val interfaceLanguageListener: () -> Unit = { mainHandler.post { refreshInterfaceLanguage() } }
     private var stopObservingAppearance: (() -> Unit)? = null
-    private var fontDialog: AlertDialog? = null
+    private var appearanceDialog: AlertDialog? = null
     private val appearanceUpdate = Runnable { applyAppearance() }
 
     private val busListener = object : SubtitleBus.Listener {
@@ -416,10 +415,11 @@ class MimiService : Service() {
 
     private fun releaseSession() {
         immersiveHelp.dismiss()
-        fontDialog?.dismiss()
-        fontDialog = null
+        appearanceDialog?.dismiss()
+        appearanceDialog = null
         ++generation
         finishingSession = false
+        isStopping = false
         health = null
         captureObservation = null
         mainHandler.removeCallbacksAndMessages(null)
@@ -453,6 +453,8 @@ class MimiService : Service() {
         if (finishingSession) return
         if (engine == null || previewMode) { stopEverything(); return }
         finishingSession = true
+        isStopping = true
+        stateListeners.forEach { it() }
         val owner = generation
         capturing?.set(false)
         try { audioRecord?.stop() } catch (_: Exception) { }
@@ -511,7 +513,7 @@ class MimiService : Service() {
         if (localeTags == interfaceLocaleTags) return
         interfaceLocaleTags = localeTags
         immersiveHelp.dismiss()
-        fontDialog?.dismiss()
+        appearanceDialog?.dismiss()
         immersiveHelp = ImmersiveModeHelp(ContextThemeWrapper(InterfaceLanguage.context(this), R.style.Theme_Mimi), overlayWindow = true)
         fun label(tag: String, text: Int?, description: Int) {
             val control = overlayView?.findViewWithTag<View>(tag)
@@ -530,7 +532,7 @@ class MimiService : Service() {
         overlayView?.findViewWithTag<TextView>("overlay-route")?.text =
             if (sessionOriginalOnly) languageName(sessionSourceLanguage)
             else "${languageName(sessionSourceLanguage)} → ${languageName(sessionTargetLanguage)}"
-        relayoutExpandedHeader?.invoke()
+        expandedView?.requestLayout()
         renderBus()
         if (isRunning) {
             createChannel()
@@ -675,7 +677,7 @@ class MimiService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     resizeWidthPercent = ((resizeStartWidth + 2 * (event.rawX - resizeStartX)) * 100 /
                         overlayAvailableSize().first).toInt().coerceIn(55, 100)
-                    updateOverlayGeometry(); relayoutExpandedHeader?.invoke(); true
+                    updateOverlayGeometry(); expandedView?.requestLayout(); true
                 }
                 MotionEvent.ACTION_UP -> {
                     val value = resizeWidthPercent
@@ -772,7 +774,11 @@ class MimiService : Service() {
     private fun setImmersiveMode(enabled: Boolean) {
         if (immersiveSession == enabled) return
         if (enabled) {
-            immersiveHelp.requestEnable(onConfirmed = { applyImmersiveMode(true) })
+            immersiveHelp.requestEnable(onConfirmed = {
+                runCatching { applyImmersiveMode(true) }.onFailure {
+                    Toast.makeText(InterfaceLanguage.context(this), R.string.service_save_failed, Toast.LENGTH_LONG).show()
+                }
+            })
         } else {
             immersiveHelp.dismiss()
             runCatching { applyImmersiveMode(false) }.onFailure {
@@ -799,7 +805,7 @@ class MimiService : Service() {
         panel.addView(FrameLayout(this).apply {
             tag = "overlay-drag"; isClickable = true; isFocusable = true
             contentDescription = interfaceString(R.string.overlay_drag)
-            setOnClickListener { showFontSizeControl() }
+            setOnClickListener { showAppearanceControls() }
             addView(View(this@MimiService).apply {
                 background = GradientDrawable().apply { cornerRadius = dp(2).toFloat(); setColor(0xFF858585.toInt()) }
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -811,7 +817,7 @@ class MimiService : Service() {
         }
         val font = panelButton(interfaceString(R.string.overlay_appearance)).apply {
             tag = "overlay-font"; minHeight = dp(48); setSingleLine(false); contentDescription = interfaceString(R.string.settings_tab_appearance)
-            setOnClickListener { showFontSizeControl() }
+            setOnClickListener { showAppearanceControls() }
         }
         val immersive = panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
             tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
@@ -833,7 +839,6 @@ class MimiService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         panel.addView(route, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-        relayoutExpandedHeader = { panel.requestLayout() }
         val provider = ServiceProvider.fromId(SettingsStore.provider(this))
         val providerRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers" }
         fun mark(resource: Int) = ImageView(this).apply {
@@ -900,7 +905,7 @@ class MimiService : Service() {
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(18) })
         panel.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
             tag = "overlay-resize"
-            setOnClickListener { showFontSizeControl() }
+            setOnClickListener { showAppearanceControls() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { gravity = Gravity.END })
         return panel
     }
@@ -947,8 +952,8 @@ class MimiService : Service() {
 
     private fun languageName(code: String): String = app.yuxino.mimi.android.languageDisplayName(InterfaceLanguage.context(this), code)
 
-    private fun showFontSizeControl() {
-        if (fontDialog != null) return
+    private fun showAppearanceControls() {
+        if (appearanceDialog != null) return
         val themed = ContextThemeWrapper(InterfaceLanguage.context(this), R.style.Theme_Mimi)
         val controls = AppearanceControls(themed) { enabled -> setImmersiveMode(enabled) }
         controls.setPadding(dp(20), dp(12), dp(20), dp(16))
@@ -958,14 +963,14 @@ class MimiService : Service() {
         val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
         val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface).setTitle(R.string.settings_tab_appearance)
             .setView(content).setPositiveButton(R.string.guide_finish, null).create()
-        dialog.setOnDismissListener { if (fontDialog === dialog) fontDialog = null }
-        fontDialog = dialog
+        dialog.setOnDismissListener { if (appearanceDialog === dialog) appearanceDialog = null }
+        appearanceDialog = dialog
         try {
             checkNotNull(dialog.window).setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             dialog.show()
             surface.setColor(ContextCompat.getColor(dialog.context, R.color.mimi_surface))
         } catch (_: RuntimeException) {
-            fontDialog = null
+            appearanceDialog = null
             dialog.dismiss()
             Toast.makeText(themed, R.string.overlay_font_failed, Toast.LENGTH_LONG).show()
         }
@@ -1011,7 +1016,7 @@ class MimiService : Service() {
             it?.setShadowLayer(if (immersiveSession) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)
         }
         updateOverlayGeometry()
-        relayoutExpandedHeader?.invoke()
+        expandedView?.requestLayout()
         renderBus()
     }
 
@@ -1133,8 +1138,8 @@ class MimiService : Service() {
     }
 
     private fun hideOverlay() {
-        fontDialog?.dismiss()
-        fontDialog = null
+        appearanceDialog?.dismiss()
+        appearanceDialog = null
         try {
             immersiveExitView?.let { windowManager?.removeView(it) }
         } catch (_: Exception) {
@@ -1159,7 +1164,6 @@ class MimiService : Service() {
         expandedSourceView = null
         expandedTranslationView = null
         transcriptScrollView = null
-        relayoutExpandedHeader = null
         scrollToCurrentOnLayout = false
     }
 
@@ -1283,6 +1287,8 @@ class MimiService : Service() {
         private const val CAPTURE_RATE_HZ = 48_000
         private const val AUTO_HIDE_MS = 600L
         private const val WATCHDOG_MS = 3_000L
+        @Volatile var isStopping: Boolean = false
+            private set
         @Volatile var isRunning: Boolean = false
             private set
         @Volatile var activeModelNames: List<String> = emptyList()

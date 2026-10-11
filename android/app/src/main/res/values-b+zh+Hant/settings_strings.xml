@@ -41,4 +41,7 @@
     <string name="overlay_drag">拖動字幕</string>
     <string name="overlay_resize">調整字幕寬度</string>
     <string name="overlay_appearance">外觀</string>
+    <string name="stopping_capture">正在停止字幕…</string>
+    <string name="service_stop_failed">停止字幕失敗，請重試。</string>
+    <string name="settings_display_mode_help">只改變顯示內容。語音辨識和翻譯仍由目前的服務處理。</string>
 </resources>

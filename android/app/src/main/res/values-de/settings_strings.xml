@@ -41,4 +41,7 @@
     <string name="overlay_drag">Untertitel verschieben</string>
     <string name="overlay_resize">Untertitelbreite ändern</string>
     <string name="overlay_appearance">Darstellung</string>
+    <string name="stopping_capture">Untertitel werden beendet…</string>
+    <string name="service_stop_failed">Untertitel konnten nicht beendet werden. Erneut versuchen.</string>
+    <string name="settings_display_mode_help">Ändert nur die Anzeige. Erkennung und Übersetzung laufen mit dem ausgewählten Dienst weiter.</string>
 </resources>

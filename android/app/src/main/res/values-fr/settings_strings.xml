@@ -41,4 +41,7 @@
     <string name="overlay_drag">Déplacer les sous-titres</string>
     <string name="overlay_resize">Redimensionner les sous-titres</string>
     <string name="overlay_appearance">Apparence</string>
+    <string name="stopping_capture">Arrêt des sous-titres…</string>
+    <string name="service_stop_failed">Impossible d’arrêter les sous-titres. Réessayez.</string>
+    <string name="settings_display_mode_help">Modifie uniquement l’affichage. La reconnaissance et la traduction continuent avec le service sélectionné.</string>
 </resources>

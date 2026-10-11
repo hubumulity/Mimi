@@ -25,6 +25,10 @@ internal class AppearanceControls(
     private val main = Handler(Looper.getMainLooper())
     private var observing: (() -> Unit)? = null
     private var syncing = false
+    private val previewUpdate = Runnable { if (isShown) refreshPreview() }
+    private val subtitleListener = object : app.yuxino.mimi.android.provider.SubtitleBus.Listener {
+        override fun onSubtitleChanged() { main.removeCallbacks(previewUpdate); main.post(previewUpdate) }
+    }
     private val refreshers = mutableListOf<() -> Unit>()
     private val preview = SubtitlePreviewView(context).apply { id = R.id.subtitle_preview }
     private val colorIndices = listOf(1, 0, 2, 3, 4)
@@ -100,10 +104,12 @@ internal class AppearanceControls(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         observing = SettingsStore.observeAppearance(context) { main.post { if (isAttachedToWindow) sync() } }
+        app.yuxino.mimi.android.provider.SubtitleBus.addListener(subtitleListener)
         sync()
     }
     override fun onDetachedFromWindow() {
         observing?.invoke(); observing = null
+        app.yuxino.mimi.android.provider.SubtitleBus.removeListener(subtitleListener)
         main.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
     }
@@ -111,11 +117,18 @@ internal class AppearanceControls(
         syncing = true
         try {
             refreshers.forEach { it() }
-            preview.configure(SettingsStore.fontSize(context), SettingsStore.translationColor(context),
-                SettingsStore.overlayOpacity(context), SettingsStore.overlayBgAlpha(context), SettingsStore.targetLang(context),
-                SettingsStore.immersiveSubtitles(context), SettingsStore.originalTextOnly(context),
-                SettingsStore.displayMode(context), SettingsStore.overlayWidthPercent(context))
+            refreshPreview()
         } finally { syncing = false }
+    }
+    private fun refreshPreview() {
+        preview.configure(SettingsStore.fontSize(context), SettingsStore.translationColor(context),
+            SettingsStore.overlayOpacity(context), SettingsStore.overlayBgAlpha(context), SettingsStore.targetLang(context),
+            SettingsStore.immersiveSubtitles(context), SettingsStore.originalTextOnly(context),
+            SettingsStore.displayMode(context), SettingsStore.overlayWidthPercent(context), live = app.yuxino.mimi.android.capture.MimiService.isRunning)
+        if (app.yuxino.mimi.android.capture.MimiService.isRunning) {
+            val bus = app.yuxino.mimi.android.provider.SubtitleBus
+            preview.showLive(bus.displaySource, bus.displayTranslation, bus.liveHidden, context.getString(R.string.capture_waiting))
+        }
     }
     private fun save(action: () -> Unit) {
         try { action() }
@@ -153,7 +166,8 @@ internal class AppearanceControls(
         return seek
     }
     private fun picker(id: Int, title: Int, items: List<String>, read: () -> Int, write: (Int) -> Unit): Spinner {
-        addView(label(title), LayoutParams(-1, -2).apply { topMargin = dp(20); bottomMargin = dp(8) })
+        addView(if (id == R.id.display_mode) helpHeading(title, R.string.settings_display_mode_help, "display-mode-help")
+            else label(title), LayoutParams(-1, -2).apply { topMargin = dp(20); bottomMargin = dp(8) })
         val spinner = Spinner(context).apply {
             this.id = id; contentDescription = context.getString(title)
             background = ContextCompat.getDrawable(context, R.drawable.settings_field)

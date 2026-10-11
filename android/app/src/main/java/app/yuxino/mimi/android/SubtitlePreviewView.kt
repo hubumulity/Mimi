@@ -18,6 +18,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
     private val exampleLabel = TextView(context)
     private val previewLabel = TextView(context)
     private var appearanceShortcut = false
+    private var widthPercent = 92
     private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
     private val source = TextView(context)
     private val translation = TextView(context)
@@ -71,30 +72,30 @@ class SubtitlePreviewView @JvmOverloads constructor(
         exampleLabel.setText(R.string.preview_edit)
     }
 
-    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92) {
-        previewLabel.setText(R.string.preview_label)
-        exampleLabel.setText(if (appearanceShortcut) R.string.preview_edit else R.string.preview_example)
-        status.visibility = GONE
+    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92, live: Boolean = false) {
+        if (!live) {
+            previewLabel.setText(R.string.preview_label)
+            exampleLabel.setText(if (appearanceShortcut) R.string.preview_edit else R.string.preview_example)
+            status.visibility = GONE
+        }
         val effective = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
         source.visibility = if (effective.sourceVisible) VISIBLE else GONE
         translation.visibility = if (effective.translationVisible) VISIBLE else GONE
-        subtitle.layoutParams = (subtitle.layoutParams as LayoutParams).apply {
-            width = (((this@SubtitlePreviewView.width.takeIf { it > 0 } ?:
-                (resources.displayMetrics.widthPixels - dp(48))) - paddingLeft - paddingRight) *
-                widthPercent.coerceIn(55, 100) / 100f).toInt()
-            gravity = Gravity.CENTER_HORIZONTAL
+        this.widthPercent = widthPercent.coerceIn(55, 100)
+        updateWidth()
+        if (!live) {
+            source.setText(when (targetLang) {
+                "en" -> R.string.preview_zh
+                "th" -> R.string.preview_en
+                else -> R.string.preview_source
+            })
+            translation.setText(when (targetLang) {
+                "en" -> R.string.preview_en
+                "ja" -> R.string.preview_ja
+                "th" -> R.string.preview_th
+                else -> R.string.preview_zh
+            })
         }
-        source.setText(when (targetLang) {
-            "en" -> R.string.preview_zh
-            "th" -> R.string.preview_en
-            else -> R.string.preview_source
-        })
-        translation.setText(when (targetLang) {
-            "en" -> R.string.preview_en
-            "ja" -> R.string.preview_ja
-            "th" -> R.string.preview_th
-            else -> R.string.preview_zh
-        })
         source.textSize = fontSize.coerceIn(12, 24).toFloat()
         translation.textSize = fontSize.coerceIn(12, 24) + 3f
         translation.setTextColor(color)
@@ -115,6 +116,17 @@ class SubtitlePreviewView @JvmOverloads constructor(
         status.text = waiting
         status.visibility = if ((source.visibility != VISIBLE || source.text.isNullOrBlank()) &&
             (translation.visibility != VISIBLE || translation.text.isNullOrBlank())) VISIBLE else GONE
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        updateWidth()
+    }
+    private fun updateWidth() {
+        if (width <= 0) return
+        val desired = ((width - paddingLeft - paddingRight).coerceAtLeast(1) * widthPercent / 100f).toInt().coerceAtLeast(1)
+        val params = subtitle.layoutParams as? LayoutParams ?: return
+        if (params.width != desired) subtitle.layoutParams = params.apply { width = desired; gravity = Gravity.CENTER_HORIZONTAL }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

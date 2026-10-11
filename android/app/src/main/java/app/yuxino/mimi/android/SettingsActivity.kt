@@ -13,9 +13,9 @@ import app.yuxino.mimi.android.capture.MimiService
 class SettingsActivity : AppCompatActivity() {
     private val immersiveHelp = ImmersiveModeHelp(this)
     private lateinit var appearance: AppearanceControls
-    private var lastRunning: Boolean? = null
+    private var lastSessionState: Pair<Boolean, Boolean>? = null
     private val sessionListener: () -> Unit = { runOnUiThread {
-        if (!isFinishing && lastRunning != MimiService.isRunning) refreshServices()
+        if (!isFinishing && lastSessionState != (MimiService.isRunning to MimiService.isStopping)) refreshServices()
     } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +71,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
     }
     private fun refreshServices() {
-        lastRunning = MimiService.isRunning
+        lastSessionState = MimiService.isRunning to MimiService.isStopping
         ServiceSettingsUi.renderList(this, findViewById(R.id.service_panel))
     }
     private fun saveFailed() = Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show()

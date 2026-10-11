@@ -40,4 +40,7 @@
     <string name="overlay_drag">ย้ายคำบรรยาย</string>
     <string name="overlay_resize">ปรับความกว้างคำบรรยาย</string>
     <string name="overlay_appearance">รูปแบบ</string>
+    <string name="stopping_capture">กำลังหยุดคำบรรยาย…</string>
+    <string name="service_stop_failed">หยุดคำบรรยายไม่ได้ โปรดลองอีกครั้ง</string>
+    <string name="settings_display_mode_help">เปลี่ยนเฉพาะสิ่งที่แสดง การรู้จำเสียงและการแปลยังคงใช้บริการที่เลือกไว้</string>
 </resources>

@@ -94,11 +94,16 @@ internal object ServiceSettingsUi {
                 tag = "service-session-guard"
                 addView(label(activity, activity.getString(R.string.service_stop_first), 16f), LinearLayout.LayoutParams(-1, -2))
                 addView(MaterialButton(activity, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-                    tag = "service-stop"; setText(R.string.stop_capture); isAllCaps = false; minimumHeight = dp(activity, 48)
+                    tag = "service-stop"; setText(if (MimiService.isStopping) R.string.stopping_capture else R.string.stop_capture);
+                    isEnabled = !MimiService.isStopping; isAllCaps = false; minimumHeight = dp(activity, 48)
                     setTextColor(ContextCompat.getColor(activity, R.color.mimi_text))
                     setOnClickListener {
                         isEnabled = false
-                        activity.startService(Intent(activity, MimiService::class.java).setAction(MimiService.ACTION_STOP))
+                        try { activity.startService(MimiService.stopIntent(activity)) }
+                        catch (_: RuntimeException) {
+                            isEnabled = true
+                            Toast.makeText(activity, R.string.service_stop_failed, Toast.LENGTH_LONG).show()
+                        }
                     }
                 }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(activity, 20) })

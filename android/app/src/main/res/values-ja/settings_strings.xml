@@ -40,4 +40,7 @@
     <string name="overlay_drag">字幕を移動</string>
     <string name="overlay_resize">字幕の幅を調整</string>
     <string name="overlay_appearance">外観</string>
+    <string name="stopping_capture">字幕を停止中…</string>
+    <string name="service_stop_failed">字幕を停止できませんでした。再試行してください。</string>
+    <string name="settings_display_mode_help">表示内容のみを変更します。音声認識と翻訳は選択中のサービスで続行します。</string>
 </resources>

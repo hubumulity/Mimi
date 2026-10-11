@@ -45,4 +45,7 @@
     <string name="overlay_drag">Drag captions</string>
     <string name="overlay_resize">Resize captions</string>
     <string name="overlay_appearance">Appearance</string>
+    <string name="stopping_capture">Stopping captions…</string>
+    <string name="service_stop_failed">Could not stop captions. Try again.</string>
+    <string name="settings_display_mode_help">Changes only what is shown. Recognition and translation continue with the selected service.</string>
 </resources>

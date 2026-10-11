@@ -79,7 +79,10 @@ class MainActivity : AppCompatActivity() {
                     .onFailure { Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
             } else {
                 immersiveHelp.requestEnable(
-                    onConfirmed = { SettingsStore.setImmersiveSubtitles(this, true); refreshUi() },
+                    onConfirmed = {
+                        runCatching { SettingsStore.setImmersiveSubtitles(this, true); refreshUi() }
+                            .onFailure { Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
+                    },
                     onCancelled = { refreshUi() },
                 )
             }
@@ -151,8 +154,9 @@ class MainActivity : AppCompatActivity() {
             isEnabled = true
             setText(if (SettingsStore.immersiveSubtitles(this@MainActivity)) R.string.overlay_exit_immersive else R.string.settings_immersive)
         }
-        startStop.isEnabled = !starting
+        startStop.isEnabled = !starting && !MimiService.isStopping
         startStop.setText(when {
+            MimiService.isStopping -> R.string.stopping_capture
             running -> R.string.stop_capture
             !keyOk -> R.string.home_setup_action
             else -> R.string.start_capture
@@ -196,6 +200,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.target_language_action).isEnabled = !originalOnly
         val selectedProvider = app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(this))
         findViewById<android.widget.ImageView>(R.id.provider_icon).setImageResource(serviceProviderIcon(selectedProvider))
+        findViewById<android.widget.ImageView>(R.id.translation_provider_icon).apply {
+            val translation = SettingsStore.textTranslationProvider(this@MainActivity)
+            val separate = selectedProvider == app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE &&
+                translation != app.yuxino.mimi.android.provider.TextTranslationProvider.BUILTIN &&
+                translation != app.yuxino.mimi.android.provider.TextTranslationProvider.NONE
+            visibility = if (separate) View.VISIBLE else View.GONE
+            if (separate) setImageResource(translationProviderIcon(translation))
+        }
         val provider = providerTitle(this, selectedProvider)
         findViewById<TextView>(R.id.provider_summary).text = getString(
             if (keyOk) R.string.home_service_ready else R.string.home_service_unset, provider,
@@ -210,7 +222,7 @@ class MainActivity : AppCompatActivity() {
             SettingsStore.fontSize(this), SettingsStore.translationColor(this),
             SettingsStore.overlayOpacity(this), SettingsStore.overlayBgAlpha(this), SettingsStore.targetLang(this),
             SettingsStore.immersiveSubtitles(this), SettingsStore.originalTextOnly(this),
-            SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this),
+            SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this), live = running,
         )
         if (running) {
             val bus = app.yuxino.mimi.android.provider.SubtitleBus
@@ -376,7 +388,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopService() {
-        stopService(Intent(this, MimiService::class.java))
+        try { startService(MimiService.stopIntent(this)) }
+        catch (_: RuntimeException) { Toast.makeText(this, R.string.service_stop_failed, Toast.LENGTH_LONG).show() }
         refreshUi()
     }
 
