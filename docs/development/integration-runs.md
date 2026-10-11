@@ -2648,8 +2648,26 @@
   metadata. No new transcript storage or provider policy is introduced. Direct
   JNI tests cover atomic/realtime projections, disabled history, empty drafts,
   next words, confirmation time, hidden frames and Clear. Native preview and live
-  checks now guard original handoffs too. Corrected native/live acceptance and
-  original model-test configuration restore remain pending.
+  checks now guard original handoffs too.
+- Clean `02c0a2f8` signed Dev/test install receipts precede corrected acceptance.
+  Native primary/quick preview parity passed 41 comparisons, including the
+  original gap and new-draft confirmation-time transitions. Each test preference
+  and device setting was restored byte for byte before and after startup.
+  Debug/Release each passed 198 JVM/actual-JNI tests; both lint variants,
+  four-ABI Release assembly and canonical checks passed.
+- Same-segment rerun: observed paused video at 8:01, then three 60-second modes
+  with Audio3/Qwen-MT Lite, auto to Chinese. All received AUDIO, with
+  232/211/207 visible caption draws, zero height changes and no recovery events.
+  Original reading exercised 17 actual empty-ASR-handoff draws while retaining
+  visible words. The private original-mode 30-second clip and quarter-second
+  transition frames show no listening-placeholder interruption at that handoff.
+  This is a corrected 180-second comparison, not another 15-minute soak or a
+  semantic-accuracy benchmark; service recognition still revises incomplete words.
+- Normal Stop completed. Original model-test preferences were restored byte
+  for byte before and after startup; the temporary provider configuration and
+  test package were removed. Only the latest Android Dev remains installed,
+  media projection is inactive, Firefox is visibly paused and Mac output remains
+  muted. Private receipts, native clips and necessary logs stay outside Git.
 - Full-video playback, physical devices, API 29, split-screen,
   every language/font combination and independent semantic-quality acceptance
   remain outside these completed checks. Preserve private evidence and failed
