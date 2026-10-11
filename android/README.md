@@ -176,7 +176,9 @@ adb shell am instrument -w -e interface_language true -e theme light app.yuxino.
 
 The interface-language check requires a blank, idle emulator. It exercises the
 native picker, settings recreation and localized overlay controls without capture
-or provider requests. Use `-e leave_language zh-Hans`, force-stop the app, then run
+or provider requests. Editor screenshots use the normal own-page caption hiding;
+overlay screenshots use a separate debug-only host without requesting capture.
+Use `-e leave_language zh-Hans`, force-stop the app, then run
 with `-e interface_language true -e expected_language zh-Hans` to check persistence.
 
 The checks exercise quick language selection/Undo, direct appearance access,
@@ -252,6 +254,7 @@ prove a live DeepL, DeepLX or ChatMock account or physical Android device until 
 app/src/main/java/app/yuxino/mimi/android/
   MainActivity.kt            start flow, overlay-permission gate, projection consent
   SettingsActivity.kt        service list and appearance settings
+  AppearanceControls.kt     shared native Settings/floating appearance controls
   ServiceSettingsActivity.kt provider-specific write-only credential editor
   ServiceSettingsUi.kt       compact service picker
   SettingsStore.kt           EncryptedSharedPreferences-backed settings
@@ -259,18 +262,16 @@ app/src/main/java/app/yuxino/mimi/android/
                              capture loop + overlay window + auto-hide timers
   resample/StreamResampler.kt  O(1) box-filter downmix + resample to PCM16 mono
   provider/ServiceCatalog.kt  service fields, capabilities and language normalization
-  provider/StreamingServiceEngine.kt bounded transport for additional services
-  provider/CloudProtocols.kt Gemini, Azure, Tencent and Baidu wire adapters
-  provider/VolcanoProtocol.kt Doubao binary protobuf adapter
-  provider/GrokProtocol.kt    xAI turn-based transcript adapter
-  provider/ProviderEngine.kt   engine interface + WS URL normalization
-  provider/DashScopeEngine.kt  qwen3.5-livetranslate realtime WS client
-  provider/OpenAIRealtimeEngine.kt  gpt-realtime-translate WS client
+  provider/SharedRuntimeEngine.kt production JNI session engine
+  provider/ProviderEngine.kt  native session interface
   provider/SharedSubtitleCore.kt stateless JNI bridge to shared/mimi-core
   provider/SubtitleBus.kt      native snapshot facade over the shared Rust reducer
-  provider/SharedLivePairStream.kt DashScope identity/transport adapter
-  provider/SharedTranscriptStream.kt OpenAI transcript/transport adapter
 ```
+
+Provider clients and scheduling live in `shared/mimi-runtime`, reached through
+`shared/mimi-android-jni`. Historical Kotlin transport/protocol classes remain
+offline comparison fixtures; production capture never selects them. Run
+`python3 -B scripts/check-shared-runtime.py` to verify this boundary.
 
 ## Verification status
 

@@ -82,7 +82,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 capture("picker-$theme")
                 instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
                 onUi { settings!!.findViewById<View>(R.id.tab_appearance).performClick() }
-                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
+                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
                 await { WindowInspector.getGlobalWindowViews().any { it.findViewWithTag<View>("compact-subtitle") != null } }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
                 await { SubtitleBus.historySnapshot().isNotEmpty() }
@@ -102,6 +102,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     check(SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
                     capture("${tag.ifEmpty { "system" }}-$theme")
                     assertControlBounds()
+                    captureOverlay(tag, theme)
                     checkServiceEditor(tag, theme)
                 }
                 val leave = arguments?.getString("leave_language")
@@ -157,7 +158,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
 
     private fun checkServiceEditor(tag: String, theme: String) {
         val overlay = WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }
-        onUi { overlay.visibility = View.GONE }
+        await { !overlay.isShown }
         onUi { settings!!.findViewById<View>(R.id.tab_general).performClick()
             settings!!.findViewById<android.widget.ScrollView>(R.id.settings_scroll).fullScroll(View.FOCUS_DOWN) }
         instrumentation.waitForIdleSync()
@@ -193,7 +194,19 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         onUi { editor.finish() }
         await { settings?.hasWindowFocus() == true }
         onUi { settings!!.findViewById<View>(R.id.tab_appearance).performClick() }
-        onUi { overlay.visibility = View.VISIBLE }
+        await { !overlay.isShown }
+    }
+
+    private fun captureOverlay(tag: String, theme: String) {
+        // Exercise the real own-page hide/restore path instead of forcing the
+        // screenshot fixture over editors and hiding it for only one UI tick.
+        val external = instrumentation.startActivitySync(Intent(context, CaptureProbeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CaptureProbeActivity
+        try {
+            await { WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }.isShown }
+            capture("${tag.ifEmpty { "system" }}-overlay-$theme")
+        } finally { onUi { external.finish() } }
+        await { settings?.hasWindowFocus() == true }
     }
 
     private fun select(tag: String) {
