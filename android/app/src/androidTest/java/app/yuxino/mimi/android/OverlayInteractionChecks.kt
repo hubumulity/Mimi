@@ -539,7 +539,9 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             check(panel.transcriptScroll.scrollY == readingPosition) { "A subtitle update stole the history reader's position: $readingPosition -> ${panel.transcriptScroll.scrollY}" }
             capture("panel-full-text-reading")
             onUi { panel.transcriptScroll.fullScroll(View.FOCUS_DOWN) }
-            idle()
+            // fullScroll uses Android's smooth animation; a new gesture would
+            // otherwise cancel it before the reader reaches the live edge.
+            waitFor { panel.transcriptScroll.scrollY >= panel.transcriptScroll.getChildAt(0).height - panel.transcriptScroll.height }
             move(panel.transcriptScroll, 0, -24)
             waitFor { panel.followingLive && panel.source.maxLines != Int.MAX_VALUE && panel.translation.maxLines != Int.MAX_VALUE }
             capture("panel-return-to-bilingual-live")
