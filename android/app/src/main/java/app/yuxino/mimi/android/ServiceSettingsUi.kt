@@ -88,6 +88,21 @@ internal object ServiceSettingsUi {
         val heading = HelpUi.heading(activity, activity.getString(R.string.services_heading),
             activity.getString(R.string.services_hint) + "\n\n" + activity.getString(R.string.services_key_note), 25f, "services-help")
         container.addView(heading, LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(activity,16) })
+        if (MimiService.isRunning) {
+            container.addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                tag = "service-session-guard"
+                addView(label(activity, activity.getString(R.string.service_stop_first), 16f), LinearLayout.LayoutParams(-1, -2))
+                addView(MaterialButton(activity, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                    tag = "service-stop"; setText(R.string.stop_capture); isAllCaps = false; minimumHeight = dp(activity, 48)
+                    setTextColor(ContextCompat.getColor(activity, R.color.mimi_text))
+                    setOnClickListener {
+                        isEnabled = false
+                        activity.startService(Intent(activity, MimiService::class.java).setAction(MimiService.ACTION_STOP))
+                    }
+                }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(activity, 20) })
+        }
         val stacked = activity.resources.configuration.fontScale >= 1.5f
         for(provider in ServiceProvider.entries) {
             val active = SettingsStore.provider(activity) == provider.id
@@ -101,6 +116,8 @@ internal object ServiceSettingsUi {
             val select = LinearLayout(activity).apply {
                 orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL
                 minimumHeight=dp(activity,72); isClickable=true; isFocusable=true
+                isEnabled = !MimiService.isRunning
+                background = ContextCompat.getDrawable(activity, R.drawable.mimi_segment)
                 contentDescription="${providerTitle(activity, provider)}，${activity.getString(if(!configured) R.string.service_missing else if(active) R.string.service_active else R.string.service_configured)}"
             }
             val mark = android.widget.ImageView(activity).apply {
@@ -129,6 +146,7 @@ internal object ServiceSettingsUi {
             row.addView(select, if (stacked) LinearLayout.LayoutParams(-1,-2) else LinearLayout.LayoutParams(0,-2,1f))
             val edit=MaterialButton(activity,null,com.google.android.material.R.attr.borderlessButtonStyle).apply {
                 text=activity.getString(if(configured) R.string.service_edit else R.string.service_configure)
+                isEnabled = !MimiService.isRunning
                 textSize=16f; isAllCaps=false; isSingleLine=false; minWidth=dp(activity,72); minimumWidth=dp(activity,72); minimumHeight=dp(activity,48); tag="configure-${provider.id}"
                 contentDescription=activity.getString(R.string.service_edit_named,providerTitle(activity, provider))
                 setTextColor(ContextCompat.getColor(activity,R.color.mimi_text))

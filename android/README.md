@@ -145,17 +145,25 @@ and previewed without capture or a network session. The appearance screen also
 previews the compact card and immersive text mode. The service tab lists all eight integrations and opens a separate editor with only that service’s fields.
 Credentials require explicit Save and use; changing appearance never saves credentials. Your own service credentials are still required for real translation.
 
-On a development emulator with no active subtitle session:
+Settings groups Services, Captions and General separately. Captions offers live
+original/translation/bilingual display, width, size, color and opacity controls.
+The expanded panel has drag and resize handles and the same appearance controls.
+Display choices do not change recognition or translation requests. A running
+session keeps service editing locked with an explicit Stop action.
+
+The debug app uses `app.yuxino.mimi.android.dev` (mimi Dev), with independent
+credentials and permissions, and installs alongside the release app. Never
+uninstall production to install a debug APK. On an idle development emulator:
 
 ```sh
 ./gradlew assembleDebug assembleDebugAndroidTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -e theme light app.yuxino.mimi.android.test/app.yuxino.mimi.android.UiSmokeInstrumentation
-adb shell am instrument -w -e theme dark app.yuxino.mimi.android.test/app.yuxino.mimi.android.UiSmokeInstrumentation
-adb shell am instrument -w -e overlay_preview true -e theme light app.yuxino.mimi.android.test/app.yuxino.mimi.android.UiSmokeInstrumentation
-adb shell am instrument -w -e overlay_interaction true app.yuxino.mimi.android.test/app.yuxino.mimi.android.UiSmokeInstrumentation
-adb shell am instrument -w -e interface_language true -e theme light app.yuxino.mimi.android.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e theme light app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e theme dark app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e overlay_preview true -e theme light app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e overlay_interaction true app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e interface_language true -e theme light app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
 ```
 
 The interface-language check requires a blank, idle emulator. It exercises the

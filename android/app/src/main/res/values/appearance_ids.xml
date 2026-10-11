@@ -1,0 +1,21 @@
+<resources>
+    <item name="appearance_more_panel" type="id" />
+    <item name="appearance_more_toggle" type="id" />
+    <item name="display_mode" type="id" />
+    <item name="font_size" type="id" />
+    <item name="font_size_value" type="id" />
+    <item name="history_heading" type="id" />
+    <item name="history_lines" type="id" />
+    <item name="history_lines_value" type="id" />
+    <item name="immersive_heading" type="id" />
+    <item name="immersive_subtitles" type="id" />
+    <item name="overlay_bg_alpha" type="id" />
+    <item name="overlay_bg_alpha_value" type="id" />
+    <item name="overlay_opacity" type="id" />
+    <item name="overlay_opacity_value" type="id" />
+    <item name="overlay_width" type="id" />
+    <item name="overlay_width_value" type="id" />
+    <item name="reset_position" type="id" />
+    <item name="subtitle_preview" type="id" />
+    <item name="translation_color" type="id" />
+</resources>

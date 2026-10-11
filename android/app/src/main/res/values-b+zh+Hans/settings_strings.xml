@@ -5,8 +5,8 @@
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_failed">无法更改界面语言，请重试。</string>
     <string name="settings_back">返回</string>
-    <string name="settings_tab_service">翻译服务</string>
-    <string name="settings_tab_appearance">字幕外观</string>
+    <string name="settings_tab_service">服务</string>
+    <string name="settings_tab_appearance">字幕</string>
     <string name="settings_advanced">高级设置</string>
     <string name="settings_font">字幕字号</string>
     <string name="settings_color">字幕颜色</string>
@@ -32,4 +32,13 @@
     <string name="settings_advanced_collapse">收起高级设置</string>
     <string name="settings_more">更多选项</string>
     <string name="settings_more_collapse">收起更多选项</string>
+    <string name="settings_tab_general">通用</string>
+    <string name="settings_display_mode">显示内容</string>
+    <string name="display_translation">只看译文</string>
+    <string name="display_original">只看原文</string>
+    <string name="display_bilingual">原文 + 译文</string>
+    <string name="settings_width">字幕宽度</string>
+    <string name="overlay_drag">拖动字幕</string>
+    <string name="overlay_resize">调整字幕宽度</string>
+    <string name="overlay_appearance">外观</string>
 </resources>

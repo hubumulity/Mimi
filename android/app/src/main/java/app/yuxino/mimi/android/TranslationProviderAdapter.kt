@@ -21,13 +21,7 @@ internal class TranslationProviderAdapter(context: Context, private val provider
 
     private fun bind(view: View, position: Int, showArrow: Boolean): View = view.apply {
         val row = this as TextView
-        val iconResource = when (providers[position]) {
-            TextTranslationProvider.BUILTIN -> R.drawable.ic_translation_alibaba
-            TextTranslationProvider.CHAT_MOCK, TextTranslationProvider.OPENAI_COMPATIBLE -> R.drawable.ic_service_languages
-            TextTranslationProvider.DEEPL -> R.drawable.ic_translation_deepl
-            TextTranslationProvider.DEEPLX -> R.drawable.ic_translation_deeplx
-            TextTranslationProvider.NONE -> R.drawable.ic_translation_captions
-        }
+        val iconResource = translationProviderIcon(providers[position])
         val icon = ContextCompat.getDrawable(context, iconResource)?.apply { setBounds(0, 0, dp(24), dp(24)) }
         val arrow = if (showArrow) ContextCompat.getDrawable(context, R.drawable.ic_expand)?.apply { setBounds(0, 0, dp(16), dp(16)) } else null
         row.setCompoundDrawablesRelative(icon, null, arrow, null)

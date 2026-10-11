@@ -189,7 +189,9 @@ class MainActivity : AppCompatActivity() {
             setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, if (originalOnly) 0 else R.drawable.ic_expand, 0)
         }
         findViewById<View>(R.id.target_language_action).isEnabled = !originalOnly
-        val provider = providerTitle(this, app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(this)))
+        val selectedProvider = app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(this))
+        findViewById<android.widget.ImageView>(R.id.provider_icon).setImageResource(serviceProviderIcon(selectedProvider))
+        val provider = providerTitle(this, selectedProvider)
         findViewById<TextView>(R.id.provider_summary).text = getString(
             if (keyOk) R.string.home_service_ready else R.string.home_service_unset, provider,
         )
@@ -203,6 +205,7 @@ class MainActivity : AppCompatActivity() {
             SettingsStore.fontSize(this), SettingsStore.translationColor(this),
             SettingsStore.overlayOpacity(this), SettingsStore.overlayBgAlpha(this), SettingsStore.targetLang(this),
             SettingsStore.immersiveSubtitles(this), SettingsStore.originalTextOnly(this),
+            SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this),
         )
     }
 

@@ -66,8 +66,16 @@ class SubtitlePreviewView @JvmOverloads constructor(
         exampleLabel.setText(R.string.preview_edit)
     }
 
-    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false) {
-        translation.visibility = if (originalOnly) GONE else VISIBLE
+    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92) {
+        val effective = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
+        source.visibility = if (effective.sourceVisible) VISIBLE else GONE
+        translation.visibility = if (effective.translationVisible) VISIBLE else GONE
+        subtitle.layoutParams = (subtitle.layoutParams as LayoutParams).apply {
+            width = (((this@SubtitlePreviewView.width.takeIf { it > 0 } ?:
+                (resources.displayMetrics.widthPixels - dp(48))) - paddingLeft - paddingRight) *
+                widthPercent.coerceIn(55, 100) / 100f).toInt()
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
         source.setText(when (targetLang) {
             "en" -> R.string.preview_zh
             "th" -> R.string.preview_en

@@ -70,7 +70,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 // Check every self-name, including rows below a narrow popup's viewport.
                 val names = listOf("简体中文", "繁體中文", "English", "日本語", "Deutsch", "한국어", "Français", "ภาษาไทย")
                 onUi { check((1 until picker().adapter.count).map { picker().adapter.getItem(it).toString() } == names) }
-                onUi { picker().performClick() }
+                onUi { settings!!.findViewById<View>(R.id.tab_general).performClick(); picker().performClick() }
                 instrumentation.waitForIdleSync()
                 onUi {
                     val list = WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::dropdown)
@@ -93,9 +93,9 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     onUi {
                         check(settings!!.findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == R.id.tab_appearance)
                         val collapse = WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull {
-                            it.findViewWithTag<TextView>("collapse-overlay")
+                            it.findViewWithTag<View>("collapse-overlay")
                         } ?: error("Overlay control missing")
-                        check(collapse.text.toString() == settings!!.getString(R.string.overlay_collapse))
+                        check(collapse.contentDescription == settings!!.getString(R.string.overlay_collapse_description))
                     }
                     check(SubtitleBus.historySnapshot() == history) { "Language change lost subtitle history" }
                     check(SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
@@ -132,7 +132,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
     private fun picker() = checkNotNull(settings).findViewById<Spinner>(R.id.interface_language)
 
     private fun assertControlBounds() = onUi {
-        for (id in listOf(R.id.tab_service, R.id.tab_appearance)) {
+        for (id in listOf(R.id.tab_service, R.id.tab_appearance, R.id.tab_general)) {
             val tab = settings!!.findViewById<TextView>(id)
             check(tab.layout.height <= tab.height - tab.paddingTop - tab.paddingBottom) { "Settings tab clips vertically" }
         }
@@ -143,11 +143,12 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         panel.getLocationOnScreen(origin)
         check(origin[0] >= 0 && origin[0] + panel.width <= settings!!.resources.displayMetrics.widthPixels)
         for (tag in listOf("collapse-overlay", "overlay-font", "enter-immersive")) {
-            val control = panel.findViewWithTag<TextView>(tag)
+            val control = panel.findViewWithTag<View>(tag)
             val position = IntArray(2)
             control.getLocationOnScreen(position)
             check(position[0] >= origin[0] && position[0] + control.width <= origin[0] + panel.width)
-            check(control.paint.measureText(control.text.toString()) <= control.width - control.paddingLeft - control.paddingRight + 1) {
+            check(control.contentDescription.isNotBlank())
+            if (control is TextView) check(control.paint.measureText(control.text.toString()) <= control.width - control.paddingLeft - control.paddingRight + 1) {
                 "Overlay action clips: $tag"
             }
         }
@@ -156,7 +157,8 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
     private fun checkServiceEditor(tag: String, theme: String) {
         val overlay = WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }
         onUi { overlay.visibility = View.GONE }
-        onUi { settings!!.findViewById<android.widget.ScrollView>(R.id.settings_scroll).fullScroll(View.FOCUS_DOWN) }
+        onUi { settings!!.findViewById<View>(R.id.tab_general).performClick()
+            settings!!.findViewById<android.widget.ScrollView>(R.id.settings_scroll).fullScroll(View.FOCUS_DOWN) }
         instrumentation.waitForIdleSync()
         onUi {
             val action = settings!!.findViewById<TextView>(R.id.copy_capture_diagnostics)

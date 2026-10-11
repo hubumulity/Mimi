@@ -154,6 +154,37 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         capture("after-positioned-reopened")
     }
 
+    private fun liveDisplayControls() {
+        val sameWindow = root()
+        val history = SubtitleBus.historySnapshot()
+        onUi { SubtitleBus.onSourceDraft("Synthetic original text.", "en"); SubtitleBus.onTranslationDraft("合成译文。") }
+        for (mode in CaptionDisplayMode.entries) {
+            onUi { SettingsStore.setDisplayMode(context, mode) }
+            waitFor {
+                root().findViewWithTag<View>("expanded-source").isShown == mode.sourceVisible &&
+                    root().findViewWithTag<View>("expanded-translation").isShown == mode.translationVisible
+            }
+            check(root() === sameWindow && SubtitleBus.historySnapshot() == history)
+            capture("mode-${mode.id}")
+        }
+        onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL) }
+        val oldWidth = root().width
+        onUi { SettingsStore.setOverlayWidthPercent(context, 65) }
+        waitFor { root().width < oldWidth }
+        capture("width-65")
+        val oldY = SettingsStore.expandedYOffset(context)
+        dragCompact(root().findViewWithTag("overlay-drag"))
+        waitFor { SettingsStore.expandedYOffset(context) > oldY }
+        check(SettingsStore.overlayYOffset(context) == 48) { "Expanded drag changed compact anchor" }
+        val savedY = SettingsStore.expandedYOffset(context)
+        onUi { SettingsStore.setFontSize(context, 20) }
+        waitFor { SettingsStore.fontSize(context) == 20 && abs(caption().textSize - captionPixels(23)) < 1 }
+        check(SettingsStore.expandedYOffset(context) == savedY)
+        onUi { SettingsStore.setOverlayWidthPercent(context, 92) }
+        waitFor { root().width == oldWidth }
+        capture("expanded-dragged")
+    }
+
     fun run(arguments: Bundle?) {
         val reviewSeconds = arguments?.getString("review_hold_seconds")?.toLongOrNull()?.takeIf { it in 1..180 }
         val baseline = arguments?.getString("baseline") == "true"
@@ -163,6 +194,11 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         val historyLines = SettingsStore.historyLines(context)
         val position = SettingsStore.overlayYOffset(context)
         val font = SettingsStore.fontSize(context)
+        val displayMode = SettingsStore.displayMode(context)
+        val width = SettingsStore.overlayWidthPercent(context)
+        val expandedY = SettingsStore.expandedYOffset(context)
+        val compactX = SettingsStore.overlayXOffset(context, false)
+        val expandedX = SettingsStore.overlayXOffset(context, true)
         val immersive = SettingsStore.immersiveSubtitles(context)
         val color = SettingsStore.translationColorIndex(context)
         val background = SettingsStore.overlayBgAlpha(context)
@@ -177,6 +213,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         var failure: Throwable? = null
         try {
             check(!MimiService.isRunning && !SettingsStore.isConfigured(context)) { "Use a blank idle emulator" }
+            SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
+            SettingsStore.setOverlayWidthPercent(context, 92)
             SettingsStore.setFontSize(context, 16)
             SettingsStore.setImmersiveSubtitles(context, false)
             SettingsStore.setTranslationColorIndex(context, 1)
@@ -217,7 +255,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                     val slider = WindowInspector.getGlobalWindowViews().firstNotNullOf { it.findViewWithTag<SeekBar>("overlay-font-slider") }
                     drag(slider, 18)
                     waitFor { SettingsStore.fontSize(context) == 18 && abs(caption().textSize - captionPixels(21)) < 1 }
-                    onUi { check(root().findViewWithTag<TextView>("overlay-font").text.toString().endsWith("18")) }
+                    onUi { check(root().findViewWithTag<TextView>("overlay-font").text.toString() == context.getString(R.string.overlay_appearance)) }
                     onUi { WindowInspector.getGlobalWindowViews().first { it.findViewWithTag<SeekBar>("overlay-font-slider") != null }.findViewById<View>(android.R.id.button1).performClick() }
                 }
                 settings = test.startActivitySync(Intent(context, SettingsActivity::class.java)
@@ -233,6 +271,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 capture("$prefix-settings-size")
                 onUi { settings.finish() }
                 if (!baseline) {
+                    liveDisplayControls()
                     immersivePlacementChecks(checkNotNull(home))
                     // Confirmed pairs intentionally remain readable. Test the genuinely empty state.
                     onUi { SubtitleBus.clear(); SubtitleBus.hideLive() }
@@ -247,7 +286,10 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             SettingsStore.setSourceLang(context, source)
             SettingsStore.setTargetLang(context, target)
             SettingsStore.setHistoryLines(context, historyLines)
-            SettingsStore.setOverlayYOffset(context, position)
+            SettingsStore.setOverlayPosition(context, false, compactX, position)
+            SettingsStore.setOverlayPosition(context, true, expandedX, expandedY)
+            SettingsStore.setDisplayMode(context, displayMode)
+            SettingsStore.setOverlayWidthPercent(context, width)
             SettingsStore.setFontSize(context, font)
             SettingsStore.setImmersiveSubtitles(context, immersive)
             SettingsStore.setTranslationColorIndex(context, color)

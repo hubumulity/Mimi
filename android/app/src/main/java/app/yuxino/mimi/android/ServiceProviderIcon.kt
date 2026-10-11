@@ -13,3 +13,11 @@ internal fun serviceProviderIcon(provider: ServiceProvider): Int = when (provide
     ServiceProvider.BAIDU -> R.drawable.ic_provider_baidu
     ServiceProvider.XAI -> R.drawable.ic_provider_xai
 }
+
+internal fun translationProviderIcon(provider: app.yuxino.mimi.android.provider.TextTranslationProvider): Int = when (provider) {
+    app.yuxino.mimi.android.provider.TextTranslationProvider.BUILTIN -> R.drawable.ic_translation_alibaba
+    app.yuxino.mimi.android.provider.TextTranslationProvider.DEEPL -> R.drawable.ic_translation_deepl
+    app.yuxino.mimi.android.provider.TextTranslationProvider.DEEPLX -> R.drawable.ic_translation_deeplx
+    app.yuxino.mimi.android.provider.TextTranslationProvider.NONE -> R.drawable.ic_translation_captions
+    else -> R.drawable.ic_service_languages
+}

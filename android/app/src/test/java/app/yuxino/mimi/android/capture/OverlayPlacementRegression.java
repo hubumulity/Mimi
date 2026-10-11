@@ -96,6 +96,20 @@ public final class OverlayPlacementRegression {
         equal(236, p.compactY(2.625f, 1200, 80));
         cases++;
 
+        p.reset(48, false);
+        p.setExpandedOffsetDp(120);
+        equal(360, p.expandedY(3f, 1200, 600));
+        equal(0, p.expandedY(3f, 300, 380));
+        equal(360, p.expandedY(3f, 1200, 600));
+        equal(144, p.compactY(3f, 1200, 100));
+        equal(-80, OverlayPlacement.clampX(-500, 600, 440));
+        equal(80, OverlayPlacement.clampX(500, 600, 440));
+        equal(0, OverlayPlacement.clampX(40, 300, 400));
+        equal(330, OverlayPlacement.windowWidth(600, 55, 280, 8));
+        equal(592, OverlayPlacement.windowWidth(600, 100, 280, 8));
+        equal(192, OverlayPlacement.windowWidth(200, 55, 280, 8));
+        cases++;
+
         // Restore stays adjacent to captions: below if possible, otherwise above.
         equal(66, OverlayPlacement.exitY(120, 100, 1000, 48, 6));
         equal(106, OverlayPlacement.exitY(0, 100, 1000, 48, 6));

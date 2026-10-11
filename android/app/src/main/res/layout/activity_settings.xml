@@ -7,7 +7,8 @@
     android:orientation="vertical">
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="wrap_content"
+        android:minHeight="64dp"
         android:gravity="center_vertical"
         android:paddingStart="12dp"
         android:paddingEnd="24dp"
@@ -42,7 +43,7 @@
             android:id="@+id/tab_service"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:minHeight="44dp"
+            android:minHeight="48dp"
             android:paddingVertical="8dp"
             android:layout_weight="1"
             android:button="@null"
@@ -57,7 +58,7 @@
             android:id="@+id/tab_appearance"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:minHeight="44dp"
+            android:minHeight="48dp"
             android:paddingVertical="8dp"
             android:layout_weight="1"
             android:button="@null"
@@ -68,239 +69,30 @@
             android:textColor="@color/mimi_text"
             android:textSize="14sp"
             android:fontFamily="sans-serif-medium"/>
+        <RadioButton android:id="@+id/tab_general" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:minHeight="48dp" android:padding="8dp" android:button="@null"
+            android:background="@drawable/mimi_segment" android:gravity="center" android:text="@string/settings_tab_general"
+            android:textColor="@color/mimi_text" android:textSize="14sp" android:fontFamily="sans-serif-medium" />
     </RadioGroup>
-    <app.yuxino.mimi.android.ControlScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true"
-        android:clipToPadding="false"
-        android:id="@+id/settings_scroll">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingHorizontal="24dp"
-            android:paddingTop="20dp"
-            android:paddingBottom="20dp">
-            <TextView
-                style="@style/TextAppearance.Mimi.Label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:labelFor="@id/interface_language"
-                android:text="@string/settings_interface_language" />
-            <Spinner
-                android:id="@+id/interface_language"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="24dp"
-                android:background="@drawable/settings_field"
-                android:popupBackground="@color/mimi_bg"
-                android:spinnerMode="dropdown" />
-            <LinearLayout
-                android:id="@+id/service_panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-            <LinearLayout
-                android:id="@+id/appearance_panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-                <app.yuxino.mimi.android.SubtitlePreviewView
-                    android:id="@+id/subtitle_preview"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"/>
-                <LinearLayout
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp" android:gravity="center_vertical" android:orientation="horizontal">
-                    <LinearLayout android:id="@+id/immersive_heading" android:layout_width="0dp"
-                        android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" />
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/immersive_subtitles" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:minHeight="48dp"
-                        android:contentDescription="@string/settings_immersive"
-                        app:trackTint="@color/mimi_switch_track" app:thumbTint="@color/mimi_switch_thumb" />
-                </LinearLayout>
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:baselineAligned="false">
-                    <TextView
-                        style="@style/TextAppearance.Mimi.Label"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/settings_font"
-                        android:textColor="@color/mimi_text"/>
-                    <TextView
-                        android:id="@+id/font_size_value"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/mimi_muted"
-                        android:textSize="13sp"/>
-                </LinearLayout>
-                <SeekBar
-                    android:id="@+id/font_size"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="4dp"
-                    android:min="12"
-                    android:max="24"
-                    android:progressTint="@color/mimi_text"
-                    android:progressBackgroundTint="@color/mimi_border"
-                    android:thumbTint="@color/mimi_text"/>
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:baselineAligned="false">
-                    <TextView
-                        style="@style/TextAppearance.Mimi.Label"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/settings_background"
-                        android:textColor="@color/mimi_text"/>
-                    <TextView
-                        android:id="@+id/overlay_bg_alpha_value"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/mimi_muted"
-                        android:textSize="13sp"/>
-                </LinearLayout>
-                <SeekBar
-                    android:id="@+id/overlay_bg_alpha"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp"
-                    android:layout_marginTop="4dp"
-                    android:min="0"
-                    android:max="90"
-                    android:progressTint="@color/mimi_text"
-                    android:progressBackgroundTint="@color/mimi_border"
-                    android:thumbTint="@color/mimi_text"/>
-                <TextView
-                    style="@style/TextAppearance.Mimi.Label"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:text="@string/settings_color"
-                    android:textColor="@color/mimi_text"/>
-                <Spinner
-                    android:id="@+id/translation_color"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/settings_field"
-                    android:popupBackground="@color/mimi_bg"
-                    android:spinnerMode="dropdown"/>
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/appearance_more_toggle"
-                    style="@style/Widget.Mimi.Button.Secondary"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="20dp"
-                    android:text="@string/settings_more"
-                    android:gravity="start|center_vertical"
-                    app:icon="@drawable/ic_chevron"
-                    app:iconGravity="end"
-                    app:iconTint="@color/mimi_muted"/>
-                <LinearLayout
-                    android:id="@+id/appearance_more_panel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="20dp"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:baselineAligned="false">
-                        <TextView
-                            style="@style/TextAppearance.Mimi.Label"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/settings_opacity"
-                            android:textColor="@color/mimi_text"/>
-                        <TextView
-                            android:id="@+id/overlay_opacity_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textColor="@color/mimi_muted"
-                            android:textSize="13sp"/>
-                    </LinearLayout>
-                    <SeekBar
-                        android:id="@+id/overlay_opacity"
-                        android:layout_width="match_parent"
-                        android:layout_height="40dp"
-                        android:layout_marginTop="4dp"
-                        android:min="20"
-                        android:max="100"
-                        android:progressTint="@color/mimi_text"
-                        android:progressBackgroundTint="@color/mimi_border"
-                        android:thumbTint="@color/mimi_text"/>
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="20dp"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:baselineAligned="false">
-                        <LinearLayout android:id="@+id/history_heading" android:layout_width="0dp"
-                            android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" />
-                        <TextView
-                            android:id="@+id/history_lines_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textColor="@color/mimi_muted"
-                            android:textSize="13sp"/>
-                    </LinearLayout>
-                    <SeekBar
-                        android:id="@+id/history_lines"
-                        android:layout_width="match_parent"
-                        android:layout_height="40dp"
-                        android:layout_marginTop="4dp"
-                        android:min="0"
-                        android:max="6"
-                        android:progressTint="@color/mimi_text"
-                        android:progressBackgroundTint="@color/mimi_border"
-                        android:thumbTint="@color/mimi_text"/>
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/reset_position"
-                        style="@style/Widget.Mimi.Button.Secondary"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:layout_marginTop="20dp"
-                        android:text="@string/settings_reset"/>
-                </LinearLayout>
+    <app.yuxino.mimi.android.ControlScrollView android:id="@+id/settings_scroll"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:fillViewport="true" android:clipToPadding="false">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+            android:paddingHorizontal="24dp" android:paddingTop="20dp" android:paddingBottom="32dp">
+            <LinearLayout android:id="@+id/service_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+            <LinearLayout android:id="@+id/appearance_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone" />
+            <LinearLayout android:id="@+id/general_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:labelFor="@id/interface_language"
+                    android:text="@string/settings_interface_language" android:textSize="16sp" android:textColor="@color/mimi_text" />
+                <Spinner android:id="@+id/interface_language" android:layout_width="match_parent" android:layout_height="56dp"
+                    android:layout_marginTop="8dp" android:background="@drawable/settings_field" android:popupBackground="@color/mimi_bg" android:spinnerMode="dropdown" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+                    android:text="@string/settings_advanced" android:textSize="16sp" android:textColor="@color/mimi_text" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/copy_capture_diagnostics"
+                    style="@style/Widget.Mimi.Button.Secondary" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_gravity="end" android:layout_marginTop="12dp" android:minHeight="48dp"
+                    android:text="@string/copy_capture_diagnostics" android:textAllCaps="false" />
             </LinearLayout>
-            <TextView
-                style="@style/TextAppearance.Mimi.Label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="@string/settings_advanced" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/copy_capture_diagnostics"
-                style="@style/Widget.Mimi.Button.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginTop="8dp"
-                android:minHeight="48dp"
-                android:text="@string/copy_capture_diagnostics"
-                android:textAllCaps="false" />
         </LinearLayout>
     </app.yuxino.mimi.android.ControlScrollView>
-
 </LinearLayout>

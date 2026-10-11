@@ -9,8 +9,8 @@
     <string name="settings_language_system">Follow system</string>
     <string name="settings_language_failed">Could not change the interface language. Try again.</string>
     <string name="settings_back">Back</string>
-    <string name="settings_tab_service">Translation services</string>
-    <string name="settings_tab_appearance">Caption appearance</string>
+    <string name="settings_tab_service">Services</string>
+    <string name="settings_tab_appearance">Captions</string>
     <string name="settings_advanced">Advanced settings</string>
     <string name="settings_font">Caption size</string>
     <string name="settings_color">Caption color</string>
@@ -36,4 +36,13 @@
     <string name="settings_advanced_collapse">Collapse advanced settings</string>
     <string name="settings_more">More options</string>
     <string name="settings_more_collapse">Fewer options</string>
+    <string name="settings_tab_general">General</string>
+    <string name="settings_display_mode">Display</string>
+    <string name="display_translation">Translation only</string>
+    <string name="display_original">Original only</string>
+    <string name="display_bilingual">Original + translation</string>
+    <string name="settings_width">Caption width</string>
+    <string name="overlay_drag">Drag captions</string>
+    <string name="overlay_resize">Resize captions</string>
+    <string name="overlay_appearance">Appearance</string>
 </resources>

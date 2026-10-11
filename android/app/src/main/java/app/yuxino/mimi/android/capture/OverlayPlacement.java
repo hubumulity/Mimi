@@ -3,6 +3,7 @@ package app.yuxino.mimi.android.capture;
 /** Native window placement only; never interprets subtitle or provider events. */
 public final class OverlayPlacement {
     private int preferredOffsetDp;
+    private int expandedOffsetDp;
     private boolean immersive;
     private boolean expanded;
     private boolean restoreExpanded;
@@ -11,11 +12,26 @@ public final class OverlayPlacement {
         setPreferredOffsetDp(offsetDp);
         this.immersive = immersive;
         expanded = false;
+        expandedOffsetDp = 0;
         restoreExpanded = false;
     }
 
     public void setPreferredOffsetDp(int offsetDp) {
         preferredOffsetDp = Math.max(0, offsetDp);
+    }
+
+    public void setExpandedOffsetDp(int offsetDp) { expandedOffsetDp = Math.max(0, offsetDp); }
+    public int expandedY(float density, int availableHeight, int panelHeight) {
+        return clampY(Math.round(expandedOffsetDp * density), availableHeight, panelHeight);
+    }
+    public static int clampX(int desiredX, int availableWidth, int windowWidth) {
+        int limit = Math.max(0, (availableWidth - windowWidth) / 2);
+        return Math.max(-limit, Math.min(desiredX, limit));
+    }
+    public static int windowWidth(int availableWidth, int percent, int minimumWidth, int margin) {
+        int maximum = Math.max(1, availableWidth - Math.max(0, margin));
+        int desired = Math.round(availableWidth * Math.max(55, Math.min(100, percent)) / 100f);
+        return Math.min(maximum, Math.max(minimumWidth, desired));
     }
 
     public int getPreferredOffsetDp() { return preferredOffsetDp; }

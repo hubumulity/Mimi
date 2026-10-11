@@ -753,9 +753,9 @@ class UiSmokeInstrumentation : Instrumentation() {
             val panelLocation = IntArray(2)
             panel.getLocationOnScreen(panelLocation)
             for (tag in listOf("collapse-overlay", "enter-immersive", "overlay-font", "overlay-route")) {
-                val label = checkNotNull(panel.findViewWithTag<TextView>(tag))
-                check(label.lineCount == 1) { "Overlay action wraps: $tag" }
-                if (tag != "overlay-route") {
+                val label = checkNotNull(panel.findViewWithTag<View>(tag))
+                if (label is TextView) check(label.lineCount == 1) { "Overlay action wraps: $tag" }
+                if (tag != "overlay-route" && label is TextView) {
                     check(label.paint.measureText(label.text.toString()) <= label.width - label.paddingLeft - label.paddingRight + 1) {
                         "Overlay action text does not fit: $tag"
                     }

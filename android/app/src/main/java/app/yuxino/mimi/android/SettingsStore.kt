@@ -32,6 +32,10 @@ object SettingsStore {
     private const val KEY_OVERLAY_X = "overlay_x"
     private const val KEY_OVERLAY_Y = "overlay_y"
     private const val KEY_OVERLAY_SAVED = "overlay_saved"
+    private const val KEY_DISPLAY_MODE = "caption_display_mode"
+    private const val KEY_OVERLAY_WIDTH = "overlay_width_percent"
+    private const val KEY_EXPANDED_Y = "expanded_overlay_y"
+    private const val KEY_EXPANDED_X = "expanded_overlay_x"
 
     const val PROVIDER_DASHSCOPE = "dashscope"
     const val PROVIDER_OPENAI = "openai"
@@ -60,7 +64,8 @@ object SettingsStore {
     internal fun observeAppearance(context: Context, onChange: () -> Unit): () -> Unit {
         val preferences = get(context)
         val keys = setOf(KEY_FONT_SIZE, KEY_OVERLAY_OPACITY, KEY_OVERLAY_BG_ALPHA,
-            KEY_IMMERSIVE_SUBTITLES, KEY_HISTORY_LINES, KEY_TRANSLATION_COLOR, KEY_OVERLAY_Y)
+            KEY_IMMERSIVE_SUBTITLES, KEY_HISTORY_LINES, KEY_TRANSLATION_COLOR, KEY_OVERLAY_Y,
+            KEY_OVERLAY_X, KEY_EXPANDED_Y, KEY_EXPANDED_X, KEY_DISPLAY_MODE, KEY_OVERLAY_WIDTH)
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key in keys) onChange()
         }
@@ -224,7 +229,7 @@ object SettingsStore {
         get(context).getInt(KEY_OVERLAY_OPACITY, 80).coerceIn(20, 100)
 
     fun setOverlayOpacity(context: Context, value: Int) =
-        get(context).edit().putInt(KEY_OVERLAY_OPACITY, value.coerceIn(20, 100)).apply()
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_OPACITY, value.coerceIn(20, 100)))
 
     /** History retention is opt-in; zero clears retained content immediately. */
     fun historyLines(context: Context): Int =
@@ -232,7 +237,7 @@ object SettingsStore {
 
     fun setHistoryLines(context: Context, value: Int) {
         val limit = value.coerceIn(0, 6)
-        get(context).edit().putInt(KEY_HISTORY_LINES, limit).apply()
+        writeAppearance(get(context).edit().putInt(KEY_HISTORY_LINES, limit))
         app.yuxino.mimi.android.provider.SubtitleBus.setHistoryLimit(limit)
     }
 
@@ -264,25 +269,45 @@ object SettingsStore {
         get(context).getInt(KEY_OVERLAY_BG_ALPHA, 65).coerceIn(0, 90)
 
     fun setOverlayBgAlpha(context: Context, value: Int) =
-        get(context).edit().putInt(KEY_OVERLAY_BG_ALPHA, value.coerceIn(0, 90)).apply()
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_BG_ALPHA, value.coerceIn(0, 90)))
 
-    /** Plain, touch-through subtitles; changed appearance takes effect on the next session. */
+    /** Plain, touch-through subtitles; appearance updates the active views immediately. */
     fun immersiveSubtitles(context: Context): Boolean =
         get(context).getBoolean(KEY_IMMERSIVE_SUBTITLES, false)
 
     fun setImmersiveSubtitles(context: Context, enabled: Boolean) =
-        get(context).edit().putBoolean(KEY_IMMERSIVE_SUBTITLES, enabled).apply()
+        writeAppearance(get(context).edit().putBoolean(KEY_IMMERSIVE_SUBTITLES, enabled))
 
     /** Last overlay vertical offset from the bottom edge, persisted. */
     fun overlayYOffset(context: Context): Int =
         get(context).getInt(KEY_OVERLAY_Y, 48).coerceIn(0, 2000)
 
     fun setOverlayYOffset(context: Context, y: Int) =
-        get(context).edit().putInt(KEY_OVERLAY_Y, y.coerceIn(0, 2000)).apply()
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_Y, y.coerceIn(0, 2000)))
 
     /** Clears a persisted drag position so the card returns to bottom-center. */
     fun clearOverlayPosition(context: Context) =
-        get(context).edit().putInt(KEY_OVERLAY_Y, 48).apply()
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_Y, 48).putInt(KEY_OVERLAY_X, 0)
+            .putInt(KEY_EXPANDED_Y, 0).putInt(KEY_EXPANDED_X, 0))
+
+    private fun writeAppearance(editor: android.content.SharedPreferences.Editor) {
+        check(editor.commit()) { "Appearance preference write failed" }
+    }
+
+    fun displayMode(context: Context): CaptionDisplayMode =
+        CaptionDisplayMode.fromId(get(context).getString(KEY_DISPLAY_MODE, null))
+    fun setDisplayMode(context: Context, mode: CaptionDisplayMode) =
+        writeAppearance(get(context).edit().putString(KEY_DISPLAY_MODE, mode.id))
+    fun overlayWidthPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_WIDTH, 92).coerceIn(55, 100)
+    fun setOverlayWidthPercent(context: Context, value: Int) =
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_WIDTH, value.coerceIn(55, 100)))
+    fun expandedYOffset(context: Context): Int = get(context).getInt(KEY_EXPANDED_Y, 0).coerceIn(0, 2000)
+    fun overlayXOffset(context: Context, expanded: Boolean): Int =
+        get(context).getInt(if (expanded) KEY_EXPANDED_X else KEY_OVERLAY_X, 0).coerceIn(-2000, 2000)
+    fun setOverlayPosition(context: Context, expanded: Boolean, x: Int, y: Int) =
+        writeAppearance(get(context).edit()
+            .putInt(if (expanded) KEY_EXPANDED_X else KEY_OVERLAY_X, x.coerceIn(-2000, 2000))
+            .putInt(if (expanded) KEY_EXPANDED_Y else KEY_OVERLAY_Y, y.coerceIn(0, 2000)))
 
     /** Preset translation colors, index-matched to the settings spinner. */
     val COLOR_PRESETS = listOf(0xFF4FD1C5, 0xFFFFFFFF, 0xFFFFD54F, 0xFF9AE66E, 0xFFF49AB5)
@@ -298,9 +323,8 @@ object SettingsStore {
             .coerceIn(0, COLOR_PRESETS.size - 1)
 
     fun setTranslationColorIndex(context: Context, index: Int) =
-        get(context).edit()
-            .putInt(KEY_TRANSLATION_COLOR, index.coerceIn(0, COLOR_PRESETS.size - 1))
-            .apply()
+        writeAppearance(get(context).edit()
+            .putInt(KEY_TRANSLATION_COLOR, index.coerceIn(0, COLOR_PRESETS.size - 1)))
 
     fun sourceLang(context: Context): String =
         get(context).getString(KEY_SOURCE_LANG, "auto") ?: "auto"
@@ -318,5 +342,5 @@ object SettingsStore {
         get(context).getInt(KEY_FONT_SIZE, 16).coerceIn(12, 24)
 
     fun setFontSize(context: Context, value: Int) =
-        get(context).edit().putInt(KEY_FONT_SIZE, value.coerceIn(12, 24)).apply()
+        writeAppearance(get(context).edit().putInt(KEY_FONT_SIZE, value.coerceIn(12, 24)))
 }
