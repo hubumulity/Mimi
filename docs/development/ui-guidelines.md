@@ -257,3 +257,11 @@ from the main page, with its actual width and available height. Normalize
 `getGlobalVisibleRect` root coordinates with the root window origin before
 comparing them with `getLocationOnScreen` glyph positions. Use side-by-side
 preview/controls when a wide dialog fits and avoid a large redundant title.
+
+A dialog can cap its custom panel below a fixed child height. Bound the
+workspace to the actual measure spec; otherwise its ScrollView reports a larger
+viewport than the visible panel and cannot bring lower controls fully into view.
+Native appearance acceptance checks the complete visible touch bounds and
+injects a real tap, then verifies both saved color and the existing caption view.
+`performClick` and correct saved values alone do not prove that a user can reach
+the control.
