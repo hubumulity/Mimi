@@ -84,7 +84,7 @@
             <LinearLayout android:id="@+id/general_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:labelFor="@id/interface_language"
                     android:text="@string/settings_interface_language" android:textSize="16sp" android:textColor="@color/mimi_text" />
-                <Spinner android:id="@+id/interface_language" android:layout_width="match_parent" android:layout_height="56dp"
+                <Spinner android:id="@+id/interface_language" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
                     android:layout_marginTop="8dp" android:background="@drawable/settings_field" android:popupBackground="@color/mimi_bg" android:spinnerMode="dropdown" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
                     android:text="@string/settings_advanced" android:textSize="16sp" android:textColor="@color/mimi_text" />

@@ -34,8 +34,10 @@ internal object HelpUi {
         return row
     }
     fun bind(activity: AppCompatActivity, button: ImageButton, title: String, message: String) {
-        (button.getTag(R.id.help_hover) as? HoverHelp)?.dispose()
-        val hover = HoverHelp(activity, button, message)
+        val previous = button.getTag(R.id.help_hover) as? HoverHelp
+        if (previous?.title == title && previous.message == message) return
+        previous?.dispose()
+        val hover = HoverHelp(activity, button, title, message)
         button.setTag(R.id.help_hover, hover)
         button.apply {
             setImageResource(R.drawable.ic_help)
@@ -71,7 +73,7 @@ internal object HelpUi {
     }
 
     /** Native tooltips truncate at three lines. This bounded scrollable popup preserves the full explanation. */
-    private class HoverHelp(private val activity: AppCompatActivity, private val button: ImageButton, var message: String) : View.OnAttachStateChangeListener {
+    private class HoverHelp(private val activity: AppCompatActivity, private val button: ImageButton, val title: String, var message: String) : View.OnAttachStateChangeListener {
         private var popup: PopupWindow? = null
         private var pending = false
         private val show = Runnable { pending = false; show() }

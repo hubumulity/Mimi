@@ -30,21 +30,24 @@ Rust subtitle/provider runtime as desktop through JNI.
   SecretKey; Baidu requires AppID and AppKey. Other services use an API key. Built-in service models,
   endpoints and language capabilities follow the shared factory. Stored secrets are not filled back into the editor;
   leaving a secret field empty preserves its saved value. Changes are written only with Save and use.
-- **Subtitle overlay** — `TYPE_APPLICATION_OVERLAY` floating window, text-hugging
-  card, always horizontally centered over the video, vertically draggable
-  (position persists). Tap it to open a translucent reading panel with the
+- **Subtitle overlay** — `TYPE_APPLICATION_OVERLAY` floating window, with
+  independently saved compact and expanded positions. Drag the compact caption
+  or the expanded panel's top handle to move it. Tap the compact caption to open a reading panel with the
   current source and translation; confirmed lines appear there only when
-  bounded history is enabled in settings. The panel has a language shortcut,
-  a labeled font-size slider, collapse action, and immersive toggle. Its compact card has adjustable background alpha
-  (0–90 %), text color presets, font size, and whole-window opacity.
+  bounded history is enabled in settings. The panel has language, appearance,
+  collapse and immersive actions. Settings and floating appearance controls offer
+  original/translation/bilingual display, width (55–100 %), background alpha
+  (0–90 %), text color presets, font size, and whole-window opacity. The expanded
+  panel also has a direct resize handle.
   Appearance changes apply immediately to an existing overlay; empty live captions
   do not leave a background-only floating window. An optional
   immersive mode shows plain text with a contrast shadow and passes touches
   through to the app below. A small exit control follows the subtitle position;
   Home and Settings also enter/exit immersive mode without stopping the session.
   Returning restores the previous compact/expanded state and saved position.
-  In landscape, the expanded panel stays centered and caps its
-  width at 560 dp; its covered area receives touches until it is collapsed.
+  Floating captions temporarily hide while Mimi's own pages are open; Home
+  shows the current caption and capture continues. Leaving Mimi restores the
+  floating window. The expanded panel's covered area receives touches until it is collapsed.
 - **Subtitle previews** — the shared factory selects complete paired previews
   for Audio3 + text translation and sentence-identified realtime previews for
   integrated live clients. New sentence identities never borrow old final lines;
@@ -102,6 +105,11 @@ new APK using `apksigner verify --print-certs`. If Android reports
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, use the existing matching debug key;
 do not uninstall the configured app to bypass the mismatch. Preserve its
 encrypted credentials and settings. Release signing remains separate.
+CI debug certificates are disposable. For repeated local acceptance, sign both
+the debug app and its instrumentation APK with the same existing local debug
+keystore, verify their certificates, and keep that identity for later updates.
+The `.dev` app ID alone does not provide signing continuity. Never use a release
+key for these debuggable packages.
 
 ### Signed release
 
@@ -132,8 +140,8 @@ APK is included in the shared `SHA256SUMS.txt`. Existing public assets are never
 overwritten. The reusable Android workflow cannot publish a separate release.
 
 Keep the signing key and its backup outside Git. Use the same key for future
-updates. Debug installations have a different signature and must be uninstalled
-first, which removes their saved settings and credentials. The APK uses release
+updates. The debug app has a separate `.dev` package and can remain installed
+alongside the release app. Preserve each app's settings and credentials. The APK uses release
 build settings; this does not imply physical-device or all-provider validation.
 
 ## Local UI preview

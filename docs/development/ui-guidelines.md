@@ -206,3 +206,16 @@ width; caption touch-through must not make restoration unreachable. Test repeate
 mode notifications, rotation, content/font reflow and returning from both compact
 and expanded states. Host geometry tests do not establish native window or touch
 acceptance.
+
+Android credential acceptance checks the actual password transformation after
+single-line setup and typing, then both eye states. An input-type bit or an empty
+field alone does not prove masking. Keep unsaved drafts local and discard them
+on editor exit. Rebinding unchanged native help must preserve its hover/focus
+state while capture health or subtitles update.
+
+Native touch fixtures first scroll controls into their visible bounds and wait
+for transient system clipboard surfaces to close. Language fixtures navigate to
+the visible language tab before selecting a value. Verify actual wide compositor
+bounds before calling a run landscape acceptance; rotation settings alone are
+insufficient when the launcher requests a fixed orientation. Check the caption
+reading viewport as well as the panel's outer bounds at large fonts.

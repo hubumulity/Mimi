@@ -31,9 +31,13 @@ class MainActivity : AppCompatActivity() {
     private var starting = false
     private lateinit var guide: FirstRunGuide
     private val immersiveHelp = ImmersiveModeHelp(this)
+    private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val previewUpdate = Runnable {
+        if (!isFinishing && MimiService.isRunning) refreshLivePreview()
+    }
     private var stopObservingAppearance: (() -> Unit)? = null
     private val subtitleListener = object : app.yuxino.mimi.android.provider.SubtitleBus.Listener {
-        override fun onSubtitleChanged() { runOnUiThread { refreshUi() } }
+        override fun onSubtitleChanged() { previewHandler.removeCallbacks(previewUpdate); previewHandler.post(previewUpdate) }
     }
     private val stateListener: () -> Unit = { runOnUiThread { refreshUi() } }
 
@@ -109,6 +113,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         MimiService.removeStateListener(stateListener)
         app.yuxino.mimi.android.provider.SubtitleBus.removeListener(subtitleListener)
+        previewHandler.removeCallbacks(previewUpdate)
         stopObservingAppearance?.invoke()
         stopObservingAppearance = null
         immersiveHelp.dismiss()
@@ -225,10 +230,14 @@ class MainActivity : AppCompatActivity() {
             SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this), live = running,
         )
         if (running) {
-            val bus = app.yuxino.mimi.android.provider.SubtitleBus
-            findViewById<SubtitlePreviewView>(R.id.subtitle_preview).showLive(
-                bus.displaySource, bus.displayTranslation, bus.liveHidden, getString(R.string.capture_waiting))
+            refreshLivePreview()
         }
+    }
+
+    private fun refreshLivePreview() {
+        val bus = app.yuxino.mimi.android.provider.SubtitleBus
+        findViewById<SubtitlePreviewView>(R.id.subtitle_preview).showLive(
+            bus.displaySource, bus.displayTranslation, bus.liveHidden, getString(R.string.capture_waiting))
     }
 
     private fun languageLabel(code: String): String = languageDisplayName(this, code)

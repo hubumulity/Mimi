@@ -508,6 +508,9 @@ class UiSmokeInstrumentation : Instrumentation() {
             clipboard.clearPrimaryClip()
         }
         onUi { diagnostics.finish() }
+        // Android's clipboard preview is another UID's touchable window. Let
+        // that transient surface close before injecting actual slider gestures.
+        SystemClock.sleep(8000)
         val originalTarget = SettingsStore.targetLang(targetContext)
         val testTarget = if (originalTarget == "ja") "en" else "ja"
         click(home, R.id.target_language_action)
@@ -576,7 +579,10 @@ class UiSmokeInstrumentation : Instrumentation() {
             for (field in provider.fields) {
                 val input = root.findViewWithTag<TextInputEditText>("credential-${field.id}")
                 check(input != null) { "Provider field missing: ${provider.id}/${field.id}" }
-                if (field.secret) check(input.text.toString().isEmpty()) { "Stored credential was exposed in UI" }
+                if (field.secret) {
+                    check(input.text.toString().isEmpty()) { "Stored credential was exposed in UI" }
+                    check(input.transformationMethod is android.text.method.PasswordTransformationMethod) { "Credential input is not masked: ${provider.id}/${field.id}" }
+                }
             }
             if (provider.id in listOf("azure", "tencent", "dashscope")) capture("service-${provider.id}-$theme")
             if (!configuredBefore) {
@@ -584,7 +590,18 @@ class UiSmokeInstrumentation : Instrumentation() {
                 check(SettingsStore.provider(targetContext) == activeProvider) { "Invalid form changed active provider" }
             }
             val secret = provider.fields.first { it.secret }
-            onUi { root.findViewWithTag<TextInputEditText>("credential-${secret.id}").setText("unsaved-test-value") }
+            onUi {
+                val input = root.findViewWithTag<TextInputEditText>("credential-${secret.id}")
+                input.setText("unsaved-test-value")
+                check(input.transformationMethod is android.text.method.PasswordTransformationMethod) { "Typing exposed the credential draft" }
+                var parent = input.parent
+                while (parent !is com.google.android.material.textfield.TextInputLayout) parent = parent.parent
+                val eye = parent.findViewById<View>(com.google.android.material.R.id.text_input_end_icon)
+                check(eye.performClick())
+                check(input.transformationMethod !is android.text.method.PasswordTransformationMethod && input.text.toString() == "unsaved-test-value")
+                check(eye.performClick())
+                check(input.transformationMethod is android.text.method.PasswordTransformationMethod)
+            }
             click(editor, R.id.back)
             check(SettingsStore.isConfigured(targetContext, provider) == configuredBefore) { "Unsaved form changed configuration" }
         }
@@ -654,14 +671,15 @@ class UiSmokeInstrumentation : Instrumentation() {
             check(expanded.isShown && !compact.isShown) { "Expanded floating overlay did not open" }
             if (targetContext.resources.displayMetrics.widthPixels > targetContext.resources.displayMetrics.heightPixels) {
                 val params = overlay.layoutParams as WindowManager.LayoutParams
-                check(params.width <= (560 * targetContext.resources.displayMetrics.density).toInt()) {
-                    "Landscape panel is too wide"
+                check(params.width <= targetContext.resources.displayMetrics.widthPixels) {
+                    "Landscape panel exceeds the screen"
                 }
-                check(params.height <= (targetContext.resources.displayMetrics.heightPixels * 0.48f).toInt()) {
+                check(params.height <= (targetContext.resources.displayMetrics.heightPixels * 0.88f).toInt()) {
                     "Landscape panel blocks too much height"
                 }
             }
             capture("overlay-after-expanded-default-$theme")
+            check(expanded.findViewWithTag<ScrollView>("subtitle-transcript-scroll").height >= (64 * expanded.resources.displayMetrics.density).toInt()) { "Expanded caption viewport is too short to read" }
             checkOverlayHeaderLabels(expanded)
             val savedHistory = SettingsStore.historyLines(targetContext)
             targetContext.startService(Intent(targetContext, MimiService::class.java)
@@ -998,6 +1016,9 @@ class UiSmokeInstrumentation : Instrumentation() {
 
     /** Actual touch events exercise fromUser persistence, including dragging inside a scroll view. */
     private fun drag(seek: SeekBar, value: Int) {
+        onUi { seek.requestRectangleOnScreen(android.graphics.Rect(0, 0, seek.width, seek.height), true) }
+        waitForIdleSync()
+        Thread.sleep(220)
         val location = IntArray(2)
         var start = 0f
         var end = 0f

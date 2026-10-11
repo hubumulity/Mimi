@@ -45,7 +45,9 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
             check(SettingsStore.configuration(context, it.provider).credentials == it.credentials)
             check(SettingsStore.translationConfiguration(context) == translation && SettingsStore.qwenMtModel(context) == model)
         }
-        check(SettingsStore.activateProvider(context, ServiceProvider.fromId(active)))
+        val previousProvider = ServiceProvider.fromId(active)
+        if (SettingsStore.isConfigured(context, previousProvider)) check(SettingsStore.activateProvider(context, previousProvider))
+        else SettingsStore.setProvider(context, active)
         SettingsStore.setSourceLang(context, source); SettingsStore.setTargetLang(context, target)
         check(SettingsStore.flushPendingWritesForTests(context))
         check(SettingsStore.provider(context) == active && SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)

@@ -111,6 +111,7 @@ class ServiceSettingsActivity : AppCompatActivity() {
             this.tag="credential-$tag"; isSaveEnabled=false; importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             inputType=if(secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             isSingleLine=true; textSize=16f; typeface=android.graphics.Typeface.DEFAULT
+            if (secret) transformationMethod = android.text.method.PasswordTransformationMethod.getInstance()
         }
         box.addView(edit,LinearLayout.LayoutParams(-1,-2))
         ServiceSettingsUi.addField(this,container,box,edit,title,dp(18))

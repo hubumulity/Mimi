@@ -6,7 +6,7 @@ import android.view.ViewTreeObserver
 import android.widget.TextView
 
 /** A bounded compact viewport following the latest lines without discarding text. */
-// This service-owned system overlay has no AppCompat Activity/theme.
+// Shared by the preview and system overlay, which has no AppCompat Activity/theme.
 @SuppressLint("AppCompatCustomView")
 internal class LatestCaptionTextView(context: Context) : TextView(context) {
     private val followLatest = ViewTreeObserver.OnPreDrawListener {

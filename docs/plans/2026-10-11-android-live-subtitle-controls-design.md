@@ -40,6 +40,23 @@ its controls. Floating windows temporarily hide above Mimi activities while
 capture, provider sessions and paired state continue; leaving Mimi restores the
 same floating views and reading position. Activity transitions cannot flash a
 caption over credential fields. Keep sample content labeled when idle.
+Bound Home/settings previews to the compact caption line limits so large fonts
+and long live text cannot push every appearance control offscreen. Keep Start /
+Stop pinned while status and recovery instructions scroll with the Home content.
+
+The expanded panel uses one top row for collapse, drag/language and appearance,
+and one bottom row for immersion, provider/model details and resize. Keep its
+scroll viewport readable in short landscape windows; model details can ellipsize
+with a full accessible label and Home shortcut. At normal fonts the panel uses at
+most 72% of the safe height; large-font landscape uses at most 88%. These limits
+are checked together with the actual reading viewport, rather than retaining an
+old height cap that leaves controls but no caption. The small immersion restore
+target remains reachable after rotation and font/content changes.
+
+Streaming updates refresh the Home caption only and coalesce pending preview
+work. Stable help bindings survive repeated health/status updates. Native secret
+fields explicitly restore password masking after single-line configuration; test
+typing and both eye states using unsaved synthetic drafts.
 
 Acceptance covers first setup, choosing an already configured service, switching
 provider while active, viewing the current caption on Home, changing display and

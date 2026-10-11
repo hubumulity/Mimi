@@ -177,7 +177,13 @@ class MimiService : Service() {
         }
         ownUiChanged = {
             mainHandler.removeCallbacks(ownUiUpdate)
-            if (ownUiVisible) renderBus() else mainHandler.postDelayed(ownUiUpdate, 120)
+            if (ownUiVisible) {
+                if (!previewOverOwnUi) {
+                    appearanceDialog?.dismiss()
+                    immersiveHelp.dismiss()
+                }
+                renderBus()
+            } else mainHandler.postDelayed(ownUiUpdate, 120)
         }
         createChannel()
         SubtitleBus.addListener(busListener)
@@ -796,73 +802,76 @@ class MimiService : Service() {
         val panel = LinearLayout(this).apply {
             tag = "expanded-subtitles"
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(18))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             background = GradientDrawable().apply {
                 cornerRadius = dp(22).toFloat()
                 setColor(0xD91B1B1B.toInt())
             }
         }
-        panel.addView(FrameLayout(this).apply {
+        fun openHome() = startActivity(Intent(this, app.yuxino.mimi.android.MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        header.addView(panelIcon(R.drawable.ic_expand, R.string.overlay_collapse_description).apply {
+            tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        header.addView(FrameLayout(this).apply {
             tag = "overlay-drag"; isClickable = true; isFocusable = true
             contentDescription = interfaceString(R.string.overlay_drag)
-            setOnClickListener { showAppearanceControls() }
+            setOnClickListener { openHome() }
             addView(View(this@MimiService).apply {
                 background = GradientDrawable().apply { cornerRadius = dp(2).toFloat(); setColor(0xFF858585.toInt()) }
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.CENTER))
-        }, LinearLayout.LayoutParams(-1, dp(48)))
-        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val collapse = panelIcon(R.drawable.ic_expand, R.string.overlay_collapse_description).apply {
-            tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
-        }
-        val font = panelIcon(R.drawable.ic_settings, R.string.settings_tab_appearance).apply {
-            tag = "overlay-font"
-            setOnClickListener { showAppearanceControls() }
-        }
-        val immersive = panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
-            tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
-        }
-        header.addView(collapse, LinearLayout.LayoutParams(dp(48), dp(48)))
-        header.addView(font, LinearLayout.LayoutParams(0, dp(48), 1f))
-        header.addView(immersive, LinearLayout.LayoutParams(dp(48), dp(48)))
+            }, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+            addView(TextView(this@MimiService).apply {
+                tag = "overlay-route"
+                text = if (sessionOriginalOnly) languageName(sessionSourceLanguage)
+                    else "${languageName(sessionSourceLanguage)} → ${languageName(sessionTargetLanguage)}"
+                contentDescription = interfaceString(R.string.overlay_language_description)
+                textSize = 14f; setTextColor(0xFFDDDDDD.toInt()); maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER
+            }, FrameLayout.LayoutParams(-1, -1).apply { topMargin = dp(8) })
+        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        header.addView(panelIcon(R.drawable.ic_settings, R.string.settings_tab_appearance).apply {
+            tag = "overlay-font"; setOnClickListener { showAppearanceControls() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         panel.addView(header)
-        val route = TextView(this).apply {
-            tag = "overlay-route"
-            text = if (sessionOriginalOnly) languageName(sessionSourceLanguage)
-                else "${languageName(sessionSourceLanguage)} → ${languageName(sessionTargetLanguage)}"
-            contentDescription = interfaceString(R.string.overlay_language_description)
-            textSize = 14f; setTextColor(0xFFDDDDDD.toInt()); maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            minimumHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
-            isClickable = true; isFocusable = true
-            setOnClickListener { startActivity(Intent(this@MimiService, app.yuxino.mimi.android.MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        }
-        panel.addView(route, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        val footer = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        footer.addView(panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
+            tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         val provider = ServiceProvider.fromId(SettingsStore.provider(this))
-        val providerRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers" }
+        val providerRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers"
+            isClickable = true; isFocusable = true; minimumHeight = dp(48)
+            contentDescription = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank {
+                app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this@MimiService), provider)
+            }
+            setOnClickListener { openHome() }
+        }
         fun mark(resource: Int) = ImageView(this).apply {
             setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        providerRow.addView(mark(serviceProviderIcon(provider)), LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) })
+        providerRow.addView(mark(serviceProviderIcon(provider)), LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(4) })
         val translator = SettingsStore.textTranslationProvider(this)
         if (provider == ServiceProvider.DASHSCOPE && translator != TextTranslationProvider.BUILTIN && translator != TextTranslationProvider.NONE) {
-            providerRow.addView(mark(translationProviderIcon(translator)), LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) })
+            providerRow.addView(mark(translationProviderIcon(translator)), LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(4) })
         }
         providerRow.addView(TextView(this).apply {
-            tag = "overlay-model"
-            text = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank { app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this@MimiService), provider) }
-            textSize = 14f; setTextColor(0xFFBBBBBB.toInt())
+            tag = "overlay-model"; text = providerRow.contentDescription
+            textSize = 14f; setTextColor(0xFFBBBBBB.toInt()); maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        panel.addView(providerRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        footer.addView(providerRow, LinearLayout.LayoutParams(0, dp(48), 1f))
+        footer.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
+            tag = "overlay-resize"; setOnClickListener { showAppearanceControls() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         expandedStatusView = TextView(this).apply {
             setTextColor(0xFFB9B9B9.toInt())
             textSize = 14f
             visibility = View.GONE
         }
-        panel.addView(expandedStatusView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
 
         val scroll = ScrollView(this).apply {
             tag = "subtitle-transcript-scroll"
@@ -877,6 +886,7 @@ class MimiService : Service() {
             true
         }
         val transcript = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        transcript.addView(expandedStatusView, LinearLayout.LayoutParams(-1, -2))
         historyView = TextView(this).apply {
             setTextColor(0xFFB9B9B9.toInt())
             textSize = (SettingsStore.fontSize(this@MimiService) - 1).coerceAtLeast(12).toFloat()
@@ -902,11 +912,8 @@ class MimiService : Service() {
         transcript.addView(expandedSourceView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
         transcript.addView(expandedTranslationView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         scroll.addView(transcript)
-        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(18) })
-        panel.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
-            tag = "overlay-resize"
-            setOnClickListener { showAppearanceControls() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { gravity = Gravity.END })
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8) })
+        panel.addView(footer)
         return panel
     }
 
@@ -1118,7 +1125,7 @@ class MimiService : Service() {
     private fun expandedPanelHeight(historyCount: Int): Int {
         val (availableWidth, availableHeight) = overlayAvailableSize()
         val landscape = availableWidth > availableHeight
-        val maxFraction = if (landscape) 0.88f else 0.72f
+        val maxFraction = if (landscape && resources.configuration.fontScale >= 1.5f) 0.88f else 0.72f
         return dp(380 + historyCount * 60)
             .coerceAtMost((availableHeight * maxFraction).toInt())
     }
@@ -1214,10 +1221,11 @@ class MimiService : Service() {
             maxLines = maxOf(maxHistory, 1) * 3
             text = historyText
         }
-        // Translation sessions keep their established bilingual display. Original-only
-        // sessions always show the recognized text regardless of its language.
+        // Display preferences filter views only; paired shared state is unchanged.
+        // Recognition-only sessions always show their source.
         val liveVisible = !SubtitleBus.liveHidden
         sourceView?.apply {
+            setTextColor(if (mode == CaptionDisplayMode.ORIGINAL) SettingsStore.translationColor(this@MimiService) else 0xFFE7E7E7.toInt())
             visibility = if (liveVisible && mode.sourceVisible && SubtitleBus.displaySource.isNotBlank()) View.VISIBLE else View.GONE
             text = SubtitleBus.displaySource
         }
@@ -1226,6 +1234,7 @@ class MimiService : Service() {
             text = SubtitleBus.displayTranslation
         }
         expandedSourceView?.apply {
+            setTextColor(if (mode == CaptionDisplayMode.ORIGINAL) SettingsStore.translationColor(this@MimiService) else 0xFFD5D5D5.toInt())
             visibility = if (liveVisible && mode.sourceVisible && SubtitleBus.displaySource.isNotBlank()) View.VISIBLE else View.GONE
             text = SubtitleBus.displaySource
         }

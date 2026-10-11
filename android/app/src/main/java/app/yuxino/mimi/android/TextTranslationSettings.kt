@@ -274,6 +274,7 @@ internal class TextTranslationSettings(private val activity: AppCompatActivity) 
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             inputType = InputType.TYPE_CLASS_TEXT or if (secret) InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             typeface = android.graphics.Typeface.DEFAULT
+            if (secret) transformationMethod = android.text.method.PasswordTransformationMethod.getInstance()
         }
         inputLayouts[edit] = box
         box.addView(edit, LinearLayout.LayoutParams(-1, -2))

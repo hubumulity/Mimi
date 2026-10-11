@@ -37,7 +37,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<LinearLayout>(R.id.appearance_panel).addView(appearance)
         val tabs = findViewById<RadioGroup>(R.id.settings_tabs)
-        val stacked = resources.configuration.fontScale >= 1.5f
+        val stacked = resources.configuration.fontScale >= 1.5f &&
+            resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
         tabs.orientation = if (stacked) RadioGroup.VERTICAL else RadioGroup.HORIZONTAL
         for (index in 0 until tabs.childCount) tabs.getChildAt(index).layoutParams = RadioGroup.LayoutParams(
             if (stacked) -1 else 0, -2, if (stacked) 0f else 1f,

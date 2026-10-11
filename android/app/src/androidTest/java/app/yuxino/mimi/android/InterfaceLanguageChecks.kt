@@ -91,6 +91,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     select(tag)
                     assertLanguage(tag)
                     onUi {
+                        settings!!.findViewById<View>(R.id.tab_appearance).performClick()
                         check(settings!!.findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == R.id.tab_appearance)
                         val collapse = WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull {
                             it.findViewWithTag<View>("collapse-overlay")
@@ -196,6 +197,8 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
     }
 
     private fun select(tag: String) {
+        onUi { settings!!.findViewById<View>(R.id.tab_general).performClick() }
+        instrumentation.waitForIdleSync()
         val previous = settings
         var changed = false
         onUi {

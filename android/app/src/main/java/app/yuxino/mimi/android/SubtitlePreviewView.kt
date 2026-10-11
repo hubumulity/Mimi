@@ -20,8 +20,8 @@ class SubtitlePreviewView @JvmOverloads constructor(
     private var appearanceShortcut = false
     private var widthPercent = 92
     private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
-    private val source = TextView(context)
-    private val translation = TextView(context)
+    private val source = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 2 }
+    private val translation = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 3 }
     private val subtitle = LinearLayout(context)
 
     init {
@@ -99,6 +99,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
         source.textSize = fontSize.coerceIn(12, 24).toFloat()
         translation.textSize = fontSize.coerceIn(12, 24) + 3f
         translation.setTextColor(color)
+        source.setTextColor(if (effective == CaptionDisplayMode.ORIGINAL) color else Color.rgb(203, 203, 203))
         subtitle.alpha = if (immersive) 0.8f else opacity.coerceIn(20, 100) / 100f
         source.setShadowLayer(if (immersive) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)
         translation.setShadowLayer(if (immersive) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)

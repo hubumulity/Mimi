@@ -182,15 +182,18 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         val history = SubtitleBus.historySnapshot()
         onUi { SubtitleBus.onSourceDraft("Synthetic original text.", "en"); SubtitleBus.onTranslationDraft("合成译文。") }
         for (mode in CaptionDisplayMode.entries) {
-            onUi { SettingsStore.setDisplayMode(context, mode) }
+            onUi { SettingsStore.setDisplayMode(context, mode); SettingsStore.setTranslationColorIndex(context, 2) }
             waitFor {
                 root().findViewWithTag<View>("expanded-source").isShown == mode.sourceVisible &&
                     root().findViewWithTag<View>("expanded-translation").isShown == mode.translationVisible
             }
             check(root() === sameWindow && SubtitleBus.historySnapshot() == history)
+            if (mode == CaptionDisplayMode.ORIGINAL) onUi {
+                check(root().findViewWithTag<TextView>("expanded-source").currentTextColor == SettingsStore.translationColor(context))
+            }
             capture("mode-${mode.id}")
         }
-        onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL) }
+        onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL); SettingsStore.setTranslationColorIndex(context, 1) }
         val oldWidth = root().width
         onUi { SettingsStore.setOverlayWidthPercent(context, 65) }
         waitFor { root().width < oldWidth }
@@ -228,13 +231,66 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         waitFor { root().isShown }
         val existing = root()
         capture("outside-mimi")
+        onUi { root().findViewWithTag<View>("compact-subtitle").performClick() }
+        waitFor { root().findViewWithTag<View>("expanded-subtitles").isShown }
+        onUi { root().findViewWithTag<View>("overlay-font").performClick() }
+        waitFor { WindowInspector.getGlobalWindowViews().any { it.findViewWithTag<SeekBar>("overlay-font-slider") != null } }
         val settings = test.startActivitySync(Intent(context, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
         waitFor { !root().isShown }
+        waitFor { WindowInspector.getGlobalWindowViews().none { it.findViewWithTag<SeekBar>("overlay-font-slider") != null } }
         onUi { settings.findViewById<View>(R.id.tab_appearance).performClick() }
         capture("settings-uncovered")
         onUi { settings.finish(); home.finish() }
         waitFor { root().isShown }
         check(root() === existing) { "Own-page visibility replaced subtitle views" }
+    }
+
+    private fun providerMarkChecks(home: MainActivity) {
+        val provider = app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE
+        val saved = SettingsStore.configuration(context, provider)
+        val translation = SettingsStore.translationConfiguration(context)
+        val deepL = SettingsStore.translationConfiguration(context, app.yuxino.mimi.android.provider.TextTranslationProvider.DEEPL).let {
+            if (it.apiKey == "synthetic-ui-fixture-never-sent") it.copy(apiKey = "") else it
+        }
+        val model = SettingsStore.qwenMtModel(context)
+        val active = SettingsStore.provider(context)
+        val synthetic = app.yuxino.mimi.android.provider.ServiceConfiguration(provider,
+            mapOf("apiKey" to "synthetic-ui-fixture-never-sent"), saved.endpoint, saved.model)
+        try {
+            for (independent in listOf(false, true)) {
+                val translator = if (independent) app.yuxino.mimi.android.provider.TranslationConfiguration(
+                    provider = app.yuxino.mimi.android.provider.TextTranslationProvider.DEEPL,
+                    apiKey = "synthetic-ui-fixture-never-sent",
+                ) else app.yuxino.mimi.android.provider.TranslationConfiguration(
+                    provider = app.yuxino.mimi.android.provider.TextTranslationProvider.BUILTIN,
+                )
+                check(SettingsStore.saveConfiguration(context, synthetic, translator, true, model))
+                check(SettingsStore.activateProvider(context, provider))
+                context.stopService(Intent(context, MimiService::class.java))
+                waitFor { WindowInspector.getGlobalWindowViews().none { it.tag == "mimi-overlay" } }
+                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW)
+                    .putExtra("preview_over_own_ui", true))
+                waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "mimi-overlay" } }
+                val page = test.startActivitySync(Intent(context, SettingsActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+                onUi { page.finish() }
+                waitFor { home.hasWindowFocus() }
+                onUi { SubtitleBus.onSourceDraft("Synthetic provider badge check.", "en"); SubtitleBus.onTranslationDraft("合成译文。") }
+                waitFor { home.findViewById<View>(R.id.translation_provider_icon).isShown == independent }
+                onUi { root().findViewWithTag<View>("compact-subtitle").performClick() }
+                waitFor { root().findViewWithTag<View>("expanded-subtitles").isShown }
+                onUi {
+                    val marks = root().findViewWithTag<android.widget.LinearLayout>("overlay-providers")
+                    check(marks.childCount == if (independent) 3 else 2)
+                }
+                capture(if (independent) "two-provider-marks" else "one-provider-mark")
+            }
+        } finally {
+            check(SettingsStore.saveConfiguration(context, saved, deepL, false, model))
+            check(SettingsStore.saveConfiguration(context, saved, translation, true, model))
+            SettingsStore.setProvider(context, active)
+            check(SettingsStore.flushPendingWritesForTests(context))
+        }
     }
 
     fun run(arguments: Bundle?) {
@@ -325,6 +381,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 if (!baseline) {
                     liveDisplayControls()
                     immersivePlacementChecks(checkNotNull(home))
+                    providerMarkChecks(checkNotNull(home))
                     ownSurfaceChecks(checkNotNull(home))
                     // Confirmed pairs intentionally remain readable. Test the genuinely empty state.
                     onUi { SubtitleBus.clear(); SubtitleBus.hideLive() }
@@ -357,7 +414,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
             putString("stream", if (failure == null && reviewSeconds != null) "Manual overlay review fixture closed; preferences restored; no capture or provider.\n"
                 else if (failure == null) "Overlay $prefix checks passed: empty window, font action, live settings, history and silence; synthetic captions, no capture or provider.\n"
-                else "Overlay $prefix failed: ${failure.javaClass.simpleName}: ${failure.message}\n")
+            else "Overlay $prefix failed: ${failure.javaClass.simpleName}: ${failure.message}; ${failure.stackTrace.firstOrNull { it.fileName == "OverlayInteractionChecks.kt" }}\n")
         })
     }
 }
