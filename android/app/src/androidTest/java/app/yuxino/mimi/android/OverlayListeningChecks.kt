@@ -129,15 +129,12 @@ internal class OverlayListeningChecks(private val test: Instrumentation) {
             }
             val readingHeight = root().height
             capture("$tag-expanded-caption")
-            ui {
-                SubtitleBus.setHistoryLimit(3)
-                SubtitleBus.onFinalPair("Synthetic earlier source.", "合成历史示例。", "en")
-            }
-            await { SubtitleBus.historySnapshot().isNotEmpty() }
+            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
+            await { SubtitleBus.historySnapshot().isNotEmpty() && root().findViewWithTag<View>("history-divider").isShown }
             ui {
                 check(root().height == readingHeight) { "History grew the window over the playback app" }
                 check(root() === window) { "Reading resize replaced the existing window" }
-                check(root().findViewWithTag<View>("history-divider").isShown)
+                check(root().findViewWithTag<View>("history-divider").isShown) { "Prior confirmed history was not rendered" }
             }
             capture("$tag-expanded-history")
             ui {

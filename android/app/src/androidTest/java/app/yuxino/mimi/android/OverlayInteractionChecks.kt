@@ -350,8 +350,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             }
             onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL) }
             val fixedHeight = root().height
-            onUi { SubtitleBus.setHistoryLimit(3); SubtitleBus.onFinalPair("Synthetic earlier source.", "合成历史。", "en") }
-            waitFor { SubtitleBus.historySnapshot().isNotEmpty() }
+            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
+            waitFor { SubtitleBus.historySnapshot().isNotEmpty() && root().findViewWithTag<View>("history-divider").isShown }
             check(root().height == fixedHeight) { "History changed the user's window height" }
             capture("panel-history-fixed-height")
             val savedX = SettingsStore.overlayXOffset(context, true); val savedY = SettingsStore.expandedYOffset(context)
