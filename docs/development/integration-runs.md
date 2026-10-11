@@ -2103,3 +2103,42 @@
   media, subtitle content and credentials are outside Git. Physical-device
   smoothness/capture, API 29 native UI and all live provider accounts remain
   unverified. This substantial mobile redesign still requires merge review.
+
+## 2026-10-11 — Android waiting overlay locale and spacing
+
+- **Revision/build:** `8baff81e860669051ae2c53a4d55643fe45741c6`, signed Debug
+  `app.yuxino.mimi.android.dev`; installed app/test APK hashes match the final
+  files and compiled source fingerprints. Production installation unchanged.
+- **Reported sample / failure boundary:** compact waiting copy was English while
+  settings selected Simplified Chinese, and the card was too short. On API 35,
+  a native foreign-locale context reproduces the old helper returning the wrong
+  language. A second negative run against the installed intermediate build
+  catches the provider label retaining its startup language after a picker switch.
+  Both failures are detected by the new native regressions; the user's exact
+  historical activity/configuration sequence was not instrumented.
+- **Repair:** resolve app-selected/System locales for service UI on every API;
+  refresh the existing provider label/accessibility description; center status-only
+  compact cards with a 56dp minimum and 16dp vertical padding. Captions and
+  immersive mode retain compact padding and saved placement.
+- **Native acceptance:** Android 15/API 35 ARM64, 4 CPU/4 GiB; six final runs passed:
+  Chinese normal, System, 320dp/two-times-font portrait, wide/two-times-font,
+  all eight languages plus System in narrow/dark mode, and narrow native
+  help/error/recovery interactions. Actual views cover expansion/collapse,
+  returning from all primary sections, selected service-language labels,
+  text bounds, caption/immersive restoration and pointer/touch help.
+  Every run restores the original private preferences byte-for-byte and display
+  parameters; no provider, microphone, MediaProjection or recording starts.
+- **Automated acceptance:** `./scripts/check.sh` passed (core 82, runtime 710,
+  desktop 571, frontend 132 files/2072 tests; existing ignored tests unchanged).
+  Android Debug and Release each passed 184 JVM tests, actual JNI, lint and
+  four-ABI native APK/alignment/license checks.
+- **Interrupted run / recovery:** final native acceptance initially had no result
+  when the emulator host hung and its crash reporter raised SIGSEGV. ADB cleanup
+  was interrupted. Excluded that attempt, restarted the same AVD without wiping
+  data or loading snapshots, recovered the private backup, verified final APKs
+  and renderer, then reran all six cases serially after the build. The final
+  renderer reports ANGLE/SwiftShader. This does not establish the hang's cause.
+- **Evidence / limits:** private `android-overlay-locale-height-20261011` bundle
+  contains user samples, negative/native/build logs, screenshots and receipts.
+  API 29, physical-device performance and real provider/audio capture were not
+  rerun for this native UI change; prior live runs retain their original revisions.
