@@ -5,15 +5,11 @@ public final class OverlayPlacement {
     private int preferredOffsetDp;
     private int expandedOffsetDp;
     private boolean immersive;
-    private boolean expanded;
-    private boolean restoreExpanded;
 
     public void reset(int offsetDp, boolean immersive) {
         setPreferredOffsetDp(offsetDp);
         this.immersive = immersive;
-        expanded = false;
         expandedOffsetDp = 0;
-        restoreExpanded = false;
     }
 
     public void setPreferredOffsetDp(int offsetDp) {
@@ -36,31 +32,12 @@ public final class OverlayPlacement {
 
     public int getPreferredOffsetDp() { return preferredOffsetDp; }
     public boolean isImmersive() { return immersive; }
-    public boolean isExpanded() { return expanded; }
+    public boolean isExpanded() { return !immersive; }
 
-    /** Duplicate preference notifications cannot overwrite the return state. */
+    /** A single interactive panel alternates with touch-through immersive captions. */
     public boolean setImmersive(boolean enabled) {
         if (immersive == enabled) return false;
-        if (enabled) {
-            restoreExpanded = expanded;
-            expanded = false;
-        } else {
-            expanded = restoreExpanded;
-            restoreExpanded = false;
-        }
         immersive = enabled;
-        return true;
-    }
-
-    public boolean expand() {
-        if (immersive || expanded) return false;
-        expanded = true;
-        return true;
-    }
-
-    public boolean collapse() {
-        if (!expanded) return false;
-        expanded = false;
         return true;
     }
 

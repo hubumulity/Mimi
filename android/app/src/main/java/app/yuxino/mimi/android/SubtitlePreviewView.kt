@@ -78,7 +78,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
         configure(16, Color.WHITE, 100, 65, "zh", false)
     }
 
-    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92, live: Boolean = false) {
+    fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92, live: Boolean = false, alignment: CaptionAlignment = CaptionAlignment.CENTER) {
         livePreview = live
         if (!live) {
             previewLabel.setText(R.string.preview_label)
@@ -106,7 +106,9 @@ class SubtitlePreviewView @JvmOverloads constructor(
         }
         CaptionTypography.apply(source, translation, fontSize, immersive, effective == CaptionDisplayMode.ORIGINAL)
         CaptionTypography.applyContrast(status, immersive)
-        status.setTextColor(if (immersive) Color.WHITE else Color.LTGRAY)
+        status.textSize = fontSize.toFloat()
+        status.setTextColor(color)
+        listOf(status, source, translation).forEach { it.gravity = alignment.gravity }
         translation.setTextColor(color)
         source.setTextColor(if (effective == CaptionDisplayMode.ORIGINAL) color else Color.rgb(203, 203, 203))
         subtitle.alpha = if (immersive) 0.8f else opacity.coerceIn(20, 100) / 100f

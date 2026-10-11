@@ -14,8 +14,6 @@
     <string name="notification_title">mimi 正在捕获系统音频</string>
     <string name="notification_text">实时字幕与翻译运行中</string>
     <string name="stop_action">停止</string>
-    <string name="overlay_collapse">收起</string>
-    <string name="overlay_collapse_description">收起字幕浮窗</string>
     <string name="overlay_font_description">调整字幕字号</string>
     <string name="overlay_language_description">打开语言设置</string>
     <string name="overlay_enter_immersive">沉浸</string>
@@ -36,4 +34,9 @@
     <string name="lang_shanghainese">上海话</string>
     <string name="lang_chinese_english">中文与英语（混合）</string>
     <string name="help_description">%1$s：帮助</string>
+    <string name="settings_height">浮窗高度</string>
+    <string name="settings_alignment">字幕对齐</string>
+    <string name="settings_align_left">左对齐</string>
+    <string name="settings_align_center">居中</string>
+    <string name="settings_align_right">右对齐</string>
 </resources>

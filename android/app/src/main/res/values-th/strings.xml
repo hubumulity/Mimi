@@ -13,8 +13,6 @@
     <string name="notification_title">mimi กำลังจับเสียงที่เล่นอยู่</string>
     <string name="notification_text">คำบรรยายสดและการแปลกำลังทำงาน</string>
     <string name="stop_action">หยุด</string>
-    <string name="overlay_collapse">ย่อ</string>
-    <string name="overlay_collapse_description">ย่อหน้าต่างคำบรรยาย</string>
     <string name="overlay_font_description">ปรับขนาดคำบรรยาย</string>
     <string name="overlay_language_description">เปิดการตั้งค่าภาษา</string>
     <string name="overlay_enter_immersive">เฉพาะข้อความ</string>
@@ -35,4 +33,9 @@
     <string name="lang_shanghainese">ภาษาเซี่ยงไฮ้</string>
     <string name="lang_chinese_english">จีนและอังกฤษ (ผสม)</string>
     <string name="help_description">วิธีใช้: %1$s</string>
+    <string name="settings_height">ความสูงของหน้าต่าง</string>
+    <string name="settings_alignment">การจัดแนวคำบรรยาย</string>
+    <string name="settings_align_left">ชิดซ้าย</string>
+    <string name="settings_align_center">กึ่งกลาง</string>
+    <string name="settings_align_right">ชิดขวา</string>
 </resources>

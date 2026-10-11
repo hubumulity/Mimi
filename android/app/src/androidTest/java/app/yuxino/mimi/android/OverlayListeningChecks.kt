@@ -94,33 +94,19 @@ internal class OverlayListeningChecks(private val test: Instrumentation) {
             ui { running(true); SubtitleBus.clear() }
             host = test.startActivitySync(Intent(context, CaptureProbeActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CaptureProbeActivity
-            await { compact().isShown && compact().height >= (56 * compact().resources.displayMetrics.density).toInt() }
+            await { root().isShown }
+            val window = root()
             fun assertWaiting() = ui {
-                val card = compact()
-                val status = card.findViewWithTag<TextView>("overlay-status")
+                val panel = root().findViewWithTag<ViewGroup>("expanded-subtitles")
+                val status = panel.findViewWithTag<TextView>("expanded-status")
+                check(panel.isShown && !compact().isShown) { "A session must show the interactive panel" }
+                check(panel.findViewWithTag<View>("collapse-overlay") == null) { "Obsolete collapse control remains" }
                 check(status.isShown && status.text.toString() == expected) { "Waiting copy changed language" }
-                val density = card.resources.displayMetrics.density
-                check(card.paddingTop >= (16 * density).toInt() && card.paddingBottom >= (16 * density).toInt())
-                check(status.layout.height <= status.height - status.compoundPaddingTop - status.compoundPaddingBottom) {
-                    "Waiting copy clips vertically"
-                }
-                for (line in 0 until status.lineCount) check(status.layout.getEllipsisCount(line) == 0)
+                check(status.layout.height <= status.height - status.compoundPaddingTop - status.compoundPaddingBottom)
                 check(localeManager.applicationLocales.toLanguageTags() == tag)
             }
             assertWaiting()
-            capture("$tag-compact")
-            val window = root()
-            repeat(2) {
-                ui { compact().performClick() }
-                await { root().findViewWithTag<View>("expanded-subtitles").isShown }
-                ui {
-                    check(root().findViewWithTag<TextView>("expanded-status").text.toString() == expected)
-                    root().findViewWithTag<View>("collapse-overlay").performClick()
-                }
-                await { compact().isShown }
-                assertWaiting()
-                check(root() === window) { "Expanding replaced the subtitle window" }
-            }
+            capture("$tag-panel-waiting")
             for (id in listOf(R.id.tab_general, R.id.tab_service, R.id.tab_caption)) {
                 ui { host!!.finish(); host = null }
                 await { home.hasWindowFocus() && !root().isShown }
@@ -128,25 +114,38 @@ internal class OverlayListeningChecks(private val test: Instrumentation) {
                 check(home.getString(R.string.overlay_listening_empty) == expected)
                 host = test.startActivitySync(Intent(context, CaptureProbeActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CaptureProbeActivity
-                await { compact().isShown }
+                await { root().isShown }
                 assertWaiting()
             }
-            capture("$tag-returned-from-settings")
+            capture("$tag-panel-returned-from-settings")
             ui {
                 SubtitleBus.onSourceDraft("Synthetic source.", "en")
                 SubtitleBus.onTranslationDraft("合成示例。")
             }
-            await { compact().findViewWithTag<TextView>("overlay-status").visibility == View.GONE }
+            await { root().findViewWithTag<TextView>("expanded-status").visibility == View.GONE }
             ui {
-                check(compact().minimumHeight == 0)
-                check(compact().paddingTop == (9 * compact().resources.displayMetrics.density).toInt())
                 check(SettingsStore.overlayYOffset(context) == position)
                 check(SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
+            }
+            val readingHeight = root().height
+            capture("$tag-expanded-caption")
+            ui {
+                SubtitleBus.setHistoryLimit(3)
+                SubtitleBus.onFinalPair("Synthetic earlier source.", "合成历史示例。", "en")
+            }
+            await { SubtitleBus.historySnapshot().isNotEmpty() }
+            ui {
+                check(root().height == readingHeight) { "History grew the window over the playback app" }
+                check(root() === window) { "Reading resize replaced the existing window" }
+                check(root().findViewWithTag<View>("history-divider").isShown)
+            }
+            capture("$tag-expanded-history")
+            ui {
                 SubtitleBus.clear()
                 SettingsStore.setImmersiveSubtitles(context, true)
             }
             await { WindowInspector.getGlobalWindowViews().any { it.tag == "exit-immersive" } }
-            ui { check(compact().minimumHeight == 0) { "Waiting padding leaked into immersive captions" } }
+            ui { check(compact().minimumHeight == 0) { "Immersive captions acquired a fixed panel height" } }
             check(MimiService.captureProjectionForTests == null)
         } catch (error: Throwable) { failure = error }
         finally {
@@ -165,7 +164,7 @@ internal class OverlayListeningChecks(private val test: Instrumentation) {
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
             putString("stream", if (failure == null)
-                "Waiting overlay passed ($tag/API ${Build.VERSION.SDK_INT}): explicit/system locale, expansion, settings return, native card bounds and caption/immersive restoration; no capture or providers.\n"
+                "Waiting overlay passed ($tag/API ${Build.VERSION.SDK_INT}): explicit/system locale, single panel, bounded history viewport, settings return and caption/immersive restoration; no capture or providers.\n"
             else "Waiting overlay failed: ${failure.javaClass.simpleName}: ${failure.message}\n")
         })
     }

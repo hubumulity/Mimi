@@ -34,6 +34,8 @@ object SettingsStore {
     private const val KEY_OVERLAY_SAVED = "overlay_saved"
     private const val KEY_DISPLAY_MODE = "caption_display_mode"
     private const val KEY_OVERLAY_WIDTH = "overlay_width_percent"
+    private const val KEY_OVERLAY_HEIGHT = "overlay_height_percent"
+    private const val KEY_CAPTION_ALIGNMENT = "caption_alignment"
     private const val KEY_EXPANDED_Y = "expanded_overlay_y"
     private const val KEY_EXPANDED_X = "expanded_overlay_x"
 
@@ -65,7 +67,8 @@ object SettingsStore {
         val preferences = get(context)
         val keys = setOf(KEY_FONT_SIZE, KEY_OVERLAY_OPACITY, KEY_OVERLAY_BG_ALPHA,
             KEY_IMMERSIVE_SUBTITLES, KEY_HISTORY_LINES, KEY_TRANSLATION_COLOR, KEY_OVERLAY_Y,
-            KEY_OVERLAY_X, KEY_EXPANDED_Y, KEY_EXPANDED_X, KEY_DISPLAY_MODE, KEY_OVERLAY_WIDTH)
+            KEY_OVERLAY_X, KEY_EXPANDED_Y, KEY_EXPANDED_X, KEY_DISPLAY_MODE, KEY_OVERLAY_WIDTH,
+            KEY_OVERLAY_HEIGHT, KEY_CAPTION_ALIGNMENT)
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key in keys) onChange()
         }
@@ -301,6 +304,16 @@ object SettingsStore {
     fun overlayWidthPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_WIDTH, 92).coerceIn(55, 100)
     fun setOverlayWidthPercent(context: Context, value: Int) =
         writeAppearance(get(context).edit().putInt(KEY_OVERLAY_WIDTH, value.coerceIn(55, 100)))
+    fun overlayHeightPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_HEIGHT, 30).coerceIn(20, 70)
+    fun setOverlayHeightPercent(context: Context, value: Int) =
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_HEIGHT, value.coerceIn(20, 70)))
+    fun setOverlayBounds(context: Context, width: Int, height: Int, x: Int, y: Int) =
+        writeAppearance(get(context).edit().putInt(KEY_OVERLAY_WIDTH, width.coerceIn(55, 100))
+            .putInt(KEY_OVERLAY_HEIGHT, height.coerceIn(20, 70))
+            .putInt(KEY_EXPANDED_X, x.coerceIn(-2000, 2000)).putInt(KEY_EXPANDED_Y, y.coerceIn(0, 2000)))
+    fun captionAlignment(context: Context): CaptionAlignment = CaptionAlignment.fromId(get(context).getString(KEY_CAPTION_ALIGNMENT, null))
+    fun setCaptionAlignment(context: Context, alignment: CaptionAlignment) =
+        writeAppearance(get(context).edit().putString(KEY_CAPTION_ALIGNMENT, alignment.id))
     fun expandedYOffset(context: Context): Int = get(context).getInt(KEY_EXPANDED_Y, 0).coerceIn(0, 2000)
     fun overlayXOffset(context: Context, expanded: Boolean): Int =
         get(context).getInt(if (expanded) KEY_EXPANDED_X else KEY_OVERLAY_X, 0).coerceIn(-2000, 2000)

@@ -189,9 +189,11 @@ level. Android 13+ application-locale persistence does not guarantee that a
 display/window/service resource context matches an AppCompat activity. Following
 System resolves current system locales instead of trusting a stale resource
 context. Native language checks include a deliberately different resource locale
-and the actual waiting overlay after expansion, collapse and returning from
-settings. Status-only compact cards retain readable vertical padding and a 56dp
-minimum height; caption and immersive states restore their compact geometry.
+and the actual waiting overlay after immersive restoration and returning from
+settings. New non-immersive sessions open the interactive panel so their state
+and actions are visible. Respect the user's height and bound its reading viewport
+independently of history length. Large font controls and caption reading space
+must both remain visible.
 
 Before/After screenshots must show stable native frames: wait for the owning
 activity to regain focus and for modal exit/entry animations before capturing.
@@ -215,8 +217,10 @@ Android uses one primary activity with Captions, Services and More. Caption
 content, display mode and style belong to the same section; do not split them
 into duplicate primary tabs or add another preview. Keep common controls
 visible without an accordion. Keep the single preview pinned while settings
-scroll, above the controls in portrait and alongside them on wide screens. Use
-the same arrangement in the floating appearance dialog. Direct color swatches
+scroll, above the controls in portrait and alongside them on wide screens. The
+floating appearance dialog edits the actual caption window and has no duplicate
+preview. Fit captions visibly above that editor without changing saved bounds.
+Direct color swatches
 wrap before their touch targets shrink below 48dp. Retain section scroll positions and
 selection through recreation. Keep status and Start/Stop visible in every
 section. Use one footer row only when actual localized labels fit; stack otherwise. Native fixtures must reuse the existing singleTask MainActivity when
@@ -224,15 +228,16 @@ navigating; `startActivitySync` waits for a new instance and hangs on reuse.
 
 Android immersive mode has a Captions entry/restore action backed by the same
 preference as the floating panel. Preview and overlay use `CaptionTypography`
-for centered, lighter text, chosen-size translation and a tight contrast shadow.
+for lighter text, chosen-size translation and a tight contrast shadow. Apply the
+chosen left/center/right alignment to both modes and the listening placeholder.
 Keep source text secondary and preserve the user's color/size preferences.
-Change the existing caption window in place, retaining the compact dp anchor
-and previous expanded reading
-state. Temporary viewport/inset clamps must not rewrite saved placement. Keep
+Change the existing caption window in place, retaining the immersive dp anchor
+and normal panel bounds. Temporary viewport/inset/editor clamps must not rewrite
+saved placement. Keep
 the restore control adjacent to captions, with a 48dp touch target and localized
 width; caption touch-through must not make restoration unreachable. Test repeated
-mode notifications, rotation, content/font reflow and returning from both compact
-and expanded states. Host geometry tests do not establish native window or touch
+mode notifications, rotation, content/font reflow and returning to the normal
+panel. Host geometry tests do not establish native window or touch
 acceptance.
 
 Android credential acceptance checks the actual password transformation after
@@ -260,12 +265,17 @@ visible. Mimi intentionally hides the overlay over its own activities; checking
 the hidden model label before returning to the playback app is not acceptance.
 
 Android pinned-preview acceptance checks the rendered source/translation rows,
-not only the preview container. A short large-font dialog can retain a visible
-background while clipping every caption. Inspect the floating dialog separately
-from the main page, with its actual width and available height. Normalize
+not only the preview container. Inspect the floating dialog separately: the real
+caption window must stay visible above it, with live typography/color changes
+and reachable controls. Normalize
 `getGlobalVisibleRect` root coordinates with the root window origin before
-comparing them with `getLocationOnScreen` glyph positions. Use side-by-side
-preview/controls when a wide dialog fits and avoid a large redundant title.
+comparing them with `getLocationOnScreen` glyph positions.
+
+On API 35, a nonfocusable overlay's View and accessibility screen origins can
+retain a previous frame after native movement/resizing while compositor pixels
+already show the new position. Native touch fixtures resolve local offsets
+against the window's gravity, attributes and safe display frame, cross-check
+that frame against screenshot pixels, then verify the actual gesture result.
 
 A dialog can cap its custom panel below a fixed child height. Bound the
 workspace to the actual measure spec; otherwise its ScrollView reports a larger
@@ -274,3 +284,16 @@ Native appearance acceptance checks the complete visible touch bounds and
 injects a real tap, then verifies both saved color and the existing caption view.
 `performClick` and correct saved values alone do not prove that a user can reach
 the control.
+
+A bottom floating editor must remove Material's centered-dialog background
+insets. Transparent top/bottom margins still count toward decor bounds and can
+consume the entire caption area at large fonts. Native checks compare selected
+height endpoints, actual caption space and editor separation; correct saved
+percentages alone do not prove that the window changed size.
+
+Android normal captions use one panel with a saved width and height; do not add
+expand/collapse states. Drag the top handle to move and the corner to resize both
+dimensions. Keep complete action targets and at least 64dp of reading space,
+clamping only displayed bounds at large fonts or small screens. History must
+not enlarge the user's chosen frame. Waiting copy uses the chosen font, color
+and alignment so live edits are visible even before speech.

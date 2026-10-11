@@ -306,6 +306,7 @@ class MainActivity : AppCompatActivity() {
             SettingsStore.overlayOpacity(this), SettingsStore.overlayBgAlpha(this), SettingsStore.targetLang(this),
             SettingsStore.immersiveSubtitles(this), SettingsStore.originalTextOnly(this),
             SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this), live = running,
+            alignment = SettingsStore.captionAlignment(this),
         )
         if (running) {
             refreshLivePreview()

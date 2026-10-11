@@ -130,11 +130,11 @@ Android production route.
 | Built-in Alibaba pipeline | Audio 3.0: 30 explicit recognition hints plus automatic detection; Qwen-MT retains its model-specific target catalog | Same Audio3 + Qwen-MT factory, models and capability normalization |
 | Translation scheduling | Speculative drafts plus serial prioritized finals and provider recovery | Same Rust speculative preview, final priority, queues, retry/cooldown and MT budget continuity |
 | Independent text HTTP bounds | HQ source fields up to 65,536 UTF-8 bytes; response bodies up to 1 MiB; decoded text uses native adapter bounds | Same shared clients and UTF-8/response bounds |
-| Subtitle display and appearance | Original/translation/bilingual presentation, source colors and background controls | Captions combines one pinned live preview, display mode, immersion and directly visible styles. Preview and scrollable controls stay together, above/below in portrait and side by side on wide screens. Native page/floating controls share direct color swatches, width (55–100%), size, caption color, background and window opacity. Recognition without translation always shows original text. These choices do not change provider requests |
+| Subtitle display and appearance | Original/translation/bilingual presentation, alignment, source colors and background controls | Captions combines one pinned live preview, display mode, immersion and directly visible styles. Preview and scrollable controls stay together, above/below in portrait and side by side on wide screens. Native page/floating controls share left/center/right alignment, direct color swatches, width (55–100%), height (20–70%), font, caption color, background and window opacity. Floating quick settings update the actual caption window above the editor. Recognition without translation always shows original text. These choices do not change provider requests |
 | Subtitle background | Adjustable card opacity (80% default); history does not fade with age | Adjustable card background (65% default) and window opacity (80% default); immersion disables both controls while retaining their saved values |
 | Subtitle font family | Search installed computer fonts or use System default; one saved family applies to original/translation in standard and immersive subtitles, with glyph fallback | Native subtitle size controls; no installed-family picker |
-| Floating subtitle controls | Shared settings/control-panel time preference; pause/resume is reachable in Immersive Mode. Keyboard-accessible collapse and native window drag/resize | Compact captions and the expanded top handle both move; the expanded resize handle changes width. Positions are saved separately. Immersion uses centered, lighter text and a 24dp exit inside a 48dp target. It restores the prior reading state. Floating views hide above Mimi pages; Captions previews current captions and leaving restores the same views. Services exposes the active service restriction with Stop, while styles remain editable. The main footer keeps Stop visible in every section |
-| Reading long current subtitles | Bounded live tail with explicit history reading and return-to-live behavior | Expanded panel scrolls the complete bounded current pair together with optional history; compact/immersive keep two source and three translation lines. One Captions preview shows the latest line per language in a stable viewport. Before speech or during silence, an active overlay shows desktop's listening message |
+| Floating subtitle controls | Shared settings/control-panel time preference; pause/resume is reachable in Immersive Mode. Keyboard-accessible collapse and native window drag/resize | One normal panel moves from its top handle and resizes width/height from its corner. Normal and immersive positions remain independently saved. Immersion uses lighter text, chosen alignment and a 24dp exit inside a 48dp target. Exit restores normal size/position. Floating views hide above Mimi pages; Captions previews current captions and leaving restores the same views. Services exposes the active service restriction with Stop, while styles remain editable. The main footer keeps Stop visible in every section |
+| Reading long current subtitles | Bounded live tail with explicit history reading and return-to-live behavior | Normal panel scrolls the complete bounded current pair and optional history inside the selected height; immersive captions keep two source and three translation lines. One Captions preview shows the latest line per language in a stable viewport. Before speech or during silence, an active overlay shows desktop's listening message with the selected typography/color/alignment |
 | Audio capture | System audio by default; explicitly selected microphone or both sources with independent lanes. OS-specific desktop capture; selected-app audio on macOS and Windows build 20348+, Linux retains output-monitor capture | Android playback-capture consent and foreground service; no selected-app picker |
 | Saved service selection | Settings, tray and subtitle controls can switch during listening via reconnect; pause and confirmed subtitles persist. A recording cannot switch PCM sample rate | Existing Android selection flow; no live-switch parity claimed |
 | Proxy preferences | Per-profile independent recognition/text routes; integrated realtime uses one route | Shared network transport with immutable Android platform proxy/trust snapshots; no per-stage proxy UI |
@@ -178,13 +178,13 @@ changes. Single-source output keeps its own color and a neutral bilingual origin
 These are desktop presentation preferences; Android does not currently expose
 matching source-color or time controls, or desktop microphone selection.
 
-Android's expanded panel has a bounded reading viewport, with complete current
+Android's normal panel has a bounded reading viewport, with complete current
 source and translation text inside its scroll area. Opening it locates the current
 caption; a changed completed pair locates its beginning only while the user is
 still reading the current-caption region. Draft updates retain the scroll position,
 and reading earlier history is not interrupted. Completion uses the shared
 `displayPairFinal` field. Optional history keeps its existing display limit;
-expanded reading does not enable retention, and compact/immersive captions keep
+normal reading does not enable retention, and immersive captions keep
 their existing line caps. This native presentation policy is separate from the
 desktop live-tail behavior and does not imply parity in capture, recording or
 timestamp preferences.
@@ -203,9 +203,9 @@ provider's capabilities.
 ## Android immersive placement
 
 Native mode changes update the existing window and caption views. The saved
-compact bottom offset is independent of the temporary expanded-panel frame;
-exiting immersive returns to the previous compact/expanded presentation. Only
-an explicit completed caption drag writes a new offset. Rotation, content/font
+immersive bottom offset is independent of the normal-panel frame;
+exiting immersive returns to its saved normal size and placement. Only
+explicit completed caption drag/resize writes new bounds. Rotation, content/font
 reflow and inset constraints clamp the visible offset without replacing that
 preference; a larger viewport restores it. Android 30+ fits system-bar/cutout
 insets once, ignoring bar visibility, and sizes against the same window metrics.

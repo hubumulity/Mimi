@@ -14,8 +14,6 @@
     <string name="notification_title">mimi가 재생 소리를 캡처하고 있습니다</string>
     <string name="notification_text">실시간 자막 및 번역 실행 중</string>
     <string name="stop_action">중지</string>
-    <string name="overlay_collapse">접기</string>
-    <string name="overlay_collapse_description">자막 창 접기</string>
     <string name="overlay_font_description">자막 크기 조절</string>
     <string name="overlay_language_description">언어 설정 열기</string>
     <string name="overlay_enter_immersive">몰입</string>
@@ -36,4 +34,9 @@
     <string name="lang_shanghainese">상하이어</string>
     <string name="lang_chinese_english">중국어 및 영어 (혼합)</string>
     <string name="help_description">%1$s 도움말</string>
+    <string name="settings_height">창 높이</string>
+    <string name="settings_alignment">자막 정렬</string>
+    <string name="settings_align_left">왼쪽</string>
+    <string name="settings_align_center">가운데</string>
+    <string name="settings_align_right">오른쪽</string>
 </resources>

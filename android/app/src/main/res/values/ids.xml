@@ -2,4 +2,7 @@
 <resources>
     <item name="back" type="id" />
     <item name="appearance_panel" type="id" />
+    <item name="overlay_height" type="id" />
+    <item name="overlay_height_value" type="id" />
+    <item name="caption_alignment" type="id" />
 </resources>

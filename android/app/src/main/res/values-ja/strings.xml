@@ -13,8 +13,6 @@
     <string name="notification_title">mimi が再生音声を取得中</string>
     <string name="notification_text">字幕と翻訳が動作中</string>
     <string name="stop_action">停止</string>
-    <string name="overlay_collapse">折りたたむ</string>
-    <string name="overlay_collapse_description">字幕を折りたたむ</string>
     <string name="overlay_font_description">字幕の大きさを調整</string>
     <string name="overlay_language_description">言語設定を開く</string>
     <string name="overlay_enter_immersive">没入</string>
@@ -35,4 +33,9 @@
     <string name="lang_shanghainese">上海語</string>
     <string name="lang_chinese_english">中国語と英語（混在）</string>
     <string name="help_description">%1$sのヘルプ</string>
+    <string name="settings_height">ウィンドウの高さ</string>
+    <string name="settings_alignment">字幕の配置</string>
+    <string name="settings_align_left">左揃え</string>
+    <string name="settings_align_center">中央揃え</string>
+    <string name="settings_align_right">右揃え</string>
 </resources>

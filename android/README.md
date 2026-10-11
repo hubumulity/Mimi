@@ -36,25 +36,26 @@ Rust subtitle/provider runtime as desktop through JNI.
   SecretKey; Baidu requires AppID and AppKey. Other services use an API key. Built-in service models,
   endpoints and language capabilities follow the shared factory. Stored secrets are not filled back into the editor;
   leaving a secret field empty preserves its saved value. Changes are written only with Save and use.
-- **Subtitle overlay** — `TYPE_APPLICATION_OVERLAY` floating window, with
-  independently saved compact and expanded positions. Drag the compact caption
-  or the expanded panel's top handle to move it. Tap the compact caption to open a reading panel with the
-  current source and translation; confirmed lines appear there only when
-  bounded history is enabled in caption styles. The panel has language, style,
-  upward collapse and an icon/label immersive action. Caption and floating controls offer
-  original/translation/bilingual display, width (55–100 %), background alpha
-  (0–90 %), text color presets, font size, and whole-window opacity. The expanded
-  panel also has a direct resize handle.
-  Style changes apply immediately to an existing overlay. Before speech and
+- **Subtitle overlay** — one `TYPE_APPLICATION_OVERLAY` reading panel with
+  current source and translation. Drag its top handle to move it and its corner
+  to resize width and height. Confirmed lines appear only when bounded history
+  is enabled; history scrolls inside the chosen height. Main and floating controls
+  offer original/translation/bilingual display, left/center/right alignment,
+  width (55–100 %), height (20–70 % of the safe viewport), background alpha
+  (0–90 %), text color presets, font size and whole-window opacity.
+  Quick settings changes update the actual captions visibly above the editor.
+  Before speech and
   during a silent gap, an active session shows the same localized listening
-  message as desktop. An optional immersive mode centers the text with lighter
+  message as desktop, using the selected typography and color. An optional
+  immersive mode shows lighter
   typography and a compact contrast shadow, and passes touches
   through to the app below. A small exit control follows the subtitle position;
   The Captions page also enters/exits immersive mode without stopping the session.
-  Returning restores the previous compact/expanded state and saved position.
+  Returning restores the normal panel's saved size and position.
   Floating captions temporarily hide while Mimi's own pages are open; Captions
   shows the current caption and capture continues. Leaving Mimi restores the
-  floating window. The expanded panel's covered area receives touches until it is collapsed.
+  floating window. Immersive captions pass touches through; the normal reading
+  panel receives touches within its covered area.
 - **Subtitle previews** — the shared factory selects complete paired previews
   for Audio3 + text translation and sentence-identified realtime previews for
   integrated live clients. New sentence identities never borrow old final lines;
@@ -157,18 +158,21 @@ The Android interface reuses Mimi's existing character artwork and neutral
 light/dark palette. Subtitle source and target languages can be changed directly on the home screen with Undo. Tapping the
 subtitle sample opens appearance settings, where changes are saved automatically
 and previewed without capture or a network session. The appearance screen also
-previews the compact card and immersive text mode. The service tab lists all eight integrations and opens a separate editor with only that service’s fields.
+previews normal and immersive text. The service tab lists all eight integrations and opens a separate editor with only that service’s fields.
 Credentials require explicit Save and use; changing appearance never saves credentials. Your own service credentials are still required for real translation.
 
 The main page groups Captions, Services and More. Captions offers live
-original/translation/bilingual display, width, size, color and opacity controls.
+original/translation/bilingual display, alignment, width, height, font, color and opacity controls.
 Its preview stays visible while styles scroll, above the controls in portrait
-and alongside them on wide screens. The floating style dialog uses the same
-arrangement. Direct color choices wrap to retain 48dp touch targets. The preview
+and alongside them on wide screens. The floating style dialog has controls only;
+the existing caption window stays visible above it and responds to edits.
+Direct color choices wrap to retain 48dp touch targets. The main preview
 keeps one latest line per language in a stable viewport, so adjusting width or
 size does not move the controls under your finger. Full current captions
-remain available in the expanded reading panel.
-The expanded panel has drag and resize handles and the same appearance controls.
+remain available in the normal reading panel.
+Sessions open that panel unless immersive mode is enabled. Its reading viewport
+is bounded by the selected height, and history does not enlarge it. The panel
+has drag and two-dimensional resize handles, quick styles and a labeled immersive action.
 Display choices do not change recognition or translation requests. A running
 session keeps service editing locked with an explicit Stop action.
 
@@ -196,7 +200,8 @@ Use `-e leave_language zh-Hans`, force-stop the app, then run
 with `-e interface_language true -e expected_language zh-Hans` to check persistence.
 
 On API 33+, `overlay_listening` checks service resources against a deliberately
-different context locale, the native waiting card, expansion/collapse and return
+different context locale, the normal native waiting panel,
+stable history viewport, immersive restoration and return
 from all settings sections. Use `-e locale system` for System. It uses synthetic
 session state, starts no capture or provider and restores the app locale and
 changed preferences. Include narrow/large-font and wide native layouts.
@@ -206,11 +211,11 @@ auto-save with actual touch gestures, all eight service editors, write-only secr
 keyboard. Changed non-secret preferences are restored in a finally block; provider
 drafts are discarded without Save and use. No provider or audio capture session starts. Screenshots contain sample subtitles and empty key
 fields and are written to the app's external `files/ui-preview` directory. Pass
-`-e overlay_interaction true` on a blank idle device for compact bottom-anchor,
-repeated immersive entry/exit and expanded-state restoration checks. The
-`interaction-after-positioned-*.png` screenshots show the positioned compact
-caption, immersive caption, restored expanded view and restored compact view.
-`overlay_preview` also captures the restored expanded and compact states. These
+`-e overlay_interaction true` on a blank idle device for actual two-dimensional
+resize/drag, live quick settings without a duplicate preview, all alignments,
+stable history height, both provider badge cases and repeated immersive restoration.
+The `interaction-*.png` screenshots show the actual panel and edits.
+`overlay_preview` also captures long-caption reading and restored normal mode. These
 are synthetic native fixtures, not a real provider or audio latency measurement.
 Pass
 `-e demo true` for a paced walkthrough suitable for emulator screen recording;

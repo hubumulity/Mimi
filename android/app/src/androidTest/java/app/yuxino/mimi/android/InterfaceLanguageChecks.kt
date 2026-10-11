@@ -96,11 +96,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     onUi {
                         openCaptionStyles(settings!!)
                         check(settings!!.findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == R.id.tab_caption)
-                        val collapse = WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull {
-                            it.findViewWithTag<View>("collapse-overlay")
-                        } ?: error("Overlay control missing")
-                        check(collapse.contentDescription == settings!!.getString(R.string.overlay_collapse_description))
-                        check(collapse.rotation == 180f) { "Collapse chevron must point upwards" }
+                        check(WindowInspector.getGlobalWindowViews().none { it.findViewWithTag<View>("collapse-overlay") != null })
                         val immersion = WindowInspector.getGlobalWindowViews().firstNotNullOf {
                             it.findViewWithTag<TextView>("enter-immersive")
                         }
@@ -167,7 +163,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         }
         check((0 until providers.childCount).map { providers.getChildAt(it) }.filterIsInstance<ImageView>()
             .all { it.isShown && it.width > 0 }) { "Provider marks disappeared" }
-        for (tag in listOf("collapse-overlay", "overlay-font", "enter-immersive", "overlay-resize", "overlay-providers")) {
+        for (tag in listOf("overlay-font", "enter-immersive", "overlay-resize", "overlay-providers")) {
             val control = panel.findViewWithTag<View>(tag)
             val position = IntArray(2)
             control.getLocationOnScreen(position)
@@ -287,7 +283,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 setLocales(android.os.LocaleList.forLanguageTags(if (language == "en") "de" else "en"))
             })
             for (id in listOf(R.string.overlay_listening_empty, R.string.overlay_enter_immersive,
-                R.string.overlay_collapse_description, R.string.notification_channel, R.string.capture_failed)) {
+                R.string.settings_alignment, R.string.notification_channel, R.string.capture_failed)) {
                 check(InterfaceLanguage.context(foreign).getString(id) == settings!!.getString(id)) {
                     "Service resources diverged from interface language: $tag"
                 }

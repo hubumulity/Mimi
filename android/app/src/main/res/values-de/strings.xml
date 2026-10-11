@@ -14,8 +14,6 @@
     <string name="notification_title">mimi erfasst Wiedergabe-Audio</string>
     <string name="notification_text">Live-Untertitel und Übersetzung laufen</string>
     <string name="stop_action">Stoppen</string>
-    <string name="overlay_collapse">Einklappen</string>
-    <string name="overlay_collapse_description">Untertitelfenster einklappen</string>
     <string name="overlay_font_description">Untertitelgröße ändern</string>
     <string name="overlay_language_description">Spracheinstellungen öffnen</string>
     <string name="overlay_enter_immersive">Immersiv</string>
@@ -36,4 +34,9 @@
     <string name="lang_shanghainese">Shanghainesisch</string>
     <string name="lang_chinese_english">Chinesisch und Englisch (gemischt)</string>
     <string name="help_description">Hilfe: %1$s</string>
+    <string name="settings_height">Fensterhöhe</string>
+    <string name="settings_alignment">Untertitelausrichtung</string>
+    <string name="settings_align_left">Links</string>
+    <string name="settings_align_center">Mitte</string>
+    <string name="settings_align_right">Rechts</string>
 </resources>

@@ -112,6 +112,7 @@ class MimiService : Service() {
     private val immersiveSession get() = overlayPlacement.isImmersive
     private var draggingOverlay = false
     private var resizeWidthPercent: Int? = null
+    private var resizeHeightPercent: Int? = null
     private val ownUiUpdate = Runnable { renderBus() }
     private var previewMode = false
     private var sessionSourceLanguage = "auto"
@@ -204,7 +205,7 @@ class MimiService : Service() {
         ) {
             previewHistoryEnabled = true
             seedPreviewHistory()
-            showExpandedOverlay()
+            renderBus()
             return START_NOT_STICKY
         }
         if (isRunning || overlayView != null) return START_NOT_STICKY
@@ -529,7 +530,6 @@ class MimiService : Service() {
             control.contentDescription = interfaceString(description)
             control.tooltipText = control.contentDescription
         }
-        label("collapse-overlay", R.string.overlay_collapse, R.string.overlay_collapse_description)
         label("enter-immersive", R.string.overlay_enter_immersive, R.string.overlay_enter_immersive)
         label("overlay-font", null, R.string.caption_style_controls)
         updateOverlayFontSize()
@@ -582,8 +582,8 @@ class MimiService : Service() {
 
         val status = TextView(this).apply {
             tag = "overlay-status"
-            setTextColor(0xFFADADAD.toInt())
-            textSize = 14f
+            setTextColor(0xFFD1D1D1.toInt())
+            textSize = 16f
             maxWidth = (resources.displayMetrics.widthPixels * 0.88f).toInt()
             visibility = View.GONE
         }
@@ -613,7 +613,8 @@ class MimiService : Service() {
             addView(compact, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER,
             ))
-            panel.visibility = View.GONE
+            compact.visibility = if (expanded) View.GONE else View.VISIBLE
+            panel.visibility = if (expanded) View.VISIBLE else View.GONE
             addView(panel, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
             ))
@@ -636,15 +637,14 @@ class MimiService : Service() {
             if (immersiveSession) alpha = 0.8f
         }
 
-        compact.setOnClickListener { showExpandedOverlay() }
-        fun attachDrag(control: View, expandedControl: Boolean) {
+        fun attachDrag(control: View) {
             var initialY = 0
             var initialX = 0
             var touchY = 0f
             var touchX = 0f
             var dragged = false
             control.setOnTouchListener { _, event ->
-                if (immersiveSession || expanded != expandedControl) return@setOnTouchListener false
+                if (immersiveSession) return@setOnTouchListener false
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         initialY = params.y; initialX = params.x
@@ -668,10 +668,9 @@ class MimiService : Service() {
                         if (dragged) {
                             try {
                                 val density = resources.displayMetrics.density
-                                SettingsStore.setOverlayPosition(this, expandedControl,
+                                SettingsStore.setOverlayPosition(this, true,
                                     kotlin.math.round(params.x / density).toInt(), kotlin.math.round(params.y / density).toInt())
-                                if (expandedControl) overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
-                                else overlayPlacement.setPreferredOffsetDp(SettingsStore.overlayYOffset(this))
+                                overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
                             } catch (_: RuntimeException) { Toast.makeText(InterfaceLanguage.context(this), R.string.service_save_failed, Toast.LENGTH_LONG).show() }
                             updateOverlayGeometry()
                         } else control.performClick()
@@ -682,27 +681,55 @@ class MimiService : Service() {
                 }
             }
         }
-        attachDrag(compact, false)
-        attachDrag(panel.findViewWithTag("overlay-drag"), true)
+        attachDrag(panel.findViewWithTag("overlay-drag"))
         var resizeStartWidth = 0
+        var resizeStartHeight = 0
         var resizeStartX = 0f
+        var resizeStartY = 0f
+        var resizeStartOffsetX = 0
+        var resizeStartOffsetY = 0
         panel.findViewWithTag<View>("overlay-resize").setOnTouchListener { control, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { resizeStartWidth = root.width; resizeStartX = event.rawX; true }
+                MotionEvent.ACTION_DOWN -> {
+                    resizeStartWidth = root.width; resizeStartHeight = root.height
+                    resizeStartX = event.rawX; resizeStartY = event.rawY
+                    resizeStartOffsetX = params.x; resizeStartOffsetY = params.y
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
-                    resizeWidthPercent = ((resizeStartWidth + 2 * (event.rawX - resizeStartX)) * 100 /
-                        overlayAvailableSize().first).toInt().coerceIn(55, 100)
-                    updateOverlayGeometry(); expandedView?.requestLayout(); true
+                    val deltaX = event.rawX - resizeStartX
+                    val deltaY = event.rawY - resizeStartY
+                    if (kotlin.math.abs(deltaX) > dp(8) || kotlin.math.abs(deltaY) > dp(8)) {
+                        val (width, height) = overlayAvailableSize()
+                        draggingOverlay = true
+                        resizeWidthPercent = ((resizeStartWidth + deltaX) * 100 / width).toInt().coerceIn(55, 100)
+                        resizeHeightPercent = ((resizeStartHeight + deltaY) * 100 / height).toInt().coerceIn(20, 70)
+                        // Keep the top-left corner fixed while the touched corner follows the finger.
+                        params.x = resizeStartOffsetX + ((captionWindowWidth(true) - resizeStartWidth) / 2)
+                        params.y = resizeStartOffsetY - (expandedPanelHeight() - resizeStartHeight)
+                        updateOverlayGeometry(); expandedView?.requestLayout()
+                    }
+                    true
                 }
                 MotionEvent.ACTION_UP -> {
-                    val value = resizeWidthPercent
-                    resizeWidthPercent = null
-                    if (value == null) control.performClick()
-                    else try { SettingsStore.setOverlayWidthPercent(this, value) }
-                    catch (_: RuntimeException) { Toast.makeText(InterfaceLanguage.context(this), R.string.service_save_failed, Toast.LENGTH_LONG).show() }
+                    val width = resizeWidthPercent
+                    val height = resizeHeightPercent
+                    if (width == null || height == null) control.performClick()
+                    else try {
+                        val density = resources.displayMetrics.density
+                        SettingsStore.setOverlayBounds(this, width, height,
+                            kotlin.math.round(params.x / density).toInt(), kotlin.math.round(params.y / density).toInt())
+                        overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
+                    } catch (_: RuntimeException) {
+                        Toast.makeText(InterfaceLanguage.context(this), R.string.service_save_failed, Toast.LENGTH_LONG).show()
+                    }
+                    resizeWidthPercent = null; resizeHeightPercent = null; draggingOverlay = false
                     updateOverlayGeometry(); true
                 }
-                MotionEvent.ACTION_CANCEL -> { resizeWidthPercent = null; updateOverlayGeometry(); true }
+                MotionEvent.ACTION_CANCEL -> {
+                    resizeWidthPercent = null; resizeHeightPercent = null; draggingOverlay = false
+                    updateOverlayGeometry(); true
+                }
                 else -> false
             }
         }
@@ -741,6 +768,7 @@ class MimiService : Service() {
             }
         }
         if (immersiveSession) showImmersiveExitControl(wm)
+        updateOverlayFontSize()
         renderBus()
     }
 
@@ -819,11 +847,7 @@ class MimiService : Service() {
         }
         fun openHome() = startActivity(Intent(this, app.yuxino.mimi.android.MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(panelIcon(R.drawable.ic_expand, R.string.overlay_collapse_description).apply {
-            rotation = 180f
-            tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val header = LinearLayout(this).apply { tag = "overlay-toolbar"; gravity = Gravity.CENTER_VERTICAL }
         header.addView(FrameLayout(this).apply {
             tag = "overlay-drag"; isClickable = true; isFocusable = true
             contentDescription = interfaceString(R.string.overlay_drag)
@@ -896,15 +920,17 @@ class MimiService : Service() {
                 }
                 super.onMeasure(widthMeasureSpec, heightMeasureSpec)
             }
-        }.apply { gravity = Gravity.CENTER_VERTICAL }
+        }.apply { tag = "overlay-actions"; gravity = Gravity.CENTER_VERTICAL }
         footer.addView(immersion, LinearLayout.LayoutParams(-2, -2))
         footer.addView(detailsRow, LinearLayout.LayoutParams(0, -2, 1f))
+        footer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateOverlayGeometry() }
 
         expandedStatusView = TextView(this).apply {
             tag = "expanded-status"
-            setTextColor(0xFFB9B9B9.toInt())
-            textSize = 14f
+            setTextColor(0xFFD1D1D1.toInt())
+            textSize = 16f
             visibility = View.GONE
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateOverlayGeometry() }
         }
 
         val scroll = ScrollView(this).apply {
@@ -927,7 +953,7 @@ class MimiService : Service() {
             setLineSpacing(dp(5).toFloat(), 1f)
         }
         transcript.addView(historyView)
-        transcript.addView(View(this).apply { setBackgroundColor(0xFF555555.toInt()) },
+        transcript.addView(View(this).apply { tag = "history-divider"; setBackgroundColor(0xFF555555.toInt()) },
             LinearLayout.LayoutParams(-1, dp(1)))
         expandedSourceView = TextView(this).apply {
             tag = "expanded-source"
@@ -1004,33 +1030,81 @@ class MimiService : Service() {
         if (appearanceDialog != null) return
         val themed = ContextThemeWrapper(InterfaceLanguage.context(this), R.style.Theme_Mimi)
         val controls = AppearanceControls(themed, floating = true) { enabled -> setImmersiveMode(enabled) }
-        controls.setPadding(dp(20), dp(12), dp(20), dp(16))
+        controls.setPadding(dp(20), dp(8), dp(20), dp(16))
         val scroll = app.yuxino.mimi.android.ControlScrollView(themed).apply {
+            tag = "overlay-appearance-scroll"
             addView(controls)
         }
-        val workspace = app.yuxino.mimi.android.CaptionWorkspace(themed).apply {
-            preferredHeight = (overlayAvailableSize().second * .92f - dp(72)).toInt().coerceAtLeast(dp(128))
-            contentDescription = interfaceString(R.string.caption_style_controls)
-            addView(app.yuxino.mimi.android.ControlScrollView(themed).apply {
-                setPadding(dp(20), dp(4), dp(20), dp(4))
-                addView(controls.takePreview())
-            })
-            addView(scroll)
-        }
-        val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
+        val maxBodyHeight = (overlayAvailableSize().second * .58f - dp(72)).toInt().coerceAtLeast(dp(96))
+        val body = object : FrameLayout(themed) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val available = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) maxBodyHeight
+                    else minOf(maxBodyHeight, MeasureSpec.getSize(heightMeasureSpec))
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST))
+            }
+        }.apply { addView(scroll, FrameLayout.LayoutParams(-1, -1)) }
+        val surface = GradientDrawable().apply { cornerRadius = dp(24).toFloat() }
         val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface)
-            .setView(workspace).setPositiveButton(R.string.guide_finish, null).create()
-        dialog.setOnDismissListener { if (appearanceDialog === dialog) appearanceDialog = null }
+            // Material's centered-dialog insets waste the caption space above
+            // this bottom editor, especially with a large system font.
+            .setBackgroundInsetStart(0).setBackgroundInsetEnd(0)
+            .setBackgroundInsetTop(0).setBackgroundInsetBottom(0)
+            .setView(body).setPositiveButton(R.string.guide_finish, null).create()
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnDismissListener {
+            if (appearanceDialog === dialog) {
+                appearanceDialog = null
+                updateEditorPresentation()
+                updateOverlayGeometry()
+            }
+        }
         appearanceDialog = dialog
         try {
-            checkNotNull(dialog.window).setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            val window = checkNotNull(dialog.window)
+            window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             dialog.show()
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+            window.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            window.attributes = window.attributes.apply { y = dp(12) }
+            window.setLayout(minOf(overlayAvailableSize().first - dp(24), dp(480)), WindowManager.LayoutParams.WRAP_CONTENT)
+            window.decorView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (appearanceDialog === dialog) mainHandler.post { updateOverlayGeometry() }
+            }
             surface.setColor(ContextCompat.getColor(dialog.context, R.color.mimi_surface))
+            updateEditorPresentation()
+            updateOverlayGeometry()
         } catch (_: RuntimeException) {
             appearanceDialog = null
             dialog.dismiss()
+            updateEditorPresentation()
+            updateOverlayGeometry()
             Toast.makeText(themed, R.string.overlay_font_failed, Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun updateEditorPresentation() {
+        // The live caption window is the preview. Hide its duplicate actions
+        // while the bottom editor is open, then restore them in the same window.
+        val visibility = if (appearanceDialog?.isShowing == true) View.GONE else View.VISIBLE
+        expandedView?.findViewWithTag<View>("overlay-toolbar")?.visibility = visibility
+        expandedView?.findViewWithTag<View>("overlay-actions")?.visibility = visibility
+    }
+
+    private fun editorOffset(): Int {
+        val editor = appearanceDialog?.takeIf { it.isShowing }?.window?.decorView ?: return 0
+        if (editor.height <= 0) return 0
+        val origin = IntArray(2)
+        editor.getLocationOnScreen(origin)
+        val wm = windowManager ?: return 0
+        val safeBottom = if (Build.VERSION.SDK_INT >= 30) {
+            val metrics = wm.currentWindowMetrics
+            metrics.bounds.bottom - metrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()).bottom
+        } else {
+            val frame = Rect(); overlayView?.getWindowVisibleDisplayFrame(frame); frame.bottom
+        }
+        return (safeBottom - origin[1] + dp(12)).coerceAtLeast(0)
     }
 
     private fun applyAppearance() {
@@ -1080,30 +1154,19 @@ class MimiService : Service() {
         if (source != null && translation != null) app.yuxino.mimi.android.CaptionTypography.apply(
             source, translation, size.toInt(), immersiveSession,
             sessionOriginalOnly || SettingsStore.displayMode(this) == CaptionDisplayMode.ORIGINAL)
-        statusView?.let { status ->
-            app.yuxino.mimi.android.CaptionTypography.applyContrast(status, immersiveSession)
-            status.setTextColor(if (immersiveSession) Color.WHITE else 0xFFADADAD.toInt())
+        listOf(statusView, expandedStatusView).forEach { status ->
+            status?.let {
+                app.yuxino.mimi.android.CaptionTypography.applyContrast(it, immersiveSession)
+                it.textSize = size
+                it.setTextColor(SettingsStore.translationColor(this))
+            }
         }
         expandedSourceView?.textSize = size
         expandedTranslationView?.textSize = size + 3
         historyView?.textSize = (size - 1).coerceAtLeast(12f)
-
-    }
-
-    private fun showExpandedOverlay() {
-        val root = overlayView ?: return
-        val params = overlayParams ?: return
-        val panel = expandedView ?: return
-        if (!overlayPlacement.expand()) return
-        compactView?.visibility = View.GONE
-        panel.visibility = View.VISIBLE
-        scrollToCurrentOnLayout = true
-        params.width = expandedPanelWidth()
-        params.height = expandedPanelHeight(0)
-        params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        params.y = overlayPlacement.expandedY(resources.displayMetrics.density, overlayAvailableSize().second, params.height)
-        windowManager?.updateViewLayout(root, params)
-        renderBus()
+        val alignment = SettingsStore.captionAlignment(this).gravity
+        listOf(sourceView, translationView, statusView, expandedSourceView, expandedTranslationView,
+            expandedStatusView, historyView).forEach { it?.gravity = alignment }
     }
 
     /** WindowManager applies these insets once; y is relative to its safe frame. */
@@ -1132,7 +1195,7 @@ class MimiService : Service() {
             else resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
     }
 
-    private fun updateOverlayGeometry(historyCount: Int = SubtitleBus.historySnapshot().size) {
+    private fun updateOverlayGeometry() {
         val root = overlayView ?: return
         val params = overlayParams ?: return
         val (width, height) = overlayAvailableSize()
@@ -1143,13 +1206,15 @@ class MimiService : Service() {
             if (it != null && it.maxWidth != textWidth) it.maxWidth = textWidth
         }
         val desiredWidth = windowWidth
-        val desiredHeight = if (expanded) expandedPanelHeight(historyCount) else WindowManager.LayoutParams.WRAP_CONTENT
+        val desiredHeight = if (expanded) expandedPanelHeight() else WindowManager.LayoutParams.WRAP_CONTENT
         val captionHeight = compactView?.height ?: 0
-        val desiredY = when {
+        val preferredY = when {
             draggingOverlay -> OverlayPlacement.clampY(params.y, height, if (expanded) desiredHeight else captionHeight)
             expanded -> overlayPlacement.expandedY(resources.displayMetrics.density, height, desiredHeight)
             else -> overlayPlacement.compactY(resources.displayMetrics.density, height, captionHeight)
         }
+        val desiredY = OverlayPlacement.clampY(maxOf(preferredY, editorOffset()), height,
+            if (expanded) desiredHeight else captionHeight)
         val desiredX = OverlayPlacement.clampX(if (draggingOverlay) params.x else
             (SettingsStore.overlayXOffset(this, expanded) * resources.displayMetrics.density).toInt(), width, desiredWidth)
         if (params.width != desiredWidth || params.height != desiredHeight || params.y != desiredY || params.x != desiredX) {
@@ -1173,28 +1238,19 @@ class MimiService : Service() {
     private fun captionWindowWidth(expanded: Boolean): Int = OverlayPlacement.windowWidth(
         overlayAvailableSize().first, resizeWidthPercent ?: SettingsStore.overlayWidthPercent(this), dp(if (expanded) 176 else 160), dp(8))
 
-    private fun expandedPanelWidth(): Int = captionWindowWidth(true)
-
-    private fun expandedPanelHeight(historyCount: Int): Int {
-        val (availableWidth, availableHeight) = overlayAvailableSize()
-        val landscape = availableWidth > availableHeight
-        val maxFraction = if (landscape && resources.configuration.fontScale >= 1.5f) 0.88f else 0.72f
-        return dp(380 + historyCount * 60)
-            .coerceAtMost((availableHeight * maxFraction).toInt())
-    }
-
-    private fun collapseOverlay() {
-        val root = overlayView ?: return
-        val params = overlayParams ?: return
-        if (!overlayPlacement.collapse()) return
-        expandedView?.visibility = View.GONE
-        compactView?.visibility = View.VISIBLE
-        params.width = WindowManager.LayoutParams.WRAP_CONTENT
-        params.height = WindowManager.LayoutParams.WRAP_CONTENT
-        params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        params.y = overlayPlacement.compactY(resources.displayMetrics.density, overlayAvailableSize().second, compactView?.height ?: 0)
-        windowManager?.updateViewLayout(root, params)
-        renderBus()
+    private fun expandedPanelHeight(): Int {
+        val availableHeight = overlayAvailableSize().second
+        val panel = expandedView
+        val editing = appearanceDialog?.isShowing == true
+        val chrome = if (editing) dp(20) else
+            (panel?.paddingTop ?: dp(10)) + (panel?.paddingBottom ?: dp(10)) + dp(8) +
+                (panel?.findViewWithTag<View>("overlay-toolbar")?.height?.takeIf { it > 0 } ?: dp(48)) +
+                (panel?.findViewWithTag<View>("overlay-actions")?.height?.takeIf { it > 0 } ?: dp(48))
+        val lineHeight = expandedTranslationView?.paint?.fontSpacing?.toInt() ?: dp(24)
+        val minimum = chrome + maxOf(dp(64), lineHeight + dp(8))
+        val desired = availableHeight * (resizeHeightPercent ?: SettingsStore.overlayHeightPercent(this)) / 100
+        val limit = if (editing) (availableHeight - editorOffset()).coerceAtLeast(1) else availableHeight
+        return maxOf(minimum, desired).coerceAtMost(limit)
     }
 
     private fun hideOverlay() {
@@ -1268,10 +1324,8 @@ class MimiService : Service() {
         else if (isRunning && !isStopping && !hasVisibleCaption) interfaceString(R.string.overlay_listening_empty)
         else ""
         compactView?.apply {
-            val statusOnly = !immersiveSession && statusLine.isNotBlank() && !hasVisibleCaption
-            val horizontal = dp(if (immersiveSession) 3 else 14)
-            minimumHeight = if (statusOnly) dp(56) else 0
-            setPadding(horizontal, dp(if (statusOnly) 16 else 9), horizontal, dp(if (statusOnly) 16 else 10))
+            val horizontal = dp(3)
+            setPadding(horizontal, dp(9), horizontal, dp(10))
         }
         statusView?.apply {
             visibility = if (statusLine.isEmpty()) View.GONE else View.VISIBLE
@@ -1286,6 +1340,7 @@ class MimiService : Service() {
             maxLines = maxOf(maxHistory, 1) * 3
             text = historyText
         }
+        expandedView?.findViewWithTag<View>("history-divider")?.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
         // Display preferences filter views only; paired shared state is unchanged.
         // Recognition-only sessions always show their source.
         sourceView?.apply {
@@ -1306,7 +1361,7 @@ class MimiService : Service() {
             visibility = if (liveVisible && mode.translationVisible && SubtitleBus.displayTranslation.isNotBlank()) View.VISIBLE else View.GONE
             text = SubtitleBus.displayTranslation
         }
-        updateOverlayGeometry(history.size)
+        updateOverlayGeometry()
         val hasCaption = listOf(sourceView, translationView).any {
             it?.visibility == View.VISIBLE && !it.text.isNullOrBlank()
         }

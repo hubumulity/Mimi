@@ -445,8 +445,6 @@ class UiSmokeInstrumentation : Instrumentation() {
             prefs.edit().remove("immersive_seen").commit()
             targetContext.startService(Intent(targetContext, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
             val overlay = checkNotNull(waitForOverlayTag("mimi-overlay"))
-            val compact = overlay.findViewWithTag<View>("compact-subtitle")
-            onUi { compact.performClick() }
             val entry = overlay.findViewWithTag<View>("enter-immersive")
             onUi { entry.performClick(); entry.performClick() }
             check(!SettingsStore.immersiveSubtitles(targetContext)) { "Overlay enabled immersion before acknowledgement" }
@@ -682,10 +680,8 @@ class UiSmokeInstrumentation : Instrumentation() {
                 }
                 check(wide) { "Landscape display did not settle before screenshot" }
             }
-            check(compact.isShown && !expanded.isShown)
-            capture("overlay-before-compact-$theme")
-            onUi { check(compact.performClick()) }
-            check(expanded.isShown && !compact.isShown) { "Expanded floating overlay did not open" }
+            check(expanded.isShown && !compact.isShown) { "Normal caption panel did not open" }
+            check(expanded.findViewWithTag<View>("collapse-overlay") == null)
             if (targetContext.resources.displayMetrics.widthPixels > targetContext.resources.displayMetrics.heightPixels) {
                 val params = overlay.layoutParams as WindowManager.LayoutParams
                 check(params.width <= targetContext.resources.displayMetrics.widthPixels) {
@@ -706,12 +702,6 @@ class UiSmokeInstrumentation : Instrumentation() {
             capture("overlay-after-expanded-history-$theme")
             checkCurrentCaptionStart(expanded)
             checkLongExpandedCaption(expanded)
-            onUi { check(expanded.findViewWithTag<View>("collapse-overlay").performClick()) { "Collapse click failed" } }
-            check(compact.isShown && !expanded.isShown) { "Floating overlay did not collapse" }
-            capture("overlay-long-compact-$theme")
-            checkCompactCaptionEnd(compact)
-            checkCompactCaptionUpdates(compact)
-            onUi { check(compact.performClick()) { "Compact reopen click failed" } }
             onUi { check(expanded.findViewWithTag<View>("enter-immersive").performClick()) { "Immersive entry click failed" } }
             acknowledgeImmersiveHelpIfShown()
             check(SettingsStore.immersiveSubtitles(targetContext)) { "Immersive entry did not update preference" }
@@ -734,6 +724,7 @@ class UiSmokeInstrumentation : Instrumentation() {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0) { "Exit control is not touchable" }
             capture("overlay-after-immersive-$theme")
             checkCompactCaptionEnd(compact)
+            checkCompactCaptionUpdates(compact)
             onUi { check(exit.performClick()) { "Exit control click failed" } }
             waitForIdleSync()
             check(!SettingsStore.immersiveSubtitles(targetContext)) { "Exit did not clear immersive preference" }
@@ -746,10 +737,6 @@ class UiSmokeInstrumentation : Instrumentation() {
             check(WindowInspector.getGlobalWindowViews().none { it.tag == "exit-immersive" }) {
                 "Exit control remained after leaving immersive mode"
             }
-            onUi { check(expanded.findViewWithTag<View>("collapse-overlay").performClick()) }
-            waitForIdleSync()
-            check(compact.isShown && !expanded.isShown) { "Restored overlay did not collapse" }
-            capture("overlay-after-restored-compact-$theme")
             SettingsStore.setImmersiveSubtitles(targetContext, true)
             targetContext.startService(Intent(targetContext, MimiService::class.java)
                 .setAction(MimiService.ACTION_APPLY_APPEARANCE))
@@ -788,9 +775,9 @@ class UiSmokeInstrumentation : Instrumentation() {
         onUi {
             val panelLocation = IntArray(2)
             panel.getLocationOnScreen(panelLocation)
-            for (tag in listOf("collapse-overlay", "enter-immersive", "overlay-font", "overlay-route")) {
+            check(panel.findViewWithTag<View>("collapse-overlay") == null)
+            for (tag in listOf("enter-immersive", "overlay-font", "overlay-route")) {
                 val label = checkNotNull(panel.findViewWithTag<View>(tag))
-                if (tag == "collapse-overlay") check(label.rotation == 180f) { "Collapse chevron must point upwards" }
                 if (tag == "enter-immersive") check(label is TextView && label.text.toString() ==
                     InterfaceLanguage.context(targetContext).getString(R.string.overlay_enter_immersive)) { "Immersion has no visible localized label" }
                 if (label is TextView && tag == "overlay-route") check(label.lineCount == 1) { "Overlay route wraps" }
@@ -909,11 +896,8 @@ class UiSmokeInstrumentation : Instrumentation() {
         waitForIdleSync()
         SystemClock.sleep(250)
         onUi { check(scroll.scrollY == 0) { "New sentence interrupted history review" } }
-        // Reopening is an explicit request to return to the current sentence.
-        onUi {
-            panel.findViewWithTag<View>("collapse-overlay").performClick()
-            panel.rootView.findViewWithTag<View>("compact-subtitle").performClick()
-        }
+        // The reader can return to the current sentence without changing modes.
+        onUi { scroll.scrollTo(0, sourceView.top) }
         waitForIdleSync()
         SystemClock.sleep(250)
         checkCurrentCaptionStart(panel)
@@ -1162,6 +1146,8 @@ class UiSmokeInstrumentation : Instrumentation() {
         private val target = restoreTarget ?: SettingsStore.targetLang(targetContext)
         private val font = restoreFont ?: SettingsStore.fontSize(targetContext)
         private val width = SettingsStore.overlayWidthPercent(targetContext)
+        private val height = SettingsStore.overlayHeightPercent(targetContext)
+        private val alignment = SettingsStore.captionAlignment(targetContext)
         private val mode = SettingsStore.displayMode(targetContext)
         private val color = restoreColor ?: SettingsStore.translationColorIndex(targetContext)
         private val opacity = SettingsStore.overlayOpacity(targetContext)
@@ -1176,6 +1162,8 @@ class UiSmokeInstrumentation : Instrumentation() {
             SettingsStore.setTargetLang(targetContext, target)
             SettingsStore.setFontSize(targetContext, font)
             SettingsStore.setOverlayWidthPercent(targetContext, width)
+            SettingsStore.setOverlayHeightPercent(targetContext, height)
+            SettingsStore.setCaptionAlignment(targetContext, alignment)
             SettingsStore.setDisplayMode(targetContext, mode)
             SettingsStore.setTranslationColorIndex(targetContext, color)
             SettingsStore.setOverlayOpacity(targetContext, opacity)

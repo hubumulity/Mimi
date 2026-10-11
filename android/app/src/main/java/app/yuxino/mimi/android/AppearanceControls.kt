@@ -28,12 +28,7 @@ internal class AppearanceControls(
     private val main = Handler(Looper.getMainLooper())
     private var observing: (() -> Unit)? = null
     private var syncing = false
-    private val previewUpdate = Runnable { if (isShown) refreshPreview() }
-    private val subtitleListener = object : app.yuxino.mimi.android.provider.SubtitleBus.Listener {
-        override fun onSubtitleChanged() { main.removeCallbacks(previewUpdate); main.post(previewUpdate) }
-    }
     private val refreshers = mutableListOf<() -> Unit>()
-    private val preview = if (compactHome) null else SubtitlePreviewView(context).apply { id = R.id.subtitle_preview }
     private val styles = if (compactHome) LinearLayout(context).apply {
         id = R.id.appearance_panel; orientation = VERTICAL
     } else this
@@ -41,7 +36,6 @@ internal class AppearanceControls(
 
     init {
         orientation = VERTICAL
-        preview?.let { addView(it, LayoutParams(-1, -2)) }
         picker(R.id.display_mode, R.string.settings_display_mode, CaptionDisplayMode.entries.map { context.getString(it.label) },
             { (if (SettingsStore.originalTextOnly(context)) CaptionDisplayMode.ORIGINAL else SettingsStore.displayMode(context)).ordinal },
             { SettingsStore.setDisplayMode(context, CaptionDisplayMode.entries[it]) }).also { spinner ->
@@ -51,6 +45,10 @@ internal class AppearanceControls(
             { SettingsStore.fontSize(context) }, { SettingsStore.setFontSize(context, it) }, R.string.settings_font_value, styles)
         slider(R.id.overlay_width, R.id.overlay_width_value, R.string.settings_width, 55, 100,
             { SettingsStore.overlayWidthPercent(context) }, { SettingsStore.setOverlayWidthPercent(context, it) }, parent = styles)
+        val height = slider(R.id.overlay_height, R.id.overlay_height_value, R.string.settings_height, 20, 70,
+            { SettingsStore.overlayHeightPercent(context) }, { SettingsStore.setOverlayHeightPercent(context, it) }, parent = styles)
+        picker(R.id.caption_alignment, R.string.settings_alignment, CaptionAlignment.entries.map { context.getString(it.label) },
+            { SettingsStore.captionAlignment(context).ordinal }, { SettingsStore.setCaptionAlignment(context, CaptionAlignment.entries[it]) }, styles)
         colorPalette(styles)
         val background = slider(R.id.overlay_bg_alpha, R.id.overlay_bg_alpha_value, R.string.settings_background, 0, 90,
             { SettingsStore.overlayBgAlpha(context) }, { SettingsStore.setOverlayBgAlpha(context, it) }, parent = styles)
@@ -74,6 +72,7 @@ internal class AppearanceControls(
             immersive.isChecked = SettingsStore.immersiveSubtitles(context)
             background.isEnabled = !immersive.isChecked
             opacity.isEnabled = !immersive.isChecked
+            height.isEnabled = !immersive.isChecked
         }
         if (compactHome) {
             addView(View(context).apply { setBackgroundColor(color(R.color.mimi_border)) },
@@ -104,12 +103,10 @@ internal class AppearanceControls(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         observing = SettingsStore.observeAppearance(context) { main.post { if (isAttachedToWindow) sync() } }
-        if (preview != null) app.yuxino.mimi.android.provider.SubtitleBus.addListener(subtitleListener)
         sync()
     }
     override fun onDetachedFromWindow() {
         observing?.invoke(); observing = null
-        if (preview != null) app.yuxino.mimi.android.provider.SubtitleBus.removeListener(subtitleListener)
         main.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
     }
@@ -117,10 +114,8 @@ internal class AppearanceControls(
         syncing = true
         try {
             refreshers.forEach { it() }
-            refreshPreview()
         } finally { syncing = false }
     }
-    fun takePreview(): SubtitlePreviewView = checkNotNull(preview).also { removeView(it) }
     private fun colorPalette(parent: LinearLayout) {
         parent.addView(label(R.string.settings_color), LayoutParams(-1, -2).apply { topMargin = dp(20) })
         val row = CaptionColorPalette(context).apply { id = R.id.translation_color }
@@ -158,17 +153,6 @@ internal class AppearanceControls(
             }
         }
         parent.addView(row, LayoutParams(-1, -2).apply { topMargin = dp(8) })
-    }
-    private fun refreshPreview() {
-        val preview = preview ?: return
-        preview.configure(SettingsStore.fontSize(context), SettingsStore.translationColor(context),
-            SettingsStore.overlayOpacity(context), SettingsStore.overlayBgAlpha(context), SettingsStore.targetLang(context),
-            SettingsStore.immersiveSubtitles(context), SettingsStore.originalTextOnly(context),
-            SettingsStore.displayMode(context), SettingsStore.overlayWidthPercent(context), live = app.yuxino.mimi.android.capture.MimiService.isRunning)
-        if (app.yuxino.mimi.android.capture.MimiService.isRunning) {
-            val bus = app.yuxino.mimi.android.provider.SubtitleBus
-            preview.showLive(bus.displaySource, bus.displayTranslation, bus.liveHidden, context.getString(R.string.overlay_listening_empty))
-        }
     }
     private fun save(action: () -> Unit) {
         try { action() }

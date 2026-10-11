@@ -14,35 +14,30 @@ public final class OverlayPlacementRegression {
         OverlayPlacement p = new OverlayPlacement();
         p.reset(160, false);
         equal(480, p.compactY(3f, 2000, 160));
-        check(p.expand());
+        check(p.isExpanded());
         check(p.setImmersive(true));
         check(!p.isExpanded());
         equal(480, p.compactY(3f, 2000, 140));
         check(p.setImmersive(false));
         check(p.isExpanded());
-        check(p.collapse());
         equal(480, p.compactY(3f, 2000, 160));
         cases++;
 
         // Duplicate preference callbacks / taps cannot destroy the return state.
         for (int n = 0; n < 20; n++) {
-            check(p.expand());
-            check(!p.expand());
             check(p.setImmersive(true));
             check(!p.setImmersive(true));
-            check(!p.expand());
             check(p.setImmersive(false));
             check(!p.setImmersive(false));
             check(p.isExpanded());
-            check(p.collapse());
             equal(160, p.getPreferredOffsetDp());
         }
         cases++;
 
-        // Entering from settings while compact returns to compact.
+        // Every exit returns to the one interactive panel.
         p.setImmersive(true);
         p.setImmersive(false);
-        check(!p.isExpanded());
+        check(p.isExpanded());
         cases++;
 
         // Rotation clamps temporarily; portrait restores the saved dp anchor.
@@ -70,7 +65,7 @@ public final class OverlayPlacementRegression {
         p.reset(48, true);
         equal(144, p.compactY(3f, safeHeight, 180));
         check(p.setImmersive(false));
-        check(!p.isExpanded());
+        check(p.isExpanded());
         cases++;
 
         p.reset(2000, false);
@@ -91,8 +86,8 @@ public final class OverlayPlacementRegression {
         // A genuine user drag replaces the preference; resets retire mode state.
         p.setPreferredOffsetDp(90);
         equal(236, p.compactY(2.625f, 1200, 80));
-        p.expand(); p.setImmersive(true); p.reset(90, false);
-        check(!p.isExpanded()); check(!p.isImmersive());
+        p.setImmersive(true); p.reset(90, false);
+        check(p.isExpanded()); check(!p.isImmersive());
         equal(236, p.compactY(2.625f, 1200, 80));
         cases++;
 

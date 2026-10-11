@@ -13,8 +13,6 @@
     <string name="notification_title">mimi is capturing playback audio</string>
     <string name="notification_text">Live captions and translation are running</string>
     <string name="stop_action">Stop</string>
-    <string name="overlay_collapse">Collapse</string>
-    <string name="overlay_collapse_description">Collapse caption overlay</string>
     <string name="overlay_font_description">Adjust caption size</string>
     <string name="overlay_language_description">Open language settings</string>
     <string name="overlay_enter_immersive">Immersive</string>
@@ -35,4 +33,9 @@
     <string name="lang_shanghainese">Shanghainese</string>
     <string name="lang_chinese_english">Chinese and English (mixed)</string>
     <string name="help_description">Help: %1$s</string>
+    <string name="settings_height">Window height</string>
+    <string name="settings_alignment">Caption alignment</string>
+    <string name="settings_align_left">Left</string>
+    <string name="settings_align_center">Center</string>
+    <string name="settings_align_right">Right</string>
 </resources>

@@ -14,8 +14,6 @@
     <string name="notification_title">mimi capture le son de lecture</string>
     <string name="notification_text">Sous-titres et traduction en cours</string>
     <string name="stop_action">Arrêter</string>
-    <string name="overlay_collapse">Réduire</string>
-    <string name="overlay_collapse_description">Réduire la fenêtre de sous-titres</string>
     <string name="overlay_font_description">Ajuster la taille des sous-titres</string>
     <string name="overlay_language_description">Ouvrir les réglages de langue</string>
     <string name="overlay_enter_immersive">Immersif</string>
@@ -36,4 +34,9 @@
     <string name="lang_shanghainese">Shanghaïen</string>
     <string name="lang_chinese_english">Chinois et anglais (mixte)</string>
     <string name="help_description">Aide : %1$s</string>
+    <string name="settings_height">Hauteur de la fenêtre</string>
+    <string name="settings_alignment">Alignement des sous-titres</string>
+    <string name="settings_align_left">Gauche</string>
+    <string name="settings_align_center">Centré</string>
+    <string name="settings_align_right">Droite</string>
 </resources>
