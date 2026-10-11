@@ -2400,3 +2400,69 @@
   remains historical evidence; this follow-up's large-font frame comparisons
   cover Japanese and English. Exact-head CI and main merge are checked before
   delivery. No public version or existing release assets are changed.
+
+## 2026-10-12: Android bilingual reading space and optional metadata
+
+- Product revision: `5b6281f1`; final installed app/test source:
+  `9e08d91a`, based on main `c4f9e1f5`. Later changes are documentation only.
+  The normal frame now budgets measured tail glyphs separately for original
+  and translation, yields unused short-lane space, and follows newest complete
+  lines. Preserve the saved window height; where safe space permits, its minimum
+  reserves one original line and two translation lines. New installs default to
+  32% of the usable display height; explicit saved heights and direct resizing
+  remain available. Deliberate scrolling opens the complete bounded current
+  text and retains its offset during updates; reaching the bottom resumes live
+  following. History remains bounded by shared state and cannot enlarge the frame.
+- Sentence dividers and Show time are independent, default-off switches in both
+  primary and quick appearance settings, localized in all eight languages. Time
+  uses the shared reducer's accepted confirmation epoch, including with history
+  disabled; drafts and clear have no new confirmation time. Preserve duplicate
+  and stale-final identity. Render HH:mm:ss locally in normal/immersive frames,
+  reserve metadata before bilingual line allocation, and avoid repeating the
+  current confirmed row in history. Android remains playback capture only;
+  RECORD_AUDIO permission does not imply microphone support.
+- API 35 ARM64, 280 dpi: 315 comparisons across all eight locales plus System at
+  720 x 1600/font scale 1 passed on `75ab08d8`. The later restore-companion fix
+  changes no caption renderer; its final app inputs passed another 105 frame
+  comparisons across default Chinese, Japanese 540 x 1200/dark/font scale 2,
+  and English 1280 x 720/light/font scale 2. Real touch flows passed all three
+  layouts, including quick/primary switches, reading/return-to-live, size/drag,
+  one/two provider badges and immersion/restoration. Narrow touch used
+  `1867e5e0`; default/landscape used `9e08d91a` with only test-fixture changes.
+  Compare both previews with actual pixels/geometry and separately validate
+  complete visible glyph bounds for both languages and optional time.
+- The first maximum-font narrow check exposed TextView maxLines measuring first
+  lines while displaying taller fallback-font tail lines. Measure the actual
+  visible tail range and validate both its top and bottom against the native
+  reading viewport, in addition to comparing preview pixels. A one-line
+  translation minimum passed those geometry checks but left an unhelpful short
+  fragment; increased it to two lines where the safe display permits. A narrow
+  large-font quick-editor run then exposed the immersive restore
+  window covering a settings switch despite its nonclickable View. Reserve the
+  editor bounds and make that companion native touch-through while editing;
+  restore ordinary touchability on dismissal. Native reader checks also wait for flings/smooth scrolling to finish and reset history
+  fixture options before testing both primary switch directions. Hold current
+  glyphs constant when isolating history growth from a language/font change.
+  Stop the
+  explicit own-page overlay fixture before ordinary page taps; test height
+  resizing outside the bilingual minimum, then restore the large-font case.
+  Initial failed
+  attempts remain separate from passing acceptance, with synthetic evidence.
+- Canonical checks passed against the rebased main (2,043 frontend tests), starting
+  at `5af6a010`; later Rust/frontend inputs are unchanged, while the Android
+  restore-control fix was checked separately below. Android Debug/Release each
+  passed 189 JVM/actual-JNI tests, lint, application/instrumentation assembly and
+  four-ABI packaging. The final full Android check ran at `7436a967`; its product inputs match `5b6281f1`. Only native
+  history-fixture isolation changed afterward. Shared timestamp policy has direct Rust and actual JNI coverage; provider protocols
+  and prompts are unchanged.
+- Restored the original private preferences byte for byte before and after
+  startup, plus display, font, night mode and app locale. Then applied only the
+  user-requested Dev height of 32%; preserve all credentials and other choices.
+  Verified the stable Dev certificate and installed APK hash, ready status and
+  no capture session; removed the private fixture backup and test package.
+  Synthetic screenshots, source trees and package/check receipts stay outside Git.
+- UI fixtures start no capture or provider session. Physical devices, API 29,
+  split-screen, accessibility scroll actions and live audio/provider quality were
+  not rerun. Large-font acceptance covers Japanese narrow and English landscape,
+  not every locale at those sizes. Exact-head CI and main merge are checked before
+  delivery. No public version or existing release assets are changed.

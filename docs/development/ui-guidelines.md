@@ -318,6 +318,18 @@ or smooth scroll. Wait for a stable reading offset before checking that a new
 caption preserves it; wait for the actual bottom before injecting the return-to-
 live gesture. Reset options changed by an earlier history fixture before testing
 both switch directions, then verify the saved state and the visible control.
+Hold the current pair, font and style constant when isolating retained-history
+height; a seed that also changes the current language can change native fallback
+font minimums. Let preceding mode layouts settle first. In large-font landscape
+cases, the complete bilingual minimum can already exceed the 70% preferred
+height. Require visible growth where space permits, and verify the native safe
+bound and saved maximum where that minimum prevents further growth.
+
+An inert immersive restore companion must also use a native touch-through
+window while the quick editor is open. A nonclickable View can still intercept
+an underlying switch. Reserve the editor's occupied bounds when positioning
+that companion, and verify its native frame clears the editor at font scale 2;
+ordinary dismissal must restore the clickable native target.
 
 A bottom floating editor must remove Material's centered-dialog background
 insets. Transparent top/bottom margins still count toward decor bounds and can
