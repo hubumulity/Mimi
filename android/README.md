@@ -19,7 +19,7 @@ Rust subtitle/provider runtime as desktop through JNI.
 - **Main interface** — Captions, Services and More share one page shell and a
   persistent status/Start/Stop footer. Captions contains language choices, one
   live/sample preview, display mode and immersion. Width, font, color and
-  opacity expand under Caption style on that same page. Services owns service
+  opacity are directly adjustable beside the pinned preview on that same page. Services owns service
   selection and setup; More contains interface language, diagnostics and the
   setup guide. Switching sections retains their scroll positions.
 - **System-audio capture** — `MediaProjection` + `AudioPlaybackCapture`
@@ -41,7 +41,7 @@ Rust subtitle/provider runtime as desktop through JNI.
   or the expanded panel's top handle to move it. Tap the compact caption to open a reading panel with the
   current source and translation; confirmed lines appear there only when
   bounded history is enabled in caption styles. The panel has language, style,
-  upward collapse and a visibly labeled immersive action. Caption and floating controls offer
+  upward collapse and an icon/label immersive action. Caption and floating controls offer
   original/translation/bilingual display, width (55–100 %), background alpha
   (0–90 %), text color presets, font size, and whole-window opacity. The expanded
   panel also has a direct resize handle.
@@ -160,10 +160,13 @@ and previewed without capture or a network session. The appearance screen also
 previews the compact card and immersive text mode. The service tab lists all eight integrations and opens a separate editor with only that service’s fields.
 Credentials require explicit Save and use; changing appearance never saves credentials. Your own service credentials are still required for real translation.
 
-Settings groups Services, Captions and General separately. Captions offers live
+The main page groups Captions, Services and More. Captions offers live
 original/translation/bilingual display, width, size, color and opacity controls.
-Its preview keeps one latest line per language in a stable viewport, so adjusting
-width or size does not move the controls under your finger. Full current captions
+Its preview stays visible while styles scroll, above the controls in portrait
+and alongside them on wide screens. The floating style dialog uses the same
+arrangement. Direct color choices wrap to retain 48dp touch targets. The preview
+keeps one latest line per language in a stable viewport, so adjusting width or
+size does not move the controls under your finger. Full current captions
 remain available in the expanded reading panel.
 The expanded panel has drag and resize handles and the same appearance controls.
 Display choices do not change recognition or translation requests. A running

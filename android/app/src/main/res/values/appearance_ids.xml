@@ -1,6 +1,4 @@
 <resources>
-    <item name="appearance_more_panel" type="id" />
-    <item name="appearance_more_toggle" type="id" />
     <item name="display_mode" type="id" />
     <item name="font_size" type="id" />
     <item name="font_size_value" type="id" />

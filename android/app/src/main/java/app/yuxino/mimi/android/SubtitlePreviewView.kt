@@ -20,7 +20,6 @@ class SubtitlePreviewView @JvmOverloads constructor(
 ) : LinearLayout(context, attrs) {
     private val exampleLabel = TextView(context)
     private val previewLabel = TextView(context)
-    private var appearanceShortcut = false
     private var widthPercent = 92
     private var displayMode = CaptionDisplayMode.BILINGUAL
     private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
@@ -78,15 +77,10 @@ class SubtitlePreviewView @JvmOverloads constructor(
         configure(16, Color.WHITE, 100, 65, "zh", false)
     }
 
-    fun showAppearanceShortcut() {
-        appearanceShortcut = true
-        exampleLabel.setText(R.string.preview_edit)
-    }
-
     fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92, live: Boolean = false) {
         if (!live) {
             previewLabel.setText(R.string.preview_label)
-            exampleLabel.setText(if (appearanceShortcut) R.string.preview_edit else R.string.preview_example)
+            exampleLabel.setText(R.string.preview_example)
             status.visibility = GONE
         }
         val effective = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
@@ -122,7 +116,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
 
     fun showLive(original: String, translated: String, hidden: Boolean, waiting: String) {
         previewLabel.setText(R.string.home_title)
-        exampleLabel.setText(R.string.caption_style_controls)
+        exampleLabel.text = ""
         source.text = if (hidden) "" else original
         translation.text = if (hidden) "" else translated
         source.visibility = if (displayMode.sourceVisible && source.text.isNotEmpty()) VISIBLE else GONE

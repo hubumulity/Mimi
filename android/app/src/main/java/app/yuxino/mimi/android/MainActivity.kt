@@ -81,10 +81,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.service_settings).setOnClickListener { openSettings() }
         findViewById<View>(R.id.source_language_action).setOnClickListener { showLanguages(source = true) }
         findViewById<View>(R.id.target_language_action).setOnClickListener { showLanguages(source = false) }
-        findViewById<SubtitlePreviewView>(R.id.subtitle_preview).apply {
-            showAppearanceShortcut()
-            setOnClickListener { showSubtitleStyles() }
-        }
+        findViewById<View>(R.id.brand_header).visibility = if (resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE) View.GONE else View.VISIBLE
         startStop.setOnClickListener {
             if (MimiService.isRunning) {
                 stopService()
@@ -125,8 +123,6 @@ class MainActivity : AppCompatActivity() {
             R.id.tab_general -> "general"
             else -> "captions"
         })
-        outState.putBoolean("settings_more", appearance.isMoreExpanded())
-        outState.putBoolean("caption_styles", appearance.isStyleExpanded())
         sectionScroll.put(currentSection, findViewById<ScrollView>(R.id.settings_scroll).scrollY)
         outState.putIntArray("section_scroll", sections.map { sectionScroll[it.first] }.toIntArray())
         super.onSaveInstanceState(outState)
@@ -159,8 +155,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<LinearLayout>(R.id.home_panel).apply {
             addView(appearance, indexOfChild(findViewById(R.id.service_settings)), LinearLayout.LayoutParams(-1, -2))
         }
-        appearance.setStyleExpanded(savedInstanceState?.getBoolean("caption_styles") == true)
-        appearance.setMoreExpanded(savedInstanceState?.getBoolean("settings_more") == true)
         val tabs = findViewById<RadioGroup>(R.id.settings_tabs)
         val scroll = findViewById<ScrollView>(R.id.settings_scroll)
         savedInstanceState?.getIntArray("section_scroll")?.forEachIndexed { index, value ->
@@ -172,6 +166,7 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, back)
         fun showSection(selected: Int) {
             sections.forEach { (tab, panel) -> findViewById<View>(panel).visibility = if (tab == selected) View.VISIBLE else View.GONE }
+            findViewById<CaptionWorkspace>(R.id.caption_workspace).showsPreview = selected == R.id.tab_caption
             currentSection = selected
             back.isEnabled = selected != R.id.tab_caption
             scroll.post { if (currentSection == selected) scroll.scrollTo(0, sectionScroll[selected]) }
@@ -197,7 +192,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption)
         val styles = findViewById<View>(R.id.appearance_panel)
         styles.doOnNextLayout { styles.requestRectangleOnScreen(android.graphics.Rect(0, 0, styles.width, dp(176)), true) }
-        appearance.setStyleExpanded(true)
         styles.requestLayout()
     }
 

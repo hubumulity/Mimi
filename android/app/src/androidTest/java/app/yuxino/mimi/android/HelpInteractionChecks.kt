@@ -206,10 +206,6 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
             ui { openCaptionStyles(currentSettings) }
             capture("$prefix-appearance")
             if (!baseline) help(currentSettings, "immersive-help", currentSettings.getString(R.string.settings_immersive_help), "$prefix-immersive", hover = true)
-            ui {
-                currentSettings.findViewById<View>(R.id.appearance_more_toggle).performClick()
-            }
-            SystemClock.sleep(300) // Wait for expansion layout before choosing the scroll limit.
             ui { currentSettings.findViewById<ScrollView>(R.id.settings_scroll).fullScroll(View.FOCUS_DOWN) }
             if (!baseline) ui {
                 check(views(currentSettings.findViewById(android.R.id.content)).count {

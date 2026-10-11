@@ -560,7 +560,8 @@ class UiSmokeInstrumentation : Instrumentation() {
         drag(seek, if (initialFont < 20) 20 else 16)
         check(SettingsStore.fontSize(targetContext) == seek.progress) { "Font was not automatically saved" }
         val changedFont = seek.progress
-        onUi { settings.findViewById<Spinner>(R.id.translation_color).setSelection(0) }
+        selectCaptionColor(settings, 3)
+        selectCaptionColor(settings, 1)
         waitForIdleSync()
         check(SettingsStore.translationColorIndex(targetContext) == 1) { "Color was not automatically saved" }
         check(SettingsStore.historyLines(targetContext) == initialHistory) { "Appearance enabled history" }
@@ -568,8 +569,7 @@ class UiSmokeInstrumentation : Instrumentation() {
         click(settings, R.id.tab_caption)
         val reopened = openSettings(home, appearance = true)
         check(reopened.findViewById<SeekBar>(R.id.font_size).progress == changedFont) { "Back discarded appearance" }
-        click(reopened, R.id.appearance_more_toggle)
-        check(reopened.findViewById<View>(R.id.appearance_more_panel).visibility == View.VISIBLE)
+        check(reopened.findViewById<View>(R.id.history_lines).isShown)
         onUi { reopened.findViewById<ScrollView>(R.id.settings_scroll).scrollTo(0, 10000) }
         waitForIdleSync()
         val history = reopened.findViewById<SeekBar>(R.id.history_lines)
@@ -832,11 +832,17 @@ class UiSmokeInstrumentation : Instrumentation() {
         onUi { home.findViewById<ScrollView>(R.id.settings_scroll).scrollTo(0, 10000) }
         waitForIdleSync()
         val offset = home.findViewById<ScrollView>(R.id.settings_scroll).scrollY
+        val preview = home.findViewById<View>(R.id.subtitle_preview)
+        val previewPosition = IntArray(2).also(preview::getLocationOnScreen)
+        val previewBounds = android.graphics.Rect()
+        check(preview.getGlobalVisibleRect(previewBounds) && previewBounds.height() > 0) {
+            "Scrolling caption settings hid the preview"
+        }
         click(home, R.id.tab_service)
         click(home, R.id.tab_caption)
         check(home.findViewById<ScrollView>(R.id.settings_scroll).scrollY == offset) { "Navigation lost the reader's position" }
+        check(IntArray(2).also(preview::getLocationOnScreen).contentEquals(previewPosition)) { "Navigation moved the pinned preview" }
         onUi {
-            home.findViewById<View>(R.id.appearance_controls_toggle).performClick()
             home.findViewById<ScrollView>(R.id.settings_scroll).scrollTo(0, 0)
         }
         click(home, R.id.tab_caption)
@@ -996,11 +1002,11 @@ class UiSmokeInstrumentation : Instrumentation() {
         pause("调整字号，自动保存", 2200)
         drag(settings.findViewById(R.id.overlay_bg_alpha), 65)
         pause("背景与字幕实时预览", 2200)
-        onUi { settings.findViewById<Spinner>(R.id.translation_color).setSelection(0) }
+        selectCaptionColor(settings, 3)
+        selectCaptionColor(settings, 1)
         pause("白色字幕", 1600)
-        click(settings, R.id.appearance_more_toggle)
         onUi { settings.findViewById<ScrollView>(R.id.settings_scroll).smoothScrollTo(0, 650) }
-        pause("低频选项收起，历史仍默认关闭", 2500)
+        pause("样式直接调整，历史仍默认关闭", 2500)
         click(settings, R.id.tab_service)
         pause("八家服务，已配置的可直接切换", 2800)
         val azure = openService(settings, "azure")
@@ -1045,6 +1051,22 @@ class UiSmokeInstrumentation : Instrumentation() {
         removeMonitor(monitor); waitForIdleSync(); return editor
     }
 
+    private fun selectCaptionColor(activity: Activity, index: Int) {
+        val palette = activity.findViewById<android.view.ViewGroup>(R.id.translation_color)
+        onUi { palette.requestRectangleOnScreen(android.graphics.Rect(0, 0, palette.width, palette.height), true) }
+        waitForIdleSync()
+        onUi {
+            val touchSize = (48 * palette.resources.displayMetrics.density).toInt()
+            check((0 until palette.childCount).all { palette.getChildAt(it).width >= touchSize && palette.getChildAt(it).height >= touchSize }) {
+                "Caption color choices lost their touch targets"
+            }
+            val button = palette.findViewWithTag<View>("caption-color-$index")
+            check(button.contentDescription.isNotBlank() && button.performClick())
+            check(SettingsStore.translationColorIndex(targetContext) == index)
+            check(button.isSelected && (0 until palette.childCount).count { palette.getChildAt(it).isSelected } == 1)
+        }
+    }
+
     private fun click(activity: Activity, id: Int) {
         onUi {
             val view = activity.findViewById<View>(id)
@@ -1072,6 +1094,8 @@ class UiSmokeInstrumentation : Instrumentation() {
         waitForIdleSync()
         Thread.sleep(220)
         val location = IntArray(2)
+        val preview = seek.rootView.findViewById<View>(R.id.subtitle_preview)
+        val previewPosition = preview?.let { IntArray(2).also(it::getLocationOnScreen) }
         var start = 0f
         var end = 0f
         var y = 0f
@@ -1098,6 +1122,10 @@ class UiSmokeInstrumentation : Instrumentation() {
             seek.getLocationOnScreen(final)
             check(kotlin.math.abs(final[1] - location[1]) <= 1) { "Preview moved the slider during a touch gesture" }
             check(kotlin.math.abs(seek.progress - value) <= 1) { "Slider gesture missed its endpoint" }
+            preview?.let {
+                check(IntArray(2).also(it::getLocationOnScreen).contentEquals(previewPosition)) { "Adjusting style moved the preview" }
+                check(it.getGlobalVisibleRect(android.graphics.Rect())) { "Adjusting style hid the preview" }
+            }
         }
     }
 

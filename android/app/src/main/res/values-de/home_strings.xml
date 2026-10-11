@@ -22,7 +22,6 @@
     <string name="preview_zh">这是一条示例字幕。</string>
     <string name="preview_en">This is a sample subtitle.</string>
     <string name="preview_ja">字幕の表示例です。</string>
-    <string name="preview_edit">Beispiel · Untertitelstil ›</string>
     <string name="language_source_title">Welche Sprache wird gesprochen?</string>
     <string name="language_target_title">In welcher Sprache sollen Untertitel erscheinen?</string>
     <string name="language_sheet_hint">Automatisch gespeichert; gilt beim nächsten Untertitelstart.</string>

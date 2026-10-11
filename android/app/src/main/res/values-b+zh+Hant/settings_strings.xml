@@ -28,8 +28,6 @@
     <string name="settings_color_green">綠色</string>
     <string name="settings_color_pink">粉色</string>
     <string name="settings_advanced_collapse">收起進階設定</string>
-    <string name="settings_more">更多選項</string>
-    <string name="settings_more_collapse">收起更多選項</string>
     <string name="settings_display_mode">顯示內容</string>
     <string name="display_translation">只看譯文</string>
     <string name="display_original">只看原文</string>

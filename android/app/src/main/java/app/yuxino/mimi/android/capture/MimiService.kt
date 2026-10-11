@@ -879,7 +879,7 @@ class MimiService : Service() {
                 // turns a localized label into a stack of clipped syllables.
                 val markWidth = maxOf((providerRow.childCount - 1) * dp(22), dp(48))
                 val labelWidth = kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
-                    immersion.paddingLeft + immersion.paddingRight
+                    immersion.compoundPaddingLeft + immersion.compoundPaddingRight
                 val singleRow = MeasureSpec.getSize(widthMeasureSpec) >= dp(48 + 8) + markWidth + maxOf(labelWidth, dp(48))
                 orientation = if (singleRow) HORIZONTAL else VERTICAL
                 (immersion.layoutParams as LayoutParams).apply {
@@ -976,16 +976,22 @@ class MimiService : Service() {
         textSize = 14f
         minimumHeight = dp(48)
         minimumWidth = dp(48)
-        setTypeface(typeface, Typeface.BOLD)
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         setPadding(dp(8), 0, dp(8), 0)
-        background = GradientDrawable().apply {
-            cornerRadius = dp(24).toFloat()
-            setColor(0xFF414141.toInt())
+        val icon = androidx.core.content.ContextCompat.getDrawable(this@MimiService, R.drawable.ic_translation_captions)?.mutate()
+        icon?.setTint(Color.WHITE); icon?.setBounds(0, 0, dp(18), dp(18))
+        setCompoundDrawablesRelative(icon, null, null, null); compoundDrawablePadding = dp(6)
+        background = android.graphics.drawable.StateListDrawable().apply {
+            fun feedback() = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(0x30FFFFFF) }
+            addState(intArrayOf(android.R.attr.state_pressed), feedback())
+            addState(intArrayOf(android.R.attr.state_focused), feedback())
+            addState(intArrayOf(), android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         }
         isClickable = true
         isFocusable = true
+        pointerIcon = android.view.PointerIcon.getSystemIcon(this@MimiService, android.view.PointerIcon.TYPE_HAND)
     }
 
     private fun languageName(code: String): String = app.yuxino.mimi.android.languageDisplayName(InterfaceLanguage.context(this), code)
@@ -995,8 +1001,19 @@ class MimiService : Service() {
         val themed = ContextThemeWrapper(InterfaceLanguage.context(this), R.style.Theme_Mimi)
         val controls = AppearanceControls(themed, floating = true) { enabled -> setImmersiveMode(enabled) }
         controls.setPadding(dp(20), dp(12), dp(20), dp(16))
-        val content = app.yuxino.mimi.android.ControlScrollView(themed).apply {
+        val scroll = app.yuxino.mimi.android.ControlScrollView(themed).apply {
             addView(controls)
+        }
+        val workspace = app.yuxino.mimi.android.CaptionWorkspace(themed).apply {
+            addView(app.yuxino.mimi.android.ControlScrollView(themed).apply {
+                setPadding(dp(20), dp(12), dp(20), dp(12))
+                addView(controls.takePreview())
+            })
+            addView(scroll)
+        }
+        val content = android.widget.FrameLayout(themed).apply {
+            addView(workspace, android.widget.FrameLayout.LayoutParams(-1,
+                (overlayAvailableSize().second * .84f - dp(128)).toInt().coerceAtLeast(dp(128))))
         }
         val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
         val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface).setTitle(R.string.caption_style_controls)

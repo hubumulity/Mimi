@@ -9,11 +9,16 @@ exit. They explicitly requested width adjustment and a mobile settings redesign.
 Use one primary activity with three visible sections: Captions, Services and
 More. A separate Home/settings hierarchy made common actions hard to locate. Put
 language selection, one live/sample preview, display mode and immersion in
-Captions. Caption style controls expand inline there, using the same native
-controls as the floating dialog without adding another preview or primary tab.
+Captions. Keep one preview visible while the native controls scroll independently, above
+them in portrait and alongside them on a wide screen. Common style controls are
+directly visible, without an accordion, in both Captions and the floating dialog.
+Use the same native controls and never add a second preview or primary tab.
+Color choices are direct swatches with a selected ring; wrap on narrow surfaces
+to preserve 48dp touch targets.
 Keep service selection/configuration and its ongoing session lock in Services;
 interface language, diagnostics and the setup guide in More. Keep the state and
-Start/Stop footer visible in every section, preserve each section's scroll
+Start/Stop footer visible in every section, use one row when actual localized
+labels fit and stack otherwise, preserve each section's scroll
 position, and restore the selected section after locale recreation. Android Back
 returns to Captions from another section. Preserve existing neutral tokens and
 brand artwork. Add provider marks to Captions and the expanded overlay as well
@@ -62,7 +67,8 @@ Start/Stop pinned while recovery instructions scroll with Caption content.
 The expanded panel uses one top row for collapse, drag/language and appearance,
 and one bottom row for immersion, provider/model details and resize. Keep its
 immersion action visibly labeled in the interface language; a caption icon alone
-does not explain the mode. The collapse chevron points upwards. At narrow widths
+does not explain the mode. Use a simple icon and text action, with pressed/focus
+feedback rather than a persistent circular background. The collapse chevron points upwards. At narrow widths
 or large fonts, put immersion on its own footer row, with provider marks and
 resize below. Keep every action at least 48dp. Optional model text can ellipsize,
 with its full label accessible via Captions. Keep the scroll viewport readable

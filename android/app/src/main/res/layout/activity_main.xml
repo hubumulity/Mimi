@@ -6,6 +6,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
     <LinearLayout
+        android:id="@+id/brand_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
@@ -83,6 +84,22 @@
             android:fontFamily="sans-serif-medium"
             android:paddingHorizontal="6dp" />
     </RadioGroup>
+    <app.yuxino.mimi.android.CaptionWorkspace
+        android:id="@+id/caption_workspace"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+        <app.yuxino.mimi.android.ControlScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="24dp"
+            android:paddingBottom="12dp"
+            android:clipToPadding="false">
+            <app.yuxino.mimi.android.SubtitlePreviewView
+                android:id="@+id/subtitle_preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </app.yuxino.mimi.android.ControlScrollView>
     <app.yuxino.mimi.android.ControlScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -182,14 +199,6 @@
                             android:textColor="@color/mimi_text" />
                     </LinearLayout>
                 </LinearLayout>
-                <app.yuxino.mimi.android.SubtitlePreviewView
-                    android:id="@+id/subtitle_preview"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:contentDescription="@string/caption_style_controls" />
                 <LinearLayout
                     android:id="@+id/service_settings"
                     android:layout_width="match_parent"
@@ -305,7 +314,8 @@
             </LinearLayout>
         </LinearLayout>
     </app.yuxino.mimi.android.ControlScrollView>
-    <LinearLayout
+    </app.yuxino.mimi.android.CaptionWorkspace>
+    <app.yuxino.mimi.android.SessionControlsLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
@@ -353,5 +363,5 @@
             app:iconSize="18dp"
             app:iconPadding="8dp"
             app:iconGravity="textStart" />
-    </LinearLayout>
+    </app.yuxino.mimi.android.SessionControlsLayout>
 </LinearLayout>

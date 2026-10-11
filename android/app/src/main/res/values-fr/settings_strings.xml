@@ -28,8 +28,6 @@
     <string name="settings_color_green">Vert</string>
     <string name="settings_color_pink">Rose</string>
     <string name="settings_advanced_collapse">Réduire les réglages avancés</string>
-    <string name="settings_more">Plus d’options</string>
-    <string name="settings_more_collapse">Moins d’options</string>
     <string name="settings_display_mode">Affichage</string>
     <string name="display_translation">Traduction seule</string>
     <string name="display_original">Original seul</string>

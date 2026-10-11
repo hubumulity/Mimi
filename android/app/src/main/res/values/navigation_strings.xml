@@ -5,5 +5,4 @@
     <string name="navigation_more">More</string>
     <string name="overlay_listening_empty">Listening — translations will stay here</string>
     <string name="caption_style_controls">Caption style</string>
-    <string name="caption_style_collapse">Collapse style controls</string>
 </resources>

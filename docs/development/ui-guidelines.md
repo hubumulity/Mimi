@@ -205,9 +205,12 @@ the rendered explanation with its intended anchor, not just popup bounds.
 Android uses one primary activity with Captions, Services and More. Caption
 content, display mode and style belong to the same section; do not split them
 into duplicate primary tabs or add another preview. Keep common controls
-visible, expand detailed styles inline, and retain section scroll positions and
+visible without an accordion. Keep the single preview pinned while settings
+scroll, above the controls in portrait and alongside them on wide screens. Use
+the same arrangement in the floating appearance dialog. Direct color swatches
+wrap before their touch targets shrink below 48dp. Retain section scroll positions and
 selection through recreation. Keep status and Start/Stop visible in every
-section. Native fixtures must reuse the existing singleTask MainActivity when
+section. Use one footer row only when actual localized labels fit; stack otherwise. Native fixtures must reuse the existing singleTask MainActivity when
 navigating; `startActivitySync` waits for a new instance and hangs on reuse.
 
 Android immersive mode has a Captions entry/restore action backed by the same
@@ -242,3 +245,7 @@ must not move the sliders during a drag. Preview one latest line per language;
 keep full captions in the reading panel. Native acceptance must reach both
 slider endpoints and compare the control's screen position before and after,
 then restore width and display mode as well as the older appearance preferences.
+
+Live native checks inspect external overlay labels only after their window is
+visible. Mimi intentionally hides the overlay over its own activities; checking
+the hidden model label before returning to the playback app is not acceptance.

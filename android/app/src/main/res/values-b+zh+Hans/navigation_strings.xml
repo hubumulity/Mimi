@@ -5,5 +5,4 @@
     <string name="navigation_more">更多</string>
     <string name="overlay_listening_empty">正在聆听，译文会保留在这里</string>
     <string name="caption_style_controls">字幕样式</string>
-    <string name="caption_style_collapse">收起样式</string>
 </resources>

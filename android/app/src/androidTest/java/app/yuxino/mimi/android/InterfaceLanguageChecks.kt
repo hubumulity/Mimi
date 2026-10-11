@@ -173,7 +173,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
             if (control is TextView) {
                 check(control.layout.height <= control.height - control.paddingTop - control.paddingBottom) { "Overlay action clips vertically: $tag" }
                 for (line in 0 until control.lineCount) check(control.layout.getEllipsisCount(line) == 0 &&
-                    control.layout.getLineWidth(line) <= control.width - control.paddingLeft - control.paddingRight + 1) {
+                    control.layout.getLineWidth(line) <= control.width - control.compoundPaddingLeft - control.compoundPaddingRight + 1) {
                     "Overlay action clips: $tag; locale=${settings!!.resources.configuration.locales[0]}; width=${control.width}, lineWidth=${control.layout.getLineWidth(line)}"
                 }
             }

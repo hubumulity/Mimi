@@ -56,7 +56,7 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
             for (round in 1..rounds) {
                 stage = "await_native_start_$round"
                 status("LIVE_READY round=$round provider=${configuration.provider.wireProvider} model=${SettingsStore.qwenMtModel(context)} source=${SettingsStore.sourceLang(context)} target=${SettingsStore.targetLang(context)}; use native start and fresh platform consent; no credential values logged.")
-                val deadline = SystemClock.elapsedRealtime() + 90_000
+                val deadline = SystemClock.elapsedRealtime() + 180_000
                 while (!MimiService.isRunning && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
                 check(MimiService.isRunning) { "native_start_timeout" }
                 val activeModels = MimiService.activeModelNames.toList()
@@ -147,7 +147,9 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
                         status("LIVE_PROGRESS round=$round observedMs=${now - begin} sourceUpdates=$sourceUpdates translationUpdates=$translationUpdates pairedFinals=${finals.get()} sourceAgeMs=${now - lastSourceAt} capture=${MimiService.captureObservation?.state?.name ?: "WAITING"} running=${MimiService.isRunning}")
                         nextProgressAt = now + 30_000
                     }
-                    if (!modelInspected && activeModels.isNotEmpty() && translationUpdates > 0 && SystemClock.elapsedRealtime() - begin > 10_000) {
+                    var overlayVisible = false
+                    onUi { overlayVisible = WindowInspector.getGlobalWindowViews().any { it.tag == "mimi-overlay" && it.isShown } }
+                    if (!modelInspected && overlayVisible && activeModels.isNotEmpty() && translationUpdates > 0 && SystemClock.elapsedRealtime() - begin > 10_000) {
                         stage = "active_model_display_$round"
                         onUi {
                             val root = WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }
@@ -174,6 +176,7 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
                     SystemClock.sleep(100)
                 }
                 check(MimiService.isRunning) { "session_ended_during_observation" }
+                check(activeModels.isEmpty() || modelInspected) { "active_model_display_not_observed" }
                 stage = "compact_latest_$round"
                 onUi {
                     val root = WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }

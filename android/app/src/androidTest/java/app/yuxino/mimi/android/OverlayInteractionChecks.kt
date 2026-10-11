@@ -401,6 +401,28 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                     val slider = WindowInspector.getGlobalWindowViews().firstNotNullOf { it.findViewWithTag<SeekBar>("overlay-font-slider") }
                     drag(slider, 18)
                     waitFor { SettingsStore.fontSize(context) == 18 && abs(caption().textSize - captionPixels(21)) < 1 }
+                    val dialog = WindowInspector.getGlobalWindowViews().first { it.findViewWithTag<SeekBar>("overlay-font-slider") != null }
+                    val preview = dialog.findViewById<View>(R.id.subtitle_preview)
+                    val previewPosition = IntArray(2)
+                    val palette = dialog.findViewById<android.view.ViewGroup>(R.id.translation_color)
+                    onUi {
+                        preview.getLocationOnScreen(previewPosition)
+                        palette.requestRectangleOnScreen(android.graphics.Rect(0, 0, palette.width, palette.height), true)
+                    }
+                    onUi {
+                        check(preview.getGlobalVisibleRect(android.graphics.Rect())) { "Floating style controls hid their preview" }
+                        check(IntArray(2).also(preview::getLocationOnScreen).contentEquals(previewPosition)) { "Floating style controls moved their preview" }
+                        val touchSize = (48 * palette.resources.displayMetrics.density).toInt()
+                        for (index in 0 until palette.childCount) {
+                            val choice = palette.getChildAt(index)
+                            check(choice.width >= touchSize && choice.height >= touchSize && choice.contentDescription.isNotBlank())
+                        }
+                        palette.findViewWithTag<View>("caption-color-3").performClick()
+                    }
+                    waitFor { SettingsStore.translationColorIndex(context) == 3 && caption().currentTextColor == SettingsStore.translationColor(context) }
+                    capture("$prefix-style-colors")
+                    onUi { palette.findViewWithTag<View>("caption-color-1").performClick() }
+                    waitFor { caption().currentTextColor == android.graphics.Color.WHITE }
                     onUi { check(root().findViewWithTag<View>("overlay-font").contentDescription == context.getString(R.string.caption_style_controls)) }
                     onUi { WindowInspector.getGlobalWindowViews().first { it.findViewWithTag<SeekBar>("overlay-font-slider") != null }.findViewById<View>(android.R.id.button1).performClick() }
                 }

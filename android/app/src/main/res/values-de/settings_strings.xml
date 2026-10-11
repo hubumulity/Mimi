@@ -28,8 +28,6 @@
     <string name="settings_color_green">Grün</string>
     <string name="settings_color_pink">Rosa</string>
     <string name="settings_advanced_collapse">Erweiterte Einstellungen einklappen</string>
-    <string name="settings_more">Weitere Optionen</string>
-    <string name="settings_more_collapse">Weniger Optionen</string>
     <string name="settings_display_mode">Anzeige</string>
     <string name="display_translation">Nur Übersetzung</string>
     <string name="display_original">Nur Original</string>

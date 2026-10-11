@@ -5,5 +5,4 @@
     <string name="navigation_more">その他</string>
     <string name="overlay_listening_empty">聞き取り中 — 翻訳はここに表示されます</string>
     <string name="caption_style_controls">字幕スタイル</string>
-    <string name="caption_style_collapse">スタイルを閉じる</string>
 </resources>

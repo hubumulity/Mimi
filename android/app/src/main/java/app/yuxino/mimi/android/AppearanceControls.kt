@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
+import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -34,7 +35,7 @@ internal class AppearanceControls(
     private val refreshers = mutableListOf<() -> Unit>()
     private val preview = if (compactHome) null else SubtitlePreviewView(context).apply { id = R.id.subtitle_preview }
     private val styles = if (compactHome) LinearLayout(context).apply {
-        id = R.id.appearance_panel; orientation = VERTICAL; visibility = GONE
+        id = R.id.appearance_panel; orientation = VERTICAL
     } else this
     private val colorIndices = listOf(1, 0, 2, 3, 4)
 
@@ -46,16 +47,11 @@ internal class AppearanceControls(
             { SettingsStore.setDisplayMode(context, CaptionDisplayMode.entries[it]) }).also { spinner ->
             refreshers.add { spinner.isEnabled = !SettingsStore.originalTextOnly(context) }
         }
-        slider(R.id.overlay_width, R.id.overlay_width_value, R.string.settings_width, 55, 100,
-            { SettingsStore.overlayWidthPercent(context) }, { SettingsStore.setOverlayWidthPercent(context, it) }, parent = styles)
         slider(R.id.font_size, R.id.font_size_value, R.string.settings_font, 12, 24,
             { SettingsStore.fontSize(context) }, { SettingsStore.setFontSize(context, it) }, R.string.settings_font_value, styles)
-        picker(R.id.translation_color, R.string.settings_color, listOf(
-            R.string.settings_color_white, R.string.settings_color_teal, R.string.settings_color_yellow,
-            R.string.settings_color_green, R.string.settings_color_pink,
-        ).map(context::getString),
-            { colorIndices.indexOf(SettingsStore.translationColorIndex(context)).coerceAtLeast(0) },
-            { SettingsStore.setTranslationColorIndex(context, colorIndices[it]) }, styles)
+        slider(R.id.overlay_width, R.id.overlay_width_value, R.string.settings_width, 55, 100,
+            { SettingsStore.overlayWidthPercent(context) }, { SettingsStore.setOverlayWidthPercent(context, it) }, parent = styles)
+        colorPalette(styles)
         val background = slider(R.id.overlay_bg_alpha, R.id.overlay_bg_alpha_value, R.string.settings_background, 0, 90,
             { SettingsStore.overlayBgAlpha(context) }, { SettingsStore.setOverlayBgAlpha(context, it) }, parent = styles)
         val opacity = slider(R.id.overlay_opacity, R.id.overlay_opacity_value, R.string.settings_opacity, 20, 100,
@@ -80,32 +76,16 @@ internal class AppearanceControls(
             opacity.isEnabled = !immersive.isChecked
         }
         if (compactHome) {
-            addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-                id = R.id.appearance_controls_toggle
-                setText(R.string.caption_style_controls)
-                isAllCaps = false; isSingleLine = false; minimumHeight = dp(48)
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setTextColor(color(R.color.mimi_text))
-                setIconResource(R.drawable.ic_expand)
-                iconGravity = MaterialButton.ICON_GRAVITY_END
-                iconSize = dp(18)
-                iconTint = ContextCompat.getColorStateList(context, R.color.mimi_muted)
-                setOnClickListener { setStyleExpanded(!isStyleExpanded()) }
-            }, LayoutParams(-1, -2).apply { topMargin = dp(12) })
+            addView(View(context).apply { setBackgroundColor(color(R.color.mimi_border)) },
+                LayoutParams(-1, dp(1)).apply { topMargin = dp(24); bottomMargin = dp(16) })
+            addView(label(R.string.caption_style_controls).apply {
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }, LayoutParams(-1, -2))
             addView(styles, LayoutParams(-1, -2))
         }
-        val more = LinearLayout(context).apply { id = R.id.appearance_more_panel; orientation = VERTICAL; visibility = GONE }
-        val toggle = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            id = R.id.appearance_more_toggle
-            isAllCaps = false; isSingleLine = false; minimumHeight = dp(48); gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setText(R.string.settings_more)
-            setTextColor(ContextCompat.getColor(context, R.color.mimi_text))
-            setOnClickListener {
-                more.visibility = if (more.visibility == GONE) VISIBLE else GONE
-                setText(if (more.visibility == VISIBLE) R.string.settings_more_collapse else R.string.settings_more)
-            }
-        }
-        styles.addView(toggle, LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        val more = LinearLayout(context).apply { orientation = VERTICAL }
+        styles.addView(View(context).apply { setBackgroundColor(color(R.color.mimi_border)) },
+            LayoutParams(-1, dp(1)).apply { topMargin = dp(24) })
         styles.addView(more, LayoutParams(-1, -2))
         slider(R.id.history_lines, R.id.history_lines_value, R.string.settings_history, 0, 6,
             { SettingsStore.historyLines(context) }, { SettingsStore.setHistoryLines(context, it) },
@@ -140,21 +120,44 @@ internal class AppearanceControls(
             refreshPreview()
         } finally { syncing = false }
     }
-    fun isMoreExpanded(): Boolean = findViewById<View>(R.id.appearance_more_panel).visibility == VISIBLE
-    fun isStyleExpanded(): Boolean = !compactHome || styles.visibility == VISIBLE
-    fun setStyleExpanded(expanded: Boolean) {
-        if (!compactHome) return
-        styles.visibility = if (expanded) VISIBLE else GONE
-        findViewById<MaterialButton>(R.id.appearance_controls_toggle).apply {
-            setText(if (expanded) R.string.caption_style_collapse else R.string.caption_style_controls)
-            val chevron = ContextCompat.getDrawable(context, R.drawable.ic_expand)
-            icon = if (expanded) android.graphics.drawable.RotateDrawable().apply {
-                drawable = chevron; fromDegrees = 180f; toDegrees = 180f
-            } else chevron
+    fun takePreview(): SubtitlePreviewView = checkNotNull(preview).also { removeView(it) }
+    private fun colorPalette(parent: LinearLayout) {
+        parent.addView(label(R.string.settings_color), LayoutParams(-1, -2).apply { topMargin = dp(20) })
+        val row = CaptionColorPalette(context).apply { id = R.id.translation_color }
+        val names = listOf(R.string.settings_color_white, R.string.settings_color_teal, R.string.settings_color_yellow,
+            R.string.settings_color_green, R.string.settings_color_pink)
+        for ((position, index) in colorIndices.withIndex()) {
+            val button = ImageButton(context).apply {
+                tag = "caption-color-$index"
+                contentDescription = context.getString(R.string.settings_color) + " · " + context.getString(names[position])
+                tooltipText = context.getString(names[position]); isFocusable = true
+                pointerIcon = android.view.PointerIcon.getSystemIcon(context, android.view.PointerIcon.TYPE_HAND)
+                val background = android.util.TypedValue()
+                context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, background, true)
+                setBackgroundResource(background.resourceId)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setOnClickListener { save { SettingsStore.setTranslationColorIndex(context, index) } }
+            }
+            row.addView(button)
+            refreshers.add {
+                button.isSelected = SettingsStore.translationColorIndex(context) == index
+                val swatch = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setSize(dp(22), dp(22))
+                    setColor(SettingsStore.COLOR_PRESETS[index].toInt()); setStroke(dp(1), color(R.color.mimi_muted))
+                }
+                val ring = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setSize(dp(32), dp(32))
+                    setColor(android.graphics.Color.TRANSPARENT)
+                    if (button.isSelected) setStroke(dp(2), color(R.color.mimi_text))
+                }
+                button.setImageDrawable(android.graphics.drawable.LayerDrawable(arrayOf(ring, swatch)).apply {
+                    setLayerInset(1, dp(5), dp(5), dp(5), dp(5))
+                })
+            }
         }
-    }
-    fun setMoreExpanded(expanded: Boolean) {
-        if (expanded != isMoreExpanded()) findViewById<View>(R.id.appearance_more_toggle).performClick()
+        parent.addView(row, LayoutParams(-1, -2).apply { topMargin = dp(8) })
     }
     private fun refreshPreview() {
         val preview = preview ?: return

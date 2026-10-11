@@ -5,5 +5,4 @@
     <string name="navigation_more">더보기</string>
     <string name="overlay_listening_empty">듣는 중 — 번역이 여기에 표시됩니다</string>
     <string name="caption_style_controls">자막 스타일</string>
-    <string name="caption_style_collapse">스타일 접기</string>
 </resources>

@@ -21,7 +21,6 @@
     <string name="preview_zh">这是一条示例字幕。</string>
     <string name="preview_en">This is a sample subtitle.</string>
     <string name="preview_ja">字幕の表示例です。</string>
-    <string name="preview_edit">ตัวอย่าง · รูปแบบ ›</string>
     <string name="language_source_title">เสียงพูดเป็นภาษาอะไร?</string>
     <string name="language_target_title">ต้องการคำบรรยายภาษาอะไร?</string>
     <string name="language_sheet_hint">บันทึกอัตโนมัติและใช้เมื่อเริ่มคำบรรยายครั้งถัดไป</string>

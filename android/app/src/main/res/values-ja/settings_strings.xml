@@ -27,8 +27,6 @@
     <string name="settings_color_green">緑</string>
     <string name="settings_color_pink">ピンク</string>
     <string name="settings_advanced_collapse">詳細設定を閉じる</string>
-    <string name="settings_more">その他の設定</string>
-    <string name="settings_more_collapse">その他の設定を閉じる</string>
     <string name="settings_display_mode">表示内容</string>
     <string name="display_translation">訳文のみ</string>
     <string name="display_original">原文のみ</string>

@@ -32,8 +32,6 @@
     <string name="settings_color_green">Green</string>
     <string name="settings_color_pink">Pink</string>
     <string name="settings_advanced_collapse">Collapse advanced settings</string>
-    <string name="settings_more">More options</string>
-    <string name="settings_more_collapse">Fewer options</string>
     <string name="settings_display_mode">Display</string>
     <string name="display_translation">Translation only</string>
     <string name="display_original">Original only</string>

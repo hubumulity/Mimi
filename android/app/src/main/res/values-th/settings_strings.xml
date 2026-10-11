@@ -27,8 +27,6 @@
     <string name="settings_color_green">เขียว</string>
     <string name="settings_color_pink">ชมพู</string>
     <string name="settings_advanced_collapse">ย่อการตั้งค่าขั้นสูง</string>
-    <string name="settings_more">ตัวเลือกเพิ่มเติม</string>
-    <string name="settings_more_collapse">ตัวเลือกน้อยลง</string>
     <string name="settings_display_mode">เนื้อหาที่แสดง</string>
     <string name="display_translation">คำแปลเท่านั้น</string>
     <string name="display_original">ต้นฉบับเท่านั้น</string>

@@ -28,8 +28,6 @@
     <string name="settings_color_green">초록색</string>
     <string name="settings_color_pink">분홍색</string>
     <string name="settings_advanced_collapse">고급 설정 접기</string>
-    <string name="settings_more">옵션 더 보기</string>
-    <string name="settings_more_collapse">옵션 접기</string>
     <string name="settings_display_mode">표시 내용</string>
     <string name="display_translation">번역만</string>
     <string name="display_original">원문만</string>
