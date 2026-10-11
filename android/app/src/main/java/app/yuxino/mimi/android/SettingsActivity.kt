@@ -57,7 +57,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         tabs.check(savedInstanceState?.getInt("settings_tab", initial) ?: initial)
         showTab()
-        if (savedInstanceState?.getBoolean("settings_more") == true) findViewById<View>(R.id.appearance_more_toggle).performClick()
+        appearance.setMoreExpanded(savedInstanceState?.getBoolean("settings_more") == true)
         findViewById<View>(R.id.copy_capture_diagnostics).setOnClickListener { copyDiagnostics() }
     }
 
@@ -67,7 +67,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onDestroy() { immersiveHelp.dismiss(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("settings_tab", findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId)
-        outState.putBoolean("settings_more", findViewById<View>(R.id.appearance_more_panel).visibility == View.VISIBLE)
+        outState.putBoolean("settings_more", appearance.isMoreExpanded())
         super.onSaveInstanceState(outState)
     }
     private fun refreshServices() {

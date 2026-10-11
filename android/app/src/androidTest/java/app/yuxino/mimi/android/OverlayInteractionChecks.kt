@@ -86,6 +86,29 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         }
         test.waitForIdleSync()
     }
+    private fun dragHorizontally(view: View, distanceDp: Int) {
+        val origin = IntArray(2)
+        var x = 0f
+        var y = 0f
+        var distance = 0f
+        onUi {
+            view.getLocationOnScreen(origin)
+            x = origin[0] + view.width / 2f
+            y = origin[1] + view.height / 2f
+            distance = distanceDp * view.resources.displayMetrics.density
+        }
+        val down = SystemClock.uptimeMillis()
+        for ((action, offset) in listOf(MotionEvent.ACTION_DOWN to 0f,
+            MotionEvent.ACTION_MOVE to distance / 2, MotionEvent.ACTION_MOVE to distance,
+            MotionEvent.ACTION_UP to distance)) {
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x + offset, y, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            try { check(test.uiAutomation.injectInputEvent(event, true)) }
+            finally { event.recycle() }
+            SystemClock.sleep(30)
+        }
+        test.waitForIdleSync()
+    }
 
     /** Run only on a blank idle device; uses the existing synthetic overlay. */
     private fun immersivePlacementChecks(home: MainActivity) {
@@ -172,6 +195,16 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         onUi { SettingsStore.setOverlayWidthPercent(context, 65) }
         waitFor { root().width < oldWidth }
         capture("width-65")
+        onUi { SettingsStore.setOverlayWidthPercent(context, 55) }
+        waitFor { root().width < oldWidth * 0.7f }
+        val narrowWidth = root().width
+        dragHorizontally(root().findViewWithTag("overlay-resize"), 24)
+        waitFor { SettingsStore.overlayWidthPercent(context) > 55 && root().width > narrowWidth }
+        val resizedWidth = root().width
+        capture("direct-resize")
+        dragHorizontally(root().findViewWithTag("overlay-drag"), -20)
+        waitFor { SettingsStore.overlayXOffset(context, true) < 0 }
+        check(root().width == resizedWidth && SettingsStore.overlayXOffset(context, false) == 0)
         val oldY = SettingsStore.expandedYOffset(context)
         dragCompact(root().findViewWithTag("overlay-drag"))
         waitFor { SettingsStore.expandedYOffset(context) > oldY }
@@ -274,7 +307,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                     val slider = WindowInspector.getGlobalWindowViews().firstNotNullOf { it.findViewWithTag<SeekBar>("overlay-font-slider") }
                     drag(slider, 18)
                     waitFor { SettingsStore.fontSize(context) == 18 && abs(caption().textSize - captionPixels(21)) < 1 }
-                    onUi { check(root().findViewWithTag<TextView>("overlay-font").text.toString() == context.getString(R.string.overlay_appearance)) }
+                    onUi { check(root().findViewWithTag<View>("overlay-font").contentDescription == context.getString(R.string.settings_tab_appearance)) }
                     onUi { WindowInspector.getGlobalWindowViews().first { it.findViewWithTag<SeekBar>("overlay-font-slider") != null }.findViewById<View>(android.R.id.button1).performClick() }
                 }
                 settings = test.startActivitySync(Intent(context, SettingsActivity::class.java)

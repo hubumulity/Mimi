@@ -120,6 +120,10 @@ internal class AppearanceControls(
             refreshPreview()
         } finally { syncing = false }
     }
+    fun isMoreExpanded(): Boolean = findViewById<View>(R.id.appearance_more_panel).visibility == VISIBLE
+    fun setMoreExpanded(expanded: Boolean) {
+        if (expanded != isMoreExpanded()) findViewById<View>(R.id.appearance_more_toggle).performClick()
+    }
     private fun refreshPreview() {
         preview.configure(SettingsStore.fontSize(context), SettingsStore.translationColor(context),
             SettingsStore.overlayOpacity(context), SettingsStore.overlayBgAlpha(context), SettingsStore.targetLang(context),

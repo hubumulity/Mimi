@@ -523,7 +523,7 @@ class MimiService : Service() {
         }
         label("collapse-overlay", R.string.overlay_collapse, R.string.overlay_collapse_description)
         label("enter-immersive", R.string.overlay_enter_immersive, R.string.overlay_enter_immersive)
-        label("overlay-font", R.string.overlay_appearance, R.string.settings_tab_appearance)
+        label("overlay-font", null, R.string.settings_tab_appearance)
         updateOverlayFontSize()
         label("exit-immersive", null, R.string.overlay_exit_immersive)
         label("overlay-drag", null, R.string.overlay_drag)
@@ -815,15 +815,15 @@ class MimiService : Service() {
         val collapse = panelIcon(R.drawable.ic_expand, R.string.overlay_collapse_description).apply {
             tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
         }
-        val font = panelButton(interfaceString(R.string.overlay_appearance)).apply {
-            tag = "overlay-font"; minHeight = dp(48); setSingleLine(false); contentDescription = interfaceString(R.string.settings_tab_appearance)
+        val font = panelIcon(R.drawable.ic_settings, R.string.settings_tab_appearance).apply {
+            tag = "overlay-font"
             setOnClickListener { showAppearanceControls() }
         }
         val immersive = panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
             tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
         }
         header.addView(collapse, LinearLayout.LayoutParams(dp(48), dp(48)))
-        header.addView(font, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8); marginEnd = dp(8) })
+        header.addView(font, LinearLayout.LayoutParams(0, dp(48), 1f))
         header.addView(immersive, LinearLayout.LayoutParams(dp(48), dp(48)))
         panel.addView(header)
         val route = TextView(this).apply {
@@ -1111,7 +1111,7 @@ class MimiService : Service() {
     }
 
     private fun captionWindowWidth(expanded: Boolean): Int = OverlayPlacement.windowWidth(
-        overlayAvailableSize().first, resizeWidthPercent ?: SettingsStore.overlayWidthPercent(this), dp(if (expanded) 280 else 160), dp(8))
+        overlayAvailableSize().first, resizeWidthPercent ?: SettingsStore.overlayWidthPercent(this), dp(if (expanded) 176 else 160), dp(8))
 
     private fun expandedPanelWidth(): Int = captionWindowWidth(true)
 

@@ -30,7 +30,7 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
         failure?.let { throw it }
     }
     fun run(arguments: Bundle?) {
-        val seconds = arguments?.getString("observe_seconds")?.toLongOrNull()?.coerceIn(30, 180) ?: 75
+        val seconds = arguments?.getString("observe_seconds")?.toLongOrNull()?.coerceIn(30, 1200) ?: 75
         val rounds = arguments?.getString("rounds")?.toIntOrNull()?.coerceIn(1, 3) ?: 2
         val events = JSONArray()
         val results = JSONArray()
@@ -42,13 +42,14 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
         var finalListener: SubtitleBus.Listener? = null
         try {
             check(context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
-            check(!MimiService.isRunning && SettingsStore.isConfigured(context))
+            check(!MimiService.isRunning)
             check(SettingsStore.historyLines(context) == 0) { "history_must_be_off" }
             if (arguments?.getString("temporary_provider") == "true") {
                 stage = "temporary_provider"
                 temporary = TemporaryProviderAcceptance(context)
                 temporary.apply()
             }
+            check(SettingsStore.isConfigured(context))
             val configuration = SettingsStore.configuration(context)
             home = test.startActivitySync(Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity

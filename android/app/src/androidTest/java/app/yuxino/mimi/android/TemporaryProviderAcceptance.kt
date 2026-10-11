@@ -15,29 +15,35 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
     private val active = SettingsStore.provider(context)
     private val source = SettingsStore.sourceLang(context)
     private val target = SettingsStore.targetLang(context)
+    private val translation = SettingsStore.translationConfiguration(context)
+    private val model = SettingsStore.qwenMtModel(context)
     private var original: ServiceConfiguration? = null
     fun apply() {
         try {
             check(input.isFile && input.length() in 1..16_384)
             val value = JSONObject(input.readText(Charsets.UTF_8))
             val provider = ServiceProvider.fromId(value.getString("provider"))
-            check(provider.id == value.getString("provider") && provider != ServiceProvider.DASHSCOPE)
+            check(provider.id == value.getString("provider"))
             val fields = value.getJSONObject("credentials")
             check(fields.length() == provider.fields.size)
             val configuration = ServiceConfiguration(provider, provider.fields.associate { it.id to fields.getString(it.id) })
             val (from, to) = provider.normalize(value.getString("source"), value.getString("target"))
             // Validate using the production PC factory before any saved state changes.
-            runtimeModelNames(buildRuntimeConfiguration(configuration, TranslationConfiguration(provider = TextTranslationProvider.BUILTIN), from, to, "lite"))
+            val testModel = value.optString("translationModel", "lite")
+            check(testModel in listOf("lite", "flash", "plus"))
+            val testTranslation = TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
+            runtimeModelNames(buildRuntimeConfiguration(configuration, testTranslation, from, to, testModel))
             original = SettingsStore.configuration(context, provider)
-            check(SettingsStore.saveConfiguration(context, configuration) && SettingsStore.activateProvider(context, provider))
+            check(SettingsStore.saveConfiguration(context, configuration, testTranslation, true, testModel) && SettingsStore.activateProvider(context, provider))
             SettingsStore.setSourceLang(context, from); SettingsStore.setTargetLang(context, to)
             check(SettingsStore.flushPendingWritesForTests(context))
         } finally { check(!input.exists() || input.delete()) }
     }
     override fun close() {
         original?.let {
-            check(SettingsStore.saveConfiguration(context, it))
+            check(SettingsStore.saveConfiguration(context, it, translation, true, model))
             check(SettingsStore.configuration(context, it.provider).credentials == it.credentials)
+            check(SettingsStore.translationConfiguration(context) == translation && SettingsStore.qwenMtModel(context) == model)
         }
         check(SettingsStore.activateProvider(context, ServiceProvider.fromId(active)))
         SettingsStore.setSourceLang(context, source); SettingsStore.setTargetLang(context, target)
