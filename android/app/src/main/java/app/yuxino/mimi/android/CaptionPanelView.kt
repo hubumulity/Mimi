@@ -317,9 +317,9 @@ internal class CaptionPanelView(
         }
         val mode = displayMode
         return maxOf(dp(64), (if (mode.sourceVisible) line(source) else 0) +
-            (if (mode.translationVisible) line(translation) else 0) +
+            (if (mode.translationVisible) line(translation) * if (mode == CaptionDisplayMode.BILINGUAL) 2 else 1 else 0) +
             (if (mode == CaptionDisplayMode.BILINGUAL) dp(6) else 0) +
-            (if (timestamp.visibility == View.VISIBLE) line(timestamp) else 0))
+            (if (timestamp.visibility == View.VISIBLE || SettingsStore.subtitleTimestamps(context)) line(timestamp) else 0))
     }
 
     fun chromeHeight(): Int = paddingTop + paddingBottom + dp(8) +

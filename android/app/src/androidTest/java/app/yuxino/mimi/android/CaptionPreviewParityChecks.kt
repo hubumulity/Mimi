@@ -250,6 +250,10 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                 }
                 compare(home, "$prefix-bilingual-small", true)
                 ui {
+                    val panel = actual() as CaptionPanelView
+                    check(panel.translation.maxLines >= minOf(2, panel.translation.lineCount)) { "Minimum window leaves only a fragment of translation" }
+                }
+                ui {
                     SettingsStore.setSubtitleTimestamps(context, true)
                     SubtitleBus.onFinalPair("Synthetic confirmed caption with a long English reference lane. ".repeat(4), "合成已确认译文必须和英文一起显示。".repeat(4), "en")
                 }

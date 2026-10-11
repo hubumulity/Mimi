@@ -20,7 +20,9 @@ lines to both languages from its actual reading height. Short text gives unused
 space to the other lane, and long text follows its newest complete lines. A
 deliberate upward scroll opens the complete bounded text for reading; returning
 to the bottom resumes following. Keep the user's window height stable as history
-grows, with a minimum for one complete line in each selected lane. Immersion
+grows, with a minimum for one complete original line and two translation lines
+in bilingual mode where the safe display permits, using actual fallback-font
+tail metrics. Reserve optional time even while a draft hides its metadata. Immersion
 retains the real compact caption line limits.
 
 Use pure black and an 80% default background, matching desktop's
