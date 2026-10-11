@@ -520,10 +520,23 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             waitFor { panel.source.lineCount > panel.source.maxLines && panel.translation.lineCount > panel.translation.maxLines }
             move(panel.transcriptScroll, 0, 32)
             waitFor { !panel.followingLive && panel.source.maxLines == Int.MAX_VALUE && panel.translation.maxLines == Int.MAX_VALUE }
+            // Main-loop idle does not mean ScrollView's inertial fling has ended.
+            // Compare updates only after the reader's deliberate gesture settles.
+            var stable = 0
+            var lastPosition = panel.transcriptScroll.scrollY
+            repeat(30) {
+                if (stable < 3) {
+                    SystemClock.sleep(100); idle()
+                    val position = panel.transcriptScroll.scrollY
+                    stable = if (position == lastPosition) stable + 1 else 0
+                    lastPosition = position
+                }
+            }
+            check(stable >= 3) { "Reading gesture did not finish its native fling" }
             val readingPosition = panel.transcriptScroll.scrollY
             onUi { SubtitleBus.onTranslationDraft("合成长句更新时应保留主动回看的位置。".repeat(14)) }
             idle()
-            check(panel.transcriptScroll.scrollY == readingPosition) { "A subtitle update stole the history reader's position" }
+            check(panel.transcriptScroll.scrollY == readingPosition) { "A subtitle update stole the history reader's position: $readingPosition -> ${panel.transcriptScroll.scrollY}" }
             capture("panel-full-text-reading")
             onUi { panel.transcriptScroll.fullScroll(View.FOCUS_DOWN) }
             idle()

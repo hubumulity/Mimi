@@ -41,7 +41,7 @@ class SubtitlePreviewView @JvmOverloads constructor(context: Context, attrs: Att
     fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String,
                   immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL,
                   widthPercent: Int = 92, live: Boolean = false, alignment: CaptionAlignment = CaptionAlignment.CENTER,
-                  heightPercent: Int = 30) {
+                  heightPercent: Int = SettingsStore.DEFAULT_OVERLAY_HEIGHT) {
         displayMode = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
         val localized = InterfaceLanguage.context(context.applicationContext)
         val route = languageDisplayName(localized, SettingsStore.sourceLang(context)).let {
@@ -106,7 +106,7 @@ class SubtitlePreviewView @JvmOverloads constructor(context: Context, attrs: Att
 /** Measure the entire real frame before scaling it uniformly into a fixed stage. */
 internal class CaptionPreviewStage(context: Context) : ViewGroup(context) {
     private var widthPercent = 92
-    private var heightPercent = 30
+    private var heightPercent = SettingsStore.DEFAULT_OVERLAY_HEIGHT
     private var immersive = false
     internal var frameScale = 1f
         private set

@@ -43,6 +43,7 @@ object SettingsStore {
 
     const val PROVIDER_DASHSCOPE = "dashscope"
     const val PROVIDER_OPENAI = "openai"
+    const val DEFAULT_OVERLAY_HEIGHT = 32
 
     @Volatile private var prefs: SharedPreferences? = null
 
@@ -311,7 +312,7 @@ object SettingsStore {
     fun overlayWidthPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_WIDTH, 92).coerceIn(55, 100)
     fun setOverlayWidthPercent(context: Context, value: Int) =
         writeAppearance(get(context).edit().putInt(KEY_OVERLAY_WIDTH, value.coerceIn(55, 100)))
-    fun overlayHeightPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_HEIGHT, 30).coerceIn(20, 70)
+    fun overlayHeightPercent(context: Context): Int = get(context).getInt(KEY_OVERLAY_HEIGHT, DEFAULT_OVERLAY_HEIGHT).coerceIn(20, 70)
     fun setOverlayHeightPercent(context: Context, value: Int) =
         writeAppearance(get(context).edit().putInt(KEY_OVERLAY_HEIGHT, value.coerceIn(20, 70)))
     fun setOverlayBounds(context: Context, width: Int, height: Int, x: Int, y: Int) =

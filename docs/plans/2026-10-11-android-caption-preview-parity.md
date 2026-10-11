@@ -25,6 +25,11 @@ in bilingual mode where the safe display permits, using actual fallback-font
 tail metrics. Reserve optional time even while a draft hides its metadata. Immersion
 retains the real compact caption line limits.
 
+The new-install normal panel defaults to 32% of the usable display height. This
+leaves comfortable bilingual reading space without occupying most of a portrait
+screen. Keep explicit saved heights, direct resizing and the 20–70% height
+control; actual glyph/chrome minimums and the safe display cap still apply.
+
 Use pure black and an 80% default background, matching desktop's
 `subtitleBackgroundColor`. The separate Android whole-window opacity defaults
 to 100% so default translucency is not multiplied twice. Preserve explicit

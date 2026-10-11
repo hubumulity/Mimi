@@ -177,6 +177,13 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         }
     }
     fun run(arguments: Bundle?) {
+        if (arguments?.getString("apply_height_default") == "true") {
+            check(!MimiService.isRunning)
+            ui { SettingsStore.setOverlayHeightPercent(context, SettingsStore.DEFAULT_OVERLAY_HEIGHT) }
+            check(SettingsStore.flushPendingWritesForTests(context))
+            check(SettingsStore.overlayHeightPercent(context) == 32)
+            test.finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "Default height 32% applied; other preferences retained.\n") }); return
+        }
         if (arguments?.getString("apply_desktop_surface") == "true") {
             ui { SettingsStore.setOverlayOpacity(context, 100); SettingsStore.setOverlayBgAlpha(context, 80) }
             check(SettingsStore.flushPendingWritesForTests(context))
@@ -206,7 +213,11 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         var home: MainActivity? = null
         var failure: Throwable? = null
         try {
-            if (arguments?.getString("fresh_defaults") == "true") check(SettingsStore.overlayBgAlpha(context) == 80 && SettingsStore.overlayOpacity(context) == 100)
+            if (arguments?.getString("fresh_defaults") == "true") {
+                check(SettingsStore.overlayBgAlpha(context) == 80 && SettingsStore.overlayOpacity(context) == 100)
+                check(SettingsStore.overlayHeightPercent(context) == 32)
+                check(!SettingsStore.subtitleDividers(context) && !SettingsStore.subtitleTimestamps(context))
+            }
             ui { check(seenPrefs.edit().putBoolean("seen", true).commit()); SettingsStore.setSourceLang(context, "ja"); SettingsStore.setTargetLang(context, "zh") }
             val tags = arguments?.getString("locale")?.let { listOf(if (it == "system") "" else it) } ?: InterfaceLanguage.tags
             for (tag in tags) {
@@ -218,7 +229,7 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                 ui {
                     SettingsStore.setImmersiveSubtitles(context, false); SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
                     SettingsStore.setFontSize(context, 17); SettingsStore.setOverlayWidthPercent(context, 92)
-                    SettingsStore.setOverlayHeightPercent(context, 30); SettingsStore.setOverlayBgAlpha(context, 80); SettingsStore.setOverlayOpacity(context, 100)
+                    SettingsStore.setOverlayHeightPercent(context, SettingsStore.DEFAULT_OVERLAY_HEIGHT); SettingsStore.setOverlayBgAlpha(context, 80); SettingsStore.setOverlayOpacity(context, 100)
                     SettingsStore.setSubtitleDividers(context, false); SettingsStore.setSubtitleTimestamps(context, false)
                 }
                 compare(home, "$prefix-normal", true)
@@ -237,6 +248,18 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                         .put("snapshot", created.getJSONObject("snapshot")), false)
                 }
                 compare(home, "$prefix-connecting")
+                ui {
+                    SubtitleBus.clear()
+                    SubtitleBus.onSourceDraft("Synthetic English captions need comfortable room for reading both languages. ".repeat(5), "en")
+                    SubtitleBus.onTranslationDraft("合成双语字幕在默认高度下应该有足够的阅读空间。".repeat(6))
+                }
+                compare(home, "$prefix-default-bilingual", true)
+                ui {
+                    if (context.resources.configuration.fontScale <= 1.2f && root()!!.height > root()!!.width) {
+                        val panel = actual() as CaptionPanelView
+                        check(panel.source.maxLines >= 2 && panel.translation.maxLines >= 2) { "Default height lacks comfortable bilingual space" }
+                    }
+                }
                 ui {
                     SubtitleBus.clear(); SubtitleBus.onSourceDraft("Synthetic caption with enough words to wrap onto multiple lines. ".repeat(5), "ja")
                     SubtitleBus.onTranslationDraft("合成字幕用于检查字号和窗口宽度，换行必须与外面完全相同。".repeat(6))
