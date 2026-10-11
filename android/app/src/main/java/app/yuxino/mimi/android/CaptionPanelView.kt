@@ -269,9 +269,9 @@ internal class CaptionPanelView(
         fun heights(view: TextView): List<Int> {
             if (view.visibility != View.VISIBLE) return emptyList()
             val layout = view.layout ?: return emptyList()
+            val bottom = layout.getLineBottom(layout.lineCount - 1)
             return (1..layout.lineCount).map { count ->
-                layout.getLineTop(count) + view.compoundPaddingTop + view.compoundPaddingBottom +
-                    if (count < layout.lineCount) layout.bottomPadding else 0
+                bottom - layout.getLineTop(layout.lineCount - count) + view.compoundPaddingTop + view.compoundPaddingBottom
             }
         }
         val both = source.visibility == View.VISIBLE && translation.visibility == View.VISIBLE
@@ -309,7 +309,12 @@ internal class CaptionPanelView(
     }
 
     fun minimumReadingHeight(): Int {
-        fun line(view: TextView) = kotlin.math.ceil((view.paint.fontMetrics.bottom - view.paint.fontMetrics.top).toDouble()).toInt()
+        fun line(view: TextView): Int {
+            val layout = view.layout
+            return if (layout != null && layout.lineCount > 0)
+                layout.getLineBottom(layout.lineCount - 1) - layout.getLineTop(layout.lineCount - 1) + view.compoundPaddingTop + view.compoundPaddingBottom
+            else kotlin.math.ceil((view.paint.fontMetrics.bottom - view.paint.fontMetrics.top).toDouble()).toInt()
+        }
         val mode = displayMode
         return maxOf(dp(64), (if (mode.sourceVisible) line(source) else 0) +
             (if (mode.translationVisible) line(translation) else 0) +

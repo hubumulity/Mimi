@@ -31,6 +31,18 @@ internal class LatestCaptionTextView(context: Context) : TextView(context) {
         followTail()
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val textLayout = layout ?: return
+        if (!followsLatest || textLayout.lineCount == 0 || android.view.View.MeasureSpec.getMode(heightMeasureSpec) == android.view.View.MeasureSpec.EXACTLY) return
+        // TextView's maxLines measures the first lines. A tail can contain a
+        // taller fallback font, so size the viewport for the actual last lines.
+        val first = (textLayout.lineCount - maxLines).coerceAtLeast(0)
+        val tailHeight = textLayout.getLineBottom(textLayout.lineCount - 1) - textLayout.getLineTop(first) +
+            compoundPaddingTop + compoundPaddingBottom
+        setMeasuredDimension(measuredWidth, resolveSize(tailHeight, heightMeasureSpec))
+    }
+
     private fun followTail(): Boolean {
         val textLayout = layout ?: return false
         val visibleHeight = height - compoundPaddingTop - compoundPaddingBottom

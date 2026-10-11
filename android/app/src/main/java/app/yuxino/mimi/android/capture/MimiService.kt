@@ -815,6 +815,11 @@ class MimiService : Service() {
         transcriptScrollView = panel.transcriptScroll
         panel.findViewWithTag<View>("overlay-actions").addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateOverlayGeometry() }
         panel.status.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateOverlayGeometry() }
+        listOf(panel.source, panel.translation, panel.timestamp).forEach { row ->
+            row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                mainHandler.post { if (expandedView === panel) updateOverlayGeometry() }
+            }
+        }
         return panel
     }
 
