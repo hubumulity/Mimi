@@ -185,6 +185,7 @@ adb shell am instrument -w -e theme dark app.yuxino.mimi.android.dev.test/app.yu
 adb shell am instrument -w -e overlay_preview true -e theme light app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
 adb shell am instrument -w -e overlay_interaction true app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
 adb shell am instrument -w -e interface_language true -e theme light app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
+adb shell am instrument -w -e overlay_listening true -e locale zh-Hans app.yuxino.mimi.android.dev.test/app.yuxino.mimi.android.UiSmokeInstrumentation
 ```
 
 The interface-language check requires a blank, idle emulator. It exercises the
@@ -193,6 +194,12 @@ or provider requests. Editor screenshots use the normal own-page caption hiding;
 overlay screenshots use a separate debug-only host without requesting capture.
 Use `-e leave_language zh-Hans`, force-stop the app, then run
 with `-e interface_language true -e expected_language zh-Hans` to check persistence.
+
+On API 33+, `overlay_listening` checks service resources against a deliberately
+different context locale, the native waiting card, expansion/collapse and return
+from all settings sections. Use `-e locale system` for System. It uses synthetic
+session state, starts no capture or provider and restores the app locale and
+changed preferences. Include narrow/large-font and wide native layouts.
 
 The checks exercise quick language selection/Undo, direct appearance access,
 auto-save with actual touch gestures, all eight service editors, write-only secret fields, rejected incomplete configurations, history clearing and the

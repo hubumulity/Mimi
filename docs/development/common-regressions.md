@@ -516,3 +516,16 @@ remote quota. A 429 and backoff must not be labeled an ASR disconnect or native
 capture failure. Preserve the retry/final/render event chain, then run sequential
 sessions to avoid concurrent quota pressure. Counts and adapter timestamps do not
 establish semantic accuracy or cross-platform end-to-end latency.
+
+## Android emulator interruption and recovery
+
+An emulator hang/crash or offline ADB connection interrupts native acceptance,
+including its preference cleanup. Do not count an absent instrumentation result
+as a pass or label the host process failure as a Mimi crash. Record the host
+crash separately. Restart the same AVD without wiping data, uninstalling the app
+or loading an old snapshot. Before rerunning, stop the idle Dev process, restore
+the fixture's private on-device preference backup and verify its bytes; retain
+that backup until every fixture has finished. Verify the installed APK and actual
+renderer again. After a hang, finish heavy builds before native acceptance and
+rerun the same case serially. A successful recovery does not establish the
+original cause or physical-device performance.

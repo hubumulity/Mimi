@@ -540,6 +540,10 @@ class MimiService : Service() {
         overlayView?.findViewWithTag<TextView>("overlay-route")?.text =
             if (sessionOriginalOnly) languageName(sessionSourceLanguage)
             else "${languageName(sessionSourceLanguage)} → ${languageName(sessionTargetLanguage)}"
+        overlayView?.findViewWithTag<View>("overlay-providers")?.let { providers ->
+            providers.contentDescription = overlayProviderLabel()
+            overlayView?.findViewWithTag<TextView>("overlay-model")?.text = providers.contentDescription
+        }
         expandedView?.requestLayout()
         renderBus()
         if (isRunning) {
@@ -566,6 +570,7 @@ class MimiService : Service() {
         val compact = LinearLayout(this).apply {
             tag = "compact-subtitle"
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             val horizontalPadding = if (immersiveSession) 3 else 14
             setPadding(dp(horizontalPadding), dp(9), dp(horizontalPadding), dp(10))
             background = GradientDrawable().apply {
@@ -848,9 +853,7 @@ class MimiService : Service() {
         val providerRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers"
             isClickable = true; isFocusable = true; minimumHeight = dp(48); minimumWidth = dp(48)
-            contentDescription = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank {
-                app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this@MimiService), provider)
-            }
+            contentDescription = overlayProviderLabel()
             setOnClickListener { openHome() }
         }
         fun mark(resource: Int) = ImageView(this).apply {
@@ -898,6 +901,7 @@ class MimiService : Service() {
         footer.addView(detailsRow, LinearLayout.LayoutParams(0, -2, 1f))
 
         expandedStatusView = TextView(this).apply {
+            tag = "expanded-status"
             setTextColor(0xFFB9B9B9.toInt())
             textSize = 14f
             visibility = View.GONE
@@ -1064,7 +1068,6 @@ class MimiService : Service() {
             ((SettingsStore.overlayBgAlpha(this) * 255 / 100) shl 24) or 0x101010)
         overlayPlacement.setPreferredOffsetDp(SettingsStore.overlayYOffset(this))
         overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
-        compactView?.setPadding(dp(if (immersiveSession) 3 else 14), dp(9), dp(if (immersiveSession) 3 else 14), dp(10))
         updateOverlayGeometry()
         expandedView?.requestLayout()
         renderBus()
@@ -1264,6 +1267,12 @@ class MimiService : Service() {
         } else if (runtimeStatus.isNotBlank()) runtimeStatus
         else if (isRunning && !isStopping && !hasVisibleCaption) interfaceString(R.string.overlay_listening_empty)
         else ""
+        compactView?.apply {
+            val statusOnly = !immersiveSession && statusLine.isNotBlank() && !hasVisibleCaption
+            val horizontal = dp(if (immersiveSession) 3 else 14)
+            minimumHeight = if (statusOnly) dp(56) else 0
+            setPadding(horizontal, dp(if (statusOnly) 16 else 9), horizontal, dp(if (statusOnly) 16 else 10))
+        }
         statusView?.apply {
             visibility = if (statusLine.isEmpty()) View.GONE else View.VISIBLE
             text = statusLine
@@ -1309,6 +1318,10 @@ class MimiService : Service() {
 
     private fun interfaceString(@androidx.annotation.StringRes id: Int): String =
         InterfaceLanguage.context(this).getString(id)
+
+    private fun overlayProviderLabel(): String = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank {
+        app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this), ServiceProvider.fromId(SettingsStore.provider(this)))
+    }
 
     private fun interfaceString(@androidx.annotation.StringRes id: Int, value: Int): String =
         InterfaceLanguage.context(this).getString(id, value)

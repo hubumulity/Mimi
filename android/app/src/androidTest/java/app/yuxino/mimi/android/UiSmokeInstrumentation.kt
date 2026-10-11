@@ -72,6 +72,10 @@ class UiSmokeInstrumentation : Instrumentation() {
 
     override fun onStart() {
         super.onStart()
+        if (captureArguments?.getString("overlay_listening") == "true") {
+            OverlayListeningChecks(this).run(captureArguments)
+            return
+        }
         if (captureArguments?.getString("model_selection") == "true") {
             ModelSelectionChecks(this).run(captureArguments)
             return

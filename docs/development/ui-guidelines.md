@@ -184,6 +184,15 @@ popup; check the rendered line ellipsis and an actual hover screenshot. Native
 UI tests must inject mouse pointer properties through the system input channel
 and restore fixtures on assertion failure.
 
+Service-owned Android UI resolves application locales explicitly on every API
+level. Android 13+ application-locale persistence does not guarantee that a
+display/window/service resource context matches an AppCompat activity. Following
+System resolves current system locales instead of trusting a stale resource
+context. Native language checks include a deliberately different resource locale
+and the actual waiting overlay after expansion, collapse and returning from
+settings. Status-only compact cards retain readable vertical padding and a 56dp
+minimum height; caption and immersive states restore their compact geometry.
+
 Before/After screenshots must show stable native frames: wait for the owning
 activity to regain focus and for modal exit/entry animations before capturing.
 Inspect every saved image against its scenario; a successful file write or test

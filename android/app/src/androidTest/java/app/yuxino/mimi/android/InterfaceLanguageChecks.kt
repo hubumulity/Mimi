@@ -158,6 +158,13 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         check(panel.findViewWithTag<ScrollView>("subtitle-transcript-scroll").height >=
             (64 * panel.resources.displayMetrics.density).toInt()) { "Caption reading viewport is too short" }
         val providers = panel.findViewWithTag<LinearLayout>("overlay-providers")
+        val providerLabel = modelNamesLabel(MimiService.activeModelNames).ifBlank {
+            providerTitle(settings!!, app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(context)))
+        }
+        check(providers.contentDescription == providerLabel &&
+            panel.findViewWithTag<TextView>("overlay-model").text.toString() == providerLabel) {
+            "Provider label kept a stale interface language"
+        }
         check((0 until providers.childCount).map { providers.getChildAt(it) }.filterIsInstance<ImageView>()
             .all { it.isShown && it.width > 0 }) { "Provider marks disappeared" }
         for (tag in listOf("collapse-overlay", "overlay-font", "enter-immersive", "overlay-resize", "overlay-providers")) {
@@ -276,6 +283,15 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 else -> "Interface language"
             }
             check(containsText(settings!!.window.decorView, label)) { "Interface copy did not follow the chosen language" }
+            val foreign = context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply {
+                setLocales(android.os.LocaleList.forLanguageTags(if (language == "en") "de" else "en"))
+            })
+            for (id in listOf(R.string.overlay_listening_empty, R.string.overlay_enter_immersive,
+                R.string.overlay_collapse_description, R.string.notification_channel, R.string.capture_failed)) {
+                check(InterfaceLanguage.context(foreign).getString(id) == settings!!.getString(id)) {
+                    "Service resources diverged from interface language: $tag"
+                }
+            }
         }
     }
 

@@ -11,6 +11,7 @@ import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.app.LocaleManagerCompat
 import androidx.core.os.LocaleListCompat
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.Locale
@@ -62,11 +63,13 @@ internal object InterfaceLanguage {
         return tags.indexOf(tag).coerceAtLeast(0)
     }
 
-    /** Pre-33 AppCompat localizes activities, so service UI needs a localized context too. */
+    /** Window/service resources can diverge from activity locales on every API level. */
     fun context(context: Context): Context {
-        if (Build.VERSION.SDK_INT >= 33) return context
-        val locales = AppCompatDelegate.getApplicationLocales()
-        if (locales.isEmpty) return context
+        val applicationLocales = if (Build.VERSION.SDK_INT >= 33)
+            LocaleManagerCompat.getApplicationLocales(context) else AppCompatDelegate.getApplicationLocales()
+        val locales = if (applicationLocales.isEmpty) LocaleManagerCompat.getSystemLocales(context)
+            else applicationLocales
+        if (locales.isEmpty || locales.toLanguageTags() == context.resources.configuration.locales.toLanguageTags()) return context
         return context.createConfigurationContext(Configuration(context.resources.configuration).apply {
             setLocales(LocaleList.forLanguageTags(locales.toLanguageTags()))
         })
