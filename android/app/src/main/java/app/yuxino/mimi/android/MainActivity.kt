@@ -32,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var guide: FirstRunGuide
     private val immersiveHelp = ImmersiveModeHelp(this)
     private var stopObservingAppearance: (() -> Unit)? = null
+    private val subtitleListener = object : app.yuxino.mimi.android.provider.SubtitleBus.Listener {
+        override fun onSubtitleChanged() { runOnUiThread { refreshUi() } }
+    }
     private val stateListener: () -> Unit = { runOnUiThread { refreshUi() } }
 
     private val projectionManager: MediaProjectionManager by lazy {
@@ -96,11 +99,13 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         MimiService.addStateListener(stateListener)
+        app.yuxino.mimi.android.provider.SubtitleBus.addListener(subtitleListener)
         stopObservingAppearance = SettingsStore.observeAppearance(this) { runOnUiThread { refreshUi() } }
     }
 
     override fun onStop() {
         MimiService.removeStateListener(stateListener)
+        app.yuxino.mimi.android.provider.SubtitleBus.removeListener(subtitleListener)
         stopObservingAppearance?.invoke()
         stopObservingAppearance = null
         immersiveHelp.dismiss()
@@ -207,6 +212,11 @@ class MainActivity : AppCompatActivity() {
             SettingsStore.immersiveSubtitles(this), SettingsStore.originalTextOnly(this),
             SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this),
         )
+        if (running) {
+            val bus = app.yuxino.mimi.android.provider.SubtitleBus
+            findViewById<SubtitlePreviewView>(R.id.subtitle_preview).showLive(
+                bus.displaySource, bus.displayTranslation, bus.liveHidden, getString(R.string.capture_waiting))
+        }
     }
 
     private fun languageLabel(code: String): String = languageDisplayName(this, code)

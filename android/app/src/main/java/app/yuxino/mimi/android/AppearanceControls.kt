@@ -174,8 +174,9 @@ internal class AppearanceControls(
         return spinner
     }
     private fun helpHeading(title: Int, help: Int, tag: String): View =
-        if (context is androidx.appcompat.app.AppCompatActivity) HelpUi.heading(context, context.getString(title), context.getString(help), 16f, tag)
-        else label(title)
+        (context as? androidx.appcompat.app.AppCompatActivity)?.let { activity ->
+            HelpUi.heading(activity, activity.getString(title), activity.getString(help), 16f, tag)
+        } ?: label(title)
     private fun label(title: Int) = TextView(context).apply {
         setText(title); textSize = 16f; setTypeface(typeface, Typeface.NORMAL); setTextColor(color(R.color.mimi_text))
     }

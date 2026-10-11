@@ -146,7 +146,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         onUi { SettingsStore.setFontSize(context, 12) }
         context.stopService(Intent(context, MimiService::class.java))
         waitFor { WindowInspector.getGlobalWindowViews().none { it.tag == "mimi-overlay" } }
-        context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+        context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
         waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "mimi-overlay" } }
         waitFor { root().findViewWithTag<View>("compact-subtitle").isShown }
         check(SettingsStore.overlayYOffset(context) == savedOffset)
@@ -183,6 +183,25 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         onUi { SettingsStore.setOverlayWidthPercent(context, 92) }
         waitFor { root().width == oldWidth }
         capture("expanded-dragged")
+    }
+
+    private fun ownSurfaceChecks(home: MainActivity) {
+        context.stopService(Intent(context, MimiService::class.java))
+        waitFor { WindowInspector.getGlobalWindowViews().none { it.tag == "mimi-overlay" } }
+        context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+        waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "mimi-overlay" } && !root().isShown }
+        capture("home-uncovered")
+        context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitFor { root().isShown }
+        val existing = root()
+        capture("outside-mimi")
+        val settings = test.startActivitySync(Intent(context, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+        waitFor { !root().isShown }
+        onUi { settings.findViewById<View>(R.id.tab_appearance).performClick() }
+        capture("settings-uncovered")
+        onUi { settings.finish(); home.finish() }
+        waitFor { root().isShown }
+        check(root() === existing) { "Own-page visibility replaced subtitle views" }
     }
 
     fun run(arguments: Bundle?) {
@@ -222,7 +241,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             SettingsStore.setOverlayOpacity(context, 100)
             check(prefs.edit().putBoolean("seen", true).commit())
             home = test.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
             waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "mimi-overlay" } }
             onUi { SubtitleBus.clear() }
             waitFor { root().isShown == baseline }
@@ -273,6 +292,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 if (!baseline) {
                     liveDisplayControls()
                     immersivePlacementChecks(checkNotNull(home))
+                    ownSurfaceChecks(checkNotNull(home))
                     // Confirmed pairs intentionally remain readable. Test the genuinely empty state.
                     onUi { SubtitleBus.clear(); SubtitleBus.hideLive() }
                     waitFor { !root().isShown }

@@ -38,7 +38,7 @@ internal class RuntimeFeedbackChecks(private val test: Instrumentation) {
                 if (Build.VERSION.SDK_INT >= 33) localeManager?.applicationLocales = LocaleList.forLanguageTags(locale)
                 else AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(locale))
             }
-            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
             await { root() != null }
             val created = SharedSubtitleCore.exchange(JSONObject().put("operation", JSONObject().put("type", "create").put("history_limit", 0)))
             val response = SharedSubtitleCore.exchange(JSONObject().put("state", created.getString("state"))

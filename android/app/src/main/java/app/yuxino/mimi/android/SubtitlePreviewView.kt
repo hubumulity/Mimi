@@ -16,6 +16,9 @@ class SubtitlePreviewView @JvmOverloads constructor(
     attrs: AttributeSet? = null,
 ) : LinearLayout(context, attrs) {
     private val exampleLabel = TextView(context)
+    private val previewLabel = TextView(context)
+    private var appearanceShortcut = false
+    private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
     private val source = TextView(context)
     private val translation = TextView(context)
     private val subtitle = LinearLayout(context)
@@ -32,7 +35,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        labelRow.addView(TextView(context).apply {
+        labelRow.addView(previewLabel.apply {
             setText(R.string.preview_label)
             setTextColor(Color.rgb(184, 184, 184))
             textSize = 11f
@@ -52,6 +55,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
         translation.textSize = 19f
         translation.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         translation.setLineSpacing(dp(4).toFloat(), 1f)
+        subtitle.addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         subtitle.addView(source, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         subtitle.addView(translation, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8)
@@ -63,10 +67,14 @@ class SubtitlePreviewView @JvmOverloads constructor(
     }
 
     fun showAppearanceShortcut() {
+        appearanceShortcut = true
         exampleLabel.setText(R.string.preview_edit)
     }
 
     fun configure(fontSize: Int, color: Int, opacity: Int, backgroundAlpha: Int, targetLang: String, immersive: Boolean, originalOnly: Boolean = false, mode: CaptionDisplayMode = CaptionDisplayMode.BILINGUAL, widthPercent: Int = 92) {
+        previewLabel.setText(R.string.preview_label)
+        exampleLabel.setText(if (appearanceShortcut) R.string.preview_edit else R.string.preview_example)
+        status.visibility = GONE
         val effective = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
         source.visibility = if (effective.sourceVisible) VISIBLE else GONE
         translation.visibility = if (effective.translationVisible) VISIBLE else GONE
@@ -97,6 +105,16 @@ class SubtitlePreviewView @JvmOverloads constructor(
             setColor(Color.argb(if (immersive) 0 else backgroundAlpha.coerceIn(0, 90) * 255 / 100, 16, 16, 16))
             cornerRadius = dp(12).toFloat()
         }
+    }
+
+    fun showLive(original: String, translated: String, hidden: Boolean, waiting: String) {
+        previewLabel.setText(R.string.home_title)
+        exampleLabel.setText(R.string.overlay_appearance)
+        source.text = if (hidden) "" else original
+        translation.text = if (hidden) "" else translated
+        status.text = waiting
+        status.visibility = if ((source.visibility != VISIBLE || source.text.isNullOrBlank()) &&
+            (translation.visibility != VISIBLE || translation.text.isNullOrBlank())) VISIBLE else GONE
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

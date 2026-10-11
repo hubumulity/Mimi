@@ -115,7 +115,29 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
             request(activity, third, "fresh-consent-after-revoke", accept = true)
             await("restart_after_revoke_audio") { third.nonzero.get() > 0 && MimiService.captureObservation?.state == CaptureHealth.State.AUDIO }
             checkpoint("restart_after_revoke_audio", third)
-            stopAndVerify(third, "final_stop")
+            val settings = startActivitySync(Intent(targetContext, SettingsActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+            try {
+                await("settings_captions_hidden") {
+                    var hidden = false
+                    runOnMainSync { hidden = WindowInspector.getGlobalWindowViews().filter { it.tag == "mimi-overlay" }.all { !it.isShown } }
+                    hidden
+                }
+                runOnMainSync {
+                    check(settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("service-session-guard").isShown)
+                    for (provider in app.yuxino.mimi.android.provider.ServiceProvider.entries) {
+                        check(!settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("configure-${provider.id}").isEnabled)
+                    }
+                    check(settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("service-stop").performClick())
+                }
+                verifyStopped(third, "settings_stop")
+                await("settings_guard_cleared") {
+                    var cleared = false
+                    runOnMainSync { cleared = settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("service-session-guard") == null }
+                    cleared
+                }
+                checkpoint("settings_guard_and_stop", third)
+            } finally { runOnMainSync { settings.finish() } }
             val cancelled = DiscardEngine()
             request(activity, cancelled, "cancel-consent", accept = false)
             check(cancelled.chunks.get() == 0L && !MimiService.isRunning) { "cancel_started_capture" }

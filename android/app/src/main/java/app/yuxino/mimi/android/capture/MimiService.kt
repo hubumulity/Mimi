@@ -112,6 +112,7 @@ class MimiService : Service() {
     private val immersiveSession get() = overlayPlacement.isImmersive
     private var draggingOverlay = false
     private var resizeWidthPercent: Int? = null
+    private val ownUiUpdate = Runnable { renderBus() }
     private var previewMode = false
     private var sessionSourceLanguage = "auto"
     private var sessionTargetLanguage = "zh"
@@ -175,6 +176,10 @@ class MimiService : Service() {
             mainHandler.removeCallbacks(appearanceUpdate)
             mainHandler.post(appearanceUpdate)
         }
+        ownUiChanged = {
+            mainHandler.removeCallbacks(ownUiUpdate)
+            if (ownUiVisible) renderBus() else mainHandler.postDelayed(ownUiUpdate, 120)
+        }
         createChannel()
         SubtitleBus.addListener(busListener)
     }
@@ -210,6 +215,7 @@ class MimiService : Service() {
             applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         ) {
             previewMode = true
+            previewOverOwnUi = intent.getBooleanExtra("preview_over_own_ui", false)
             previewHistoryEnabled = false
             sessionSourceLanguage = "ja"
             SubtitleBus.clear()
@@ -481,6 +487,8 @@ class MimiService : Service() {
     }
 
     override fun onDestroy() {
+        ownUiChanged = null
+        mainHandler.removeCallbacks(ownUiUpdate)
         InterfaceLanguage.removeListener(interfaceLanguageListener)
         stopObservingAppearance?.invoke()
         stopObservingAppearance = null
@@ -802,7 +810,7 @@ class MimiService : Service() {
             tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
         }
         val font = panelButton(interfaceString(R.string.overlay_appearance)).apply {
-            tag = "overlay-font"; minHeight = dp(48); contentDescription = interfaceString(R.string.settings_tab_appearance)
+            tag = "overlay-font"; minHeight = dp(48); setSingleLine(false); contentDescription = interfaceString(R.string.settings_tab_appearance)
             setOnClickListener { showFontSizeControl() }
         }
         val immersive = panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
@@ -819,6 +827,10 @@ class MimiService : Service() {
             contentDescription = interfaceString(R.string.overlay_language_description)
             textSize = 14f; setTextColor(0xFFDDDDDD.toInt()); maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+            minimumHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
+            isClickable = true; isFocusable = true
+            setOnClickListener { startActivity(Intent(this@MimiService, app.yuxino.mimi.android.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         panel.addView(route, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         relayoutExpandedHeader = { panel.requestLayout() }
@@ -886,14 +898,15 @@ class MimiService : Service() {
         transcript.addView(expandedTranslationView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         scroll.addView(transcript)
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(18) })
-        panel.addView(panelIcon(R.drawable.ic_chevron, R.string.overlay_resize).apply {
-            tag = "overlay-resize"; rotation = 45f
+        panel.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
+            tag = "overlay-resize"
             setOnClickListener { showFontSizeControl() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { gravity = Gravity.END })
         return panel
     }
 
     private var previewHistoryEnabled = false
+    private var previewOverOwnUi = false
 
     private fun seedPreviewHistory() {
         SubtitleBus.setHistoryLimit(3)
@@ -1083,7 +1096,7 @@ class MimiService : Service() {
         }
         immersiveExitParams?.let { exitParams ->
             val y = exitControlY()
-            val x = maxOf(dp(4), (width - root.width) / 2)
+            val x = maxOf(dp(4), (width - root.width) / 2 - params.x)
             if (exitParams.y != y || exitParams.x != x) {
                 exitParams.y = y
                 exitParams.x = x
@@ -1220,8 +1233,10 @@ class MimiService : Service() {
         val hasCaption = listOf(sourceView, translationView).any {
             it?.visibility == View.VISIBLE && !it.text.isNullOrBlank()
         }
-        overlayView?.visibility = if (expanded || hasCaption || statusLine.isNotBlank())
+        val coveredByOwnUi = ownUiVisible && !previewOverOwnUi
+        overlayView?.visibility = if (!coveredByOwnUi && (expanded || hasCaption || statusLine.isNotBlank()))
             View.VISIBLE else View.GONE
+        immersiveExitView?.visibility = if (coveredByOwnUi) View.GONE else View.VISIBLE
     }
 
     private fun interfaceString(@androidx.annotation.StringRes id: Int): String =
@@ -1243,6 +1258,13 @@ class MimiService : Service() {
     }
 
     companion object {
+        private val ownUiOwners = CopyOnWriteArraySet<android.app.Activity>()
+        private var ownUiChanged: (() -> Unit)? = null
+        private val ownUiVisible: Boolean get() = ownUiOwners.isNotEmpty()
+        internal fun setOwnUiVisible(owner: android.app.Activity, visible: Boolean) {
+            val changed = if (visible) ownUiOwners.add(owner) else ownUiOwners.remove(owner)
+            if (changed) ownUiChanged?.invoke()
+        }
         @Volatile private var captureEngineForTests: ProviderEngine? = null
         @Volatile internal var captureProjectionForTests: MediaProjection? = null
             private set

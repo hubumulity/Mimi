@@ -82,7 +82,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 capture("picker-$theme")
                 instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
                 onUi { settings!!.findViewById<View>(R.id.tab_appearance).performClick() }
-                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
                 await { WindowInspector.getGlobalWindowViews().any { it.findViewWithTag<View>("compact-subtitle") != null } }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
                 await { SubtitleBus.historySnapshot().isNotEmpty() }

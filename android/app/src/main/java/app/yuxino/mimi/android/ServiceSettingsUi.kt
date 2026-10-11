@@ -117,7 +117,6 @@ internal object ServiceSettingsUi {
                 orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL
                 minimumHeight=dp(activity,72); isClickable=true; isFocusable=true
                 isEnabled = !MimiService.isRunning
-                background = ContextCompat.getDrawable(activity, R.drawable.mimi_segment)
                 contentDescription="${providerTitle(activity, provider)}，${activity.getString(if(!configured) R.string.service_missing else if(active) R.string.service_active else R.string.service_configured)}"
             }
             val mark = android.widget.ImageView(activity).apply {

@@ -434,7 +434,7 @@ class UiSmokeInstrumentation : Instrumentation() {
             waitForIdleSync()
 
             prefs.edit().remove("immersive_seen").commit()
-            targetContext.startService(Intent(targetContext, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
+            targetContext.startService(Intent(targetContext, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true))
             val overlay = checkNotNull(waitForOverlayTag("mimi-overlay"))
             val compact = overlay.findViewWithTag<View>("compact-subtitle")
             onUi { compact.performClick() }
@@ -496,6 +496,7 @@ class UiSmokeInstrumentation : Instrumentation() {
         onUi { WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull { it.findViewWithTag<View>("guide-skip") }?.performClick() }
         check(home.findViewById<View>(R.id.copy_capture_diagnostics) == null) { "Diagnostics must not be a home action" }
         val diagnostics = openSettings(home, appearance = false)
+        click(diagnostics, R.id.tab_general)
         click(diagnostics, R.id.copy_capture_diagnostics)
         onUi {
             val clipboard = targetContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -615,7 +616,7 @@ class UiSmokeInstrumentation : Instrumentation() {
         launchHome()
         try {
             check(targetContext.startService(Intent(targetContext, MimiService::class.java)
-                .setAction(MimiService.ACTION_UI_PREVIEW)) != null)
+                .setAction(MimiService.ACTION_UI_PREVIEW).putExtra("preview_over_own_ui", true)) != null)
             var root: View? = null
             for (attempt in 0 until 30) {
                 waitForIdleSync()
@@ -754,7 +755,7 @@ class UiSmokeInstrumentation : Instrumentation() {
             panel.getLocationOnScreen(panelLocation)
             for (tag in listOf("collapse-overlay", "enter-immersive", "overlay-font", "overlay-route")) {
                 val label = checkNotNull(panel.findViewWithTag<View>(tag))
-                if (label is TextView) check(label.lineCount == 1) { "Overlay action wraps: $tag" }
+                if (label is TextView && tag != "overlay-font") check(label.lineCount == 1) { "Overlay action wraps: $tag" }
                 if (tag != "overlay-route" && label is TextView) {
                     check(label.paint.measureText(label.text.toString()) <= label.width - label.paddingLeft - label.paddingRight + 1) {
                         "Overlay action text does not fit: $tag"

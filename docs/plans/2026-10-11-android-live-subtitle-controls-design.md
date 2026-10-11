@@ -33,6 +33,22 @@ While a session is running, show the service-edit restriction beside a visible
 Stop action. Opening settings never silently stops playback/capture. Appearance
 continues to be editable. Update the guard when the session ends.
 
+## User flows
+
+On returning to Mimi, live captions appear in the Home preview instead of covering
+its controls. Floating windows temporarily hide above Mimi activities while
+capture, provider sessions and paired state continue; leaving Mimi restores the
+same floating views and reading position. Activity transitions cannot flash a
+caption over credential fields. Keep sample content labeled when idle.
+
+Acceptance covers first setup, choosing an already configured service, switching
+provider while active, viewing the current caption on Home, changing display and
+appearance while another app plays, moving/resizing away from video controls,
+entering/leaving immersion and stopping after a capture warning. Product actions
+must remain reachable at large system fonts and in landscape. Do not interpret
+successful persistence, host geometry or a synthetic fixture as real playback
+acceptance or a smoothness measurement.
+
 ## Verification and delivery
 
 Add native interaction acceptance for display filtering, saved width/live view
