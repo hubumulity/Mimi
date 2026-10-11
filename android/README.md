@@ -337,6 +337,17 @@ ADB screencap. Native visual fixtures, emulator frame statistics and a live
 provider run establish different evidence; record their exact build and remaining
 device/provider gaps in the [integration ledger](../docs/development/integration-runs.md).
 
+`live_caption_reading=true` also accepts `screen_changes=true` with
+`phase_seconds=90` or longer. Each display mode checks landscape, immersion,
+small/large dimensions and exact portrait restoration while actual audio and
+caption drawing continue. Add `browser_fullscreen=true` for operator-controlled
+player fullscreen entry/exit instead of forced display rotation: respond to
+`CAPTION_FULLSCREEN_REQUEST` using the observed native player controls. Keep
+glyph and visible-rectangle comparisons in the same root-window coordinate
+system; screen offsets of floating windows must not become clipping failures.
+Browser media keys alone do not prove audio, and zero-duration injected taps
+can miss Firefox controls; verify the player after a native short press.
+
 ## Known limits
 
 - MediaProjection requires user consent on every start (platform rule).

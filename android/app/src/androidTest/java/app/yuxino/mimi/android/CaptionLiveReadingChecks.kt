@@ -39,6 +39,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         val originalWidth = SettingsStore.overlayWidthPercent(context)
         val originalHeight = SettingsStore.overlayHeightPercent(context)
         val screenChanges = arguments?.getString("screen_changes") == "true"
+        val browserFullscreen = arguments?.getString("browser_fullscreen") == "true"
+        check(!browserFullscreen || screenChanges)
         val seconds = arguments?.getString("phase_seconds")?.toIntOrNull()
         check(seconds == null || seconds in 30..300)
         check(!screenChanges || seconds != null && seconds >= 90)
@@ -144,7 +146,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             check(MimiService.isRunning && MimiService.captureObservation?.state?.name == "AUDIO") { "playback_audio_start_timeout" }
             // Leave the operator's native consent/browser inspector free until
             // playback starts; only one UiAutomation connection can own it.
-            if (screenChanges) check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
+            if (screenChanges && !browserFullscreen) check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
             ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(listener) }
             for ((selected, seconds) in phases) {
                 observedMode.set(null)
@@ -211,7 +213,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                         val elapsed = now - start
                         when {
                             transitions == 0 && elapsed >= 8000 -> transition("landscape") {
-                                check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_90))
+                                if (browserFullscreen) status("CAPTION_FULLSCREEN_REQUEST mode=${selected.id} action=enter")
+                                else check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_90))
                                 awaitOrientation(Configuration.ORIENTATION_LANDSCAPE)
                             }
                             transitions == 1 && elapsed >= 22000 -> transition("immersive") {
@@ -225,7 +228,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                             }
                             transitions == 4 && elapsed >= 66000 -> transition("portrait-restored") {
                                 ui { SettingsStore.setOverlayHeightPercent(context, originalHeight); SettingsStore.setOverlayWidthPercent(context, originalWidth) }
-                                check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
+                                if (browserFullscreen) status("CAPTION_FULLSCREEN_REQUEST mode=${selected.id} action=exit")
+                                else check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
                                 awaitOrientation(Configuration.ORIENTATION_PORTRAIT)
                             }
                         }
@@ -297,7 +301,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 SettingsStore.setDisplayMode(context, mode); SettingsStore.setImmersiveSubtitles(context, immersed)
                 SettingsStore.setOverlayWidthPercent(context, originalWidth); SettingsStore.setOverlayHeightPercent(context, originalHeight)
             }
-            if (screenChanges) test.uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE)
+            if (screenChanges && !browserFullscreen) test.uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE)
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_STOP))
             repeat(100) { if (MimiService.isRunning || MimiService.isStopping) SystemClock.sleep(100) }
             temporary?.close()
