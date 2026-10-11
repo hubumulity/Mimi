@@ -8,6 +8,9 @@ object SubtitleBus {
     data class TimedPair(val pair: Pair, val createdAt: Long?)
     data class RuntimeFeedback(val connectionStatus: String = "idle", val recoveryReason: String? = null,
         val retryScheduled: Boolean = false, val translationTimedOut: Boolean = false)
+    data class DisplaySnapshot(val source: String, val translation: String, val hidden: Boolean,
+        val confirmed: Boolean, val createdAt: Long?, val history: List<TimedPair>,
+        val status: String, val feedback: RuntimeFeedback)
     @Volatile var runtimeFeedback = RuntimeFeedback()
         private set
     private val lock = Any()
@@ -130,6 +133,11 @@ object SubtitleBus {
         notifyListeners()
     }
     fun historySnapshot(): List<Pair> = historySnapshotWithTime().map { it.pair }
+    /** Read one published shared state; a provider thread can publish during UI rendering. */
+    fun displaySnapshot(): DisplaySnapshot = synchronized(lock) {
+        DisplaySnapshot(displaySource, displayTranslation, liveHidden, displayPairFinal,
+            displayPairCreatedAt, historySnapshotWithTime(), statusLine, runtimeFeedback)
+    }
     fun historySnapshotWithTime(): List<TimedPair> = synchronized(lock) {
         val rows = snapshot.optJSONArray("history") ?: return@synchronized emptyList()
         val count = minOf(rows.length(), historyLimit)

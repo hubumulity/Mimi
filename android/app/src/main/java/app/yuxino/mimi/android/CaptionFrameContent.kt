@@ -18,7 +18,7 @@ internal data class CaptionFrameContent(
     val timestamp: String = "",
 ) {
     fun applyRows(source: TextView, translation: TextView, statusView: TextView, mode: CaptionDisplayMode) {
-        source.text = original; translation.text = translated; statusView.text = status
+        source.setCaptionText(original); translation.setCaptionText(translated); statusView.setCaptionText(status)
         source.visibility = if (!hidden && mode.sourceVisible && original.isNotBlank()) View.VISIBLE else View.GONE
         translation.visibility = if (!hidden && mode.translationVisible && translated.isNotBlank()) View.VISIBLE else View.GONE
         statusView.visibility = if (status.isBlank()) View.GONE else View.VISIBLE
@@ -27,11 +27,11 @@ internal data class CaptionFrameContent(
     companion object {
         fun live(context: Context, mode: CaptionDisplayMode, historyLimit: Int,
                  captureState: CaptureHealth.State?, running: Boolean, stopping: Boolean): CaptionFrameContent {
-            val bus = SubtitleBus
-            val visible = !bus.liveHidden && (mode.sourceVisible && bus.displaySource.isNotBlank() ||
-                mode.translationVisible && bus.displayTranslation.isNotBlank())
+            val state = SubtitleBus.displaySnapshot()
+            val visible = !state.hidden && (mode.sourceVisible && state.source.isNotBlank() ||
+                mode.translationVisible && state.translation.isNotBlank())
             val localized = InterfaceLanguage.context(context)
-            val runtime = runtimeFeedbackResource(bus.runtimeFeedback)?.let(localized::getString) ?: bus.statusLine
+            val runtime = runtimeFeedbackResource(state.feedback)?.let(localized::getString) ?: state.status
             val status = when {
                 captureState == CaptureHealth.State.NO_PCM -> localized.getString(R.string.capture_no_sound_hint)
                 runtime.isNotBlank() -> runtime
@@ -39,15 +39,20 @@ internal data class CaptionFrameContent(
                 else -> ""
             }
             val showTime = SettingsStore.subtitleTimestamps(context)
-            val currentTime = bus.displayPairCreatedAt
-            val history = if (historyLimit > 0) bus.historySnapshotWithTime().takeLast(historyLimit)
+            val currentTime = state.createdAt
+            val history = if (historyLimit > 0) state.history.takeLast(historyLimit)
                 .filterNot { currentTime != null && it.createdAt == currentTime }.joinToString("\n\n") { timed ->
                 val pair = timed.pair
                 listOfNotNull(captionTime(timed.createdAt).takeIf { showTime && it.isNotBlank() }, pair.source.takeIf { mode.sourceVisible && it.isNotBlank() },
                     pair.translation.takeIf { mode.translationVisible && it.isNotBlank() }).joinToString("\n")
             } else ""
-            return CaptionFrameContent(bus.displaySource, bus.displayTranslation, bus.liveHidden, status, history, historyLimit, bus.displayPairFinal,
+            return CaptionFrameContent(state.source, state.translation, state.hidden, status, history, historyLimit, state.confirmed,
                 if (showTime) captionTime(currentTime) else "")
         }
     }
+}
+
+/** Unchanged runtime/health publications must not reset a TextView's native viewport. */
+internal fun TextView.setCaptionText(value: String) {
+    if (text.toString() != value) text = value
 }

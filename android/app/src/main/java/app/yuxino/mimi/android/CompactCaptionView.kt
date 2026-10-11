@@ -36,7 +36,7 @@ internal class CompactCaptionView(context: Context) : LinearLayout(context) {
 
     fun showContent(content: CaptionFrameContent, mode: CaptionDisplayMode) {
         content.applyRows(source, translation, status, mode)
-        timestamp.text = content.timestamp
+        timestamp.setCaptionText(content.timestamp)
         timestamp.visibility = if (content.timestamp.isBlank() || content.hidden) View.GONE else View.VISIBLE
     }
 

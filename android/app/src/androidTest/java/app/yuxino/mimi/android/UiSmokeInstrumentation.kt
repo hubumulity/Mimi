@@ -72,6 +72,10 @@ class UiSmokeInstrumentation : Instrumentation() {
 
     override fun onStart() {
         super.onStart()
+        if (captureArguments?.getString("caption_streaming") == "true") {
+            CaptionStreamingChecks(this).run(captureArguments)
+            return
+        }
         if (captureArguments?.getString("preview_parity") == "true") {
             CaptionPreviewParityChecks(this).run(captureArguments)
             return

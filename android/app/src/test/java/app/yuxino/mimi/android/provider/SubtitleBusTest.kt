@@ -7,6 +7,24 @@ import org.junit.Test
 
 /** Exercises the real JNI reducer, rather than a duplicate Kotlin implementation. */
 class SubtitleBusTest {
+    @Test fun aDisplayReadCannotMixConcurrentNativePublications() {
+        SubtitleBus.onFinalPair("s-0", "t-0")
+        val writerFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val writer = Thread {
+            try { repeat(300) { SubtitleBus.onFinalPair("s-$it", "t-$it") } }
+            catch (error: Throwable) { writerFailure.set(error) }
+        }
+        writer.start()
+        try {
+            repeat(1000) {
+                val state = SubtitleBus.displaySnapshot()
+                assertEquals(state.source.removePrefix("s-"), state.translation.removePrefix("t-"))
+                assertTrue(state.confirmed)
+                assertNotNull(state.createdAt)
+            }
+        } finally { writer.join() }
+        writerFailure.get()?.let { throw it }
+    }
     @Test fun confirmationTimeComesThroughActualJniWithHistoryDisabled() {
         SubtitleBus.onFinalPair("Synthetic sentence.", "合成句子。")
         val time = checkNotNull(SubtitleBus.displayPairCreatedAt)

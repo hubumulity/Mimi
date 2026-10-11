@@ -11,9 +11,10 @@ import android.widget.TextView
 internal class LatestCaptionTextView(context: Context) : TextView(context) {
     var followsLatest = true
     private val followLatest = ViewTreeObserver.OnPreDrawListener {
-        // Text can relayout without changing this view's size. Wait for that
-        // layout too, and redraw once if the viewport moved before painting.
-        !followTail()
+        // Reconcile in this frame. Cancelling the whole window draw here can
+        // starve painting while streaming text keeps requesting new layouts.
+        followTail()
+        true
     }
 
     override fun onAttachedToWindow() {
@@ -41,6 +42,15 @@ internal class LatestCaptionTextView(context: Context) : TextView(context) {
         val tailHeight = textLayout.getLineBottom(textLayout.lineCount - 1) - textLayout.getLineTop(first) +
             compoundPaddingTop + compoundPaddingBottom
         setMeasuredDimension(measuredWidth, resolveSize(tailHeight, heightMeasureSpec))
+    }
+
+    override fun onPreDraw(): Boolean {
+        // TextView brings the first line into view after setText/measurement.
+        // Finish that native reconciliation before following our newest line,
+        // so it cannot reset the viewport after our observer already ran.
+        super.onPreDraw()
+        followTail()
+        return true
     }
 
     private fun followTail(): Boolean {

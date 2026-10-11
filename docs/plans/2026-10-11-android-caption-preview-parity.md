@@ -76,3 +76,21 @@ with history disabled; never assign a Kotlin arrival time or label drafts as
 confirmed. Show the same metadata in the real and preview frames, and reserve
 its measured height before allocating bilingual lines. Android remains playback
 capture only; these settings do not add a microphone source.
+
+Continuous updates must preserve the native tail viewport after TextView's own
+pre-draw scroll reconciliation, and must never cancel a window draw to follow
+text. Read source/translation/metadata atomically from one published shared
+state, coalesce redundant pending paints, and skip identical text assignments
+on health/status publications. Reserve a
+stable multilingual fallback-font minimum from the chosen typography rather
+than recalculating the window height from each incoming word. The chosen font
+size applies directly to the translation and original-only text; bilingual
+originals use a 90% reference size and translations use medium weight, without
+the previous extra 3 sp/bold boost. Use the same typography in all previews and
+normal/immersive frames. Rotation cancels transient resize geometry, retains
+saved width/height and positions, and clamps the visible frame to safe bounds;
+returning to portrait must recover the original size. Ignore remaining events
+from a gesture started in the previous configuration, including its final up.
+Check continuous drawing
+with eight scripts, all three modes, height endpoints and actual orientation
+round trips, then rerun comparable real playback.

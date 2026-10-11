@@ -45,6 +45,9 @@ internal class CaptionPanelView(
     private var displayMode = CaptionDisplayMode.BILINGUAL
     private var showDividers = false
     private var interactive = actions.home != null
+    private var minimumSourceLine = 0
+    private var minimumTranslationLine = 0
+    private var minimumTimeLine = 0
 
     init {
         tag = "expanded-subtitles"
@@ -205,8 +208,8 @@ internal class CaptionPanelView(
         translation = LatestCaptionTextView(context).apply {
             tag = "expanded-translation"
             setTextColor(Color.WHITE)
-            textSize = (17 + 3).toFloat()
-            setTypeface(typeface, Typeface.BOLD)
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
         // Following keeps both languages in the viewport. Deliberate scrolling
         // opens their full bounded content without changing the user's window.
@@ -236,6 +239,9 @@ internal class CaptionPanelView(
         displayMode = style.mode; showDividers = style.dividers
         (history as CaptionHistoryTextView).dividers = style.dividers
         CaptionTypography.apply(source, translation, style.fontSize, false, style.mode == CaptionDisplayMode.ORIGINAL)
+        minimumSourceLine = CaptionTypography.minimumLineHeight(source)
+        minimumTranslationLine = CaptionTypography.minimumLineHeight(translation)
+        minimumTimeLine = CaptionTypography.minimumLineHeight(timestamp)
         status.textSize = style.fontSize.toFloat()
         history.textSize = (style.fontSize - 1).coerceAtLeast(12).toFloat()
         status.setTextColor(style.color)
@@ -298,9 +304,9 @@ internal class CaptionPanelView(
         val historyChanged = history.text.toString() != content.history
         if (active && (historyChanged || pairChanged) && followingLive) followCurrentOnLayout = true
         content.applyRows(source, translation, status, mode)
-        timestamp.text = content.timestamp
+        timestamp.setCaptionText(content.timestamp)
         timestamp.visibility = if (content.timestamp.isBlank() || content.hidden) View.GONE else View.VISIBLE
-        history.text = content.history
+        history.setCaptionText(content.history)
         // The shared state already bounds retained pairs; a second visual cap
         // would discard later history rows when a sentence wraps.
         history.maxLines = Int.MAX_VALUE
@@ -309,17 +315,11 @@ internal class CaptionPanelView(
     }
 
     fun minimumReadingHeight(): Int {
-        fun line(view: TextView): Int {
-            val layout = view.layout
-            return if (layout != null && layout.lineCount > 0)
-                layout.getLineBottom(layout.lineCount - 1) - layout.getLineTop(layout.lineCount - 1) + view.compoundPaddingTop + view.compoundPaddingBottom
-            else kotlin.math.ceil((view.paint.fontMetrics.bottom - view.paint.fontMetrics.top).toDouble()).toInt()
-        }
         val mode = displayMode
-        return maxOf(dp(64), (if (mode.sourceVisible) line(source) else 0) +
-            (if (mode.translationVisible) line(translation) * if (mode == CaptionDisplayMode.BILINGUAL) 2 else 1 else 0) +
+        return maxOf(dp(64), (if (mode.sourceVisible) minimumSourceLine else 0) +
+            (if (mode.translationVisible) minimumTranslationLine * if (mode == CaptionDisplayMode.BILINGUAL) 2 else 1 else 0) +
             (if (mode == CaptionDisplayMode.BILINGUAL) dp(6) else 0) +
-            (if (timestamp.visibility == View.VISIBLE || SettingsStore.subtitleTimestamps(context)) line(timestamp) else 0))
+            (if (SettingsStore.subtitleTimestamps(context)) minimumTimeLine else 0))
     }
 
     fun chromeHeight(): Int = paddingTop + paddingBottom + dp(8) +
