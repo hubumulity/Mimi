@@ -16,6 +16,12 @@ Rust subtitle/provider runtime as desktop through JNI.
 
 ## Features
 
+- **Main interface** — Captions, Services and More share one page shell and a
+  persistent status/Start/Stop footer. Captions contains language choices, one
+  live/sample preview, display mode and immersion. Width, font, color and
+  opacity expand under Caption style on that same page. Services owns service
+  selection and setup; More contains interface language, diagnostics and the
+  setup guide. Switching sections retains their scroll positions.
 - **System-audio capture** — `MediaProjection` + `AudioPlaybackCapture`
   (API 29+). Requires Android’s `RECORD_AUDIO` runtime grant for playback capture;
   never uses a microphone source. Captures what other apps play
@@ -34,18 +40,19 @@ Rust subtitle/provider runtime as desktop through JNI.
   independently saved compact and expanded positions. Drag the compact caption
   or the expanded panel's top handle to move it. Tap the compact caption to open a reading panel with the
   current source and translation; confirmed lines appear there only when
-  bounded history is enabled in settings. The panel has language, appearance,
-  collapse and immersive actions. Settings and floating appearance controls offer
+  bounded history is enabled in caption styles. The panel has language, style,
+  upward collapse and a visibly labeled immersive action. Caption and floating controls offer
   original/translation/bilingual display, width (55–100 %), background alpha
   (0–90 %), text color presets, font size, and whole-window opacity. The expanded
   panel also has a direct resize handle.
-  Appearance changes apply immediately to an existing overlay; empty live captions
-  do not leave a background-only floating window. An optional
-  immersive mode shows plain text with a contrast shadow and passes touches
+  Style changes apply immediately to an existing overlay. Before speech and
+  during a silent gap, an active session shows the same localized listening
+  message as desktop. An optional immersive mode centers the text with lighter
+  typography and a compact contrast shadow, and passes touches
   through to the app below. A small exit control follows the subtitle position;
-  Home and Settings also enter/exit immersive mode without stopping the session.
+  The Captions page also enters/exits immersive mode without stopping the session.
   Returning restores the previous compact/expanded state and saved position.
-  Floating captions temporarily hide while Mimi's own pages are open; Home
+  Floating captions temporarily hide while Mimi's own pages are open; Captions
   shows the current caption and capture continues. Leaving Mimi restores the
   floating window. The expanded panel's covered area receives touches until it is collapsed.
 - **Subtitle previews** — the shared factory selects complete paired previews
@@ -59,7 +66,7 @@ Rust subtitle/provider runtime as desktop through JNI.
   scoped by provider.
 - **History privacy** — disabled by default; opting into history retains only a bounded
   in-memory list. Disabling it or stopping the session clears retained subtitles.
-- **Interface language** — Settings offers Follow system and the same eight interface
+- **Interface language** — More offers Follow system and the same eight interface
   languages as desktop: 简体中文, 繁體中文, English, 日本語, Deutsch, 한국어, Français and ภาษาไทย.
   Changes apply immediately and persist after restart, independently of subtitle
   source and target languages. Android 13+ also exposes this choice in system App languages.

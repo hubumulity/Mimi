@@ -108,13 +108,12 @@ class SubtitlePreviewView @JvmOverloads constructor(
                 else -> R.string.preview_zh
             })
         }
-        source.textSize = fontSize.coerceIn(12, 24).toFloat()
-        translation.textSize = fontSize.coerceIn(12, 24) + 3f
+        CaptionTypography.apply(source, translation, fontSize, immersive, effective == CaptionDisplayMode.ORIGINAL)
+        CaptionTypography.applyContrast(status, immersive)
+        status.setTextColor(if (immersive) Color.WHITE else Color.LTGRAY)
         translation.setTextColor(color)
         source.setTextColor(if (effective == CaptionDisplayMode.ORIGINAL) color else Color.rgb(203, 203, 203))
         subtitle.alpha = if (immersive) 0.8f else opacity.coerceIn(20, 100) / 100f
-        source.setShadowLayer(if (immersive) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)
-        translation.setShadowLayer(if (immersive) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)
         subtitle.background = GradientDrawable().apply {
             setColor(Color.argb(if (immersive) 0 else backgroundAlpha.coerceIn(0, 90) * 255 / 100, 16, 16, 16))
             cornerRadius = dp(12).toFloat()
@@ -123,7 +122,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
 
     fun showLive(original: String, translated: String, hidden: Boolean, waiting: String) {
         previewLabel.setText(R.string.home_title)
-        exampleLabel.setText(R.string.overlay_appearance)
+        exampleLabel.setText(R.string.caption_style_controls)
         source.text = if (hidden) "" else original
         translation.text = if (hidden) "" else translated
         source.visibility = if (displayMode.sourceVisible && source.text.isNotEmpty()) VISIBLE else GONE

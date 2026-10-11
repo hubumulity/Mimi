@@ -196,10 +196,26 @@ receive hover within their clipped visible bounds, while the scrollbar keeps
 its handling elsewhere. Account for the root window offset in dialogs. Verify
 actual system-injected mouse movement across the icon, keyboard focus, touch,
 popup dismissal and popup/anchor separation; label geometry alone misses this.
+Dismiss pending and visible help when its native window loses focus and when
+the selected section changes. Gate showing on the anchor's current window
+focus and hover/keyboard focus. A background activity's restored keyboard
+focus must not put the old explanation over a dialog. Native checks compare
+the rendered explanation with its intended anchor, not just popup bounds.
 
-Android immersive mode has a Home entry/restore action backed by the same
-preference as Settings and the floating panel. Change the existing caption
-window in place, retaining the compact dp anchor and previous expanded reading
+Android uses one primary activity with Captions, Services and More. Caption
+content, display mode and style belong to the same section; do not split them
+into duplicate primary tabs or add another preview. Keep common controls
+visible, expand detailed styles inline, and retain section scroll positions and
+selection through recreation. Keep status and Start/Stop visible in every
+section. Native fixtures must reuse the existing singleTask MainActivity when
+navigating; `startActivitySync` waits for a new instance and hangs on reuse.
+
+Android immersive mode has a Captions entry/restore action backed by the same
+preference as the floating panel. Preview and overlay use `CaptionTypography`
+for centered, lighter text, chosen-size translation and a tight contrast shadow.
+Keep source text secondary and preserve the user's color/size preferences.
+Change the existing caption window in place, retaining the compact dp anchor
+and previous expanded reading
 state. Temporary viewport/inset clamps must not rewrite saved placement. Keep
 the restore control adjacent to captions, with a 48dp touch target and localized
 width; caption touch-through must not make restoration unreachable. Test repeated
@@ -215,8 +231,8 @@ state while capture health or subtitles update.
 
 Native touch fixtures first scroll controls into their visible bounds and wait
 for transient system clipboard surfaces to close. Language fixtures navigate to
-the visible language tab before selecting a value. Verify actual wide compositor
-bounds before calling a run landscape acceptance; rotation settings alone are
+More before selecting a value. Verify actual wide compositor bounds before
+calling a run landscape acceptance; rotation settings alone are
 insufficient when the launcher requests a fixed orientation. Check the caption
 reading viewport as well as the panel's outer bounds at large fonts.
 

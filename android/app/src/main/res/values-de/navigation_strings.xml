@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_captions">Untertitel</string>
+    <string name="navigation_services">Dienste</string>
+    <string name="navigation_more">Mehr</string>
+    <string name="overlay_listening_empty">Hört zu — Übersetzungen erscheinen hier</string>
+    <string name="caption_style_controls">Untertitelstil</string>
+    <string name="caption_style_collapse">Stilsteuerung einklappen</string>
+</resources>

@@ -80,11 +80,11 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
             }
             media.silent = true
             await("zero_pcm_silent") { first.zero.get() > 0 && MimiService.captureObservation?.state == CaptureHealth.State.SILENT }
-            checkNoSoundHint(expected = true)
+            checkListeningIndicator()
             checkpoint("zero_media_silent", first)
             media.silent = false
             await("tone_recovers") { MimiService.captureObservation?.state == CaptureHealth.State.AUDIO }
-            checkNoSoundHint(expected = false)
+            checkListeningIndicator()
             checkpoint("tone_recovers_audio", first)
             stopAndVerify(first, "normal_stop")
 
@@ -92,9 +92,11 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
             val second = DiscardEngine()
             request(activity, second, "fresh-consent-silent", accept = true)
             check(MimiService.captureObservation?.state == CaptureHealth.State.WAITING) { "new_session_reused_observation" }
+            checkListeningIndicator()
             await("fresh_session_silent") { second.zero.get() > 0 && MimiService.captureObservation?.state == CaptureHealth.State.SILENT }
             check(second.nonzero.get() == 0L) { "new_session_reused_audio" }
             checkpoint("fresh_session_zero_only", second)
+            checkListeningIndicator()
             media.close()
             media = SyntheticMedia(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
             val optOutZeros = second.zero.get()
@@ -115,15 +117,25 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
             request(activity, third, "fresh-consent-after-revoke", accept = true)
             await("restart_after_revoke_audio") { third.nonzero.get() > 0 && MimiService.captureObservation?.state == CaptureHealth.State.AUDIO }
             checkpoint("restart_after_revoke_audio", third)
-            val settings = startActivitySync(Intent(targetContext, SettingsActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+            val settings = startActivitySync(Intent(targetContext, MainActivity::class.java)
+                .putExtra("settings_section", "services").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             try {
                 await("settings_captions_hidden") {
                     var hidden = false
                     runOnMainSync { hidden = WindowInspector.getGlobalWindowViews().filter { it.tag == "mimi-overlay" }.all { !it.isShown } }
                     hidden
                 }
+                for (tab in listOf(R.id.tab_caption, R.id.tab_service, R.id.tab_general)) {
+                    runOnMainSync {
+                        settings.findViewById<View>(tab).performClick()
+                        check(settings.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == tab)
+                        check(settings.findViewById<View>(R.id.start_stop).isShown)
+                        check(settings.findViewById<View>(R.id.status).isShown)
+                        check(MimiService.isRunning && !MimiService.isStopping)
+                    }
+                }
                 runOnMainSync {
+                    settings.findViewById<View>(R.id.tab_service).performClick()
                     check(settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("service-session-guard").isShown)
                     for (provider in app.yuxino.mimi.android.provider.ServiceProvider.entries) {
                         check(!settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("configure-${provider.id}").isEnabled)
@@ -186,16 +198,16 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
         sendStatus(0, Bundle().apply { putString("stream", "PLAYBACK_CAPTURE_STAGE $label\n") })
     }
 
-    private fun checkNoSoundHint(expected: Boolean) {
-        val text = targetContext.getString(R.string.capture_no_sound_hint)
+    private fun checkListeningIndicator() {
+        val text = InterfaceLanguage.context(targetContext).getString(R.string.overlay_listening_empty)
         fun contains(view: View): Boolean = (view is TextView && view.isAttachedToWindow && view.isShown &&
             !view.isLayoutRequested && view.width > 0 && view.height > 0 && view.text.toString() == text &&
             view.getGlobalVisibleRect(Rect())) ||
             (view is ViewGroup && (0 until view.childCount).any { contains(view.getChildAt(it)) })
-        await("no_sound_hint_$expected") {
+        await("listening_indicator") {
             var shown = false
             runOnMainSync { shown = WindowInspector.getGlobalWindowViews().filter { it.tag == "mimi-overlay" }.any { contains(it) } }
-            shown == expected
+            shown
         }
     }
 
@@ -318,8 +330,7 @@ internal class PlaybackCaptureChecks(private val instrumentation: Instrumentatio
 
     private fun checkpoint(label: String, sink: DiscardEngine) {
         val observation = MimiService.captureObservation
-        if (observation != null) checkNoSoundHint(expected =
-            observation.state == CaptureHealth.State.SILENT || observation.state == CaptureHealth.State.NO_PCM)
+        if (observation != null) checkListeningIndicator()
         val entry = JSONObject().put("check", label).put("chunks", sink.chunks.get())
             .put("bytes", sink.bytes.get()).put("nonzeroChunks", sink.nonzero.get()).put("zeroChunks", sink.zero.get())
             .put("state", observation?.state?.name ?: "STOPPED")

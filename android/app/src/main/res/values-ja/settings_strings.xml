@@ -4,8 +4,6 @@
     <string name="settings_language_system">システムに合わせる</string>
     <string name="settings_language_failed">表示言語を変更できませんでした。もう一度お試しください。</string>
     <string name="settings_back">戻る</string>
-    <string name="settings_tab_service">サービス</string>
-    <string name="settings_tab_appearance">字幕</string>
     <string name="settings_advanced">詳細設定</string>
     <string name="settings_font">字幕の大きさ</string>
     <string name="settings_color">字幕の色</string>
@@ -31,7 +29,6 @@
     <string name="settings_advanced_collapse">詳細設定を閉じる</string>
     <string name="settings_more">その他の設定</string>
     <string name="settings_more_collapse">その他の設定を閉じる</string>
-    <string name="settings_tab_general">一般</string>
     <string name="settings_display_mode">表示内容</string>
     <string name="display_translation">訳文のみ</string>
     <string name="display_original">原文のみ</string>
@@ -39,7 +36,6 @@
     <string name="settings_width">字幕の幅</string>
     <string name="overlay_drag">字幕を移動</string>
     <string name="overlay_resize">字幕の幅を調整</string>
-    <string name="overlay_appearance">外観</string>
     <string name="stopping_capture">字幕を停止中…</string>
     <string name="service_stop_failed">字幕を停止できませんでした。再試行してください。</string>
     <string name="settings_display_mode_help">表示内容のみを変更します。音声認識と翻訳は選択中のサービスで続行します。</string>

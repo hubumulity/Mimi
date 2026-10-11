@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_captions">字幕</string>
+    <string name="navigation_services">服務</string>
+    <string name="navigation_more">更多</string>
+    <string name="overlay_listening_empty">正在聆聽，譯文會保留在這裡</string>
+    <string name="caption_style_controls">字幕樣式</string>
+    <string name="caption_style_collapse">收起樣式</string>
+</resources>

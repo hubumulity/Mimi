@@ -11,6 +11,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import android.widget.ImageButton
 import android.view.View
+import android.view.ViewTreeObserver
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -78,12 +79,20 @@ internal object HelpUi {
         private var pending = false
         private val show = Runnable { pending = false; show() }
         private val hide = Runnable { dismiss() }
+        private val windowFocus = ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+            if (!focused) dismiss()
+        }
         private val lifecycle = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) dismiss()
             if (event == Lifecycle.Event.ON_DESTROY) dispose()
         }
-        init { button.addOnAttachStateChangeListener(this); activity.lifecycle.addObserver(lifecycle) }
+        init {
+            button.addOnAttachStateChangeListener(this)
+            activity.lifecycle.addObserver(lifecycle)
+            button.viewTreeObserver.addOnWindowFocusChangeListener(windowFocus)
+        }
         fun scheduleShow() {
+            if (!button.hasWindowFocus() || !button.isShown || !button.isEnabled) return
             button.removeCallbacks(hide)
             if (popup == null && !pending) {
                 HelpUi.dismiss(activity)
@@ -101,11 +110,22 @@ internal object HelpUi {
             val host = activity.window.decorView
             if (host.getTag(R.id.active_help_hover) === this) host.setTag(R.id.active_help_hover, null)
         }
-        fun dispose() { dismiss(); button.removeOnAttachStateChangeListener(this); activity.lifecycle.removeObserver(lifecycle) }
-        override fun onViewAttachedToWindow(view: View) = Unit
+        fun dispose() {
+            dismiss()
+            button.removeOnAttachStateChangeListener(this)
+            button.viewTreeObserver.takeIf { it.isAlive }?.removeOnWindowFocusChangeListener(windowFocus)
+            activity.lifecycle.removeObserver(lifecycle)
+        }
+        override fun onViewAttachedToWindow(view: View) {
+            button.viewTreeObserver.removeOnWindowFocusChangeListener(windowFocus)
+            button.viewTreeObserver.addOnWindowFocusChangeListener(windowFocus)
+        }
         override fun onViewDetachedFromWindow(view: View) = dispose()
         private fun show() {
-            if (!button.isShown || !button.isEnabled || activity.isFinishing || activity.isDestroyed) { dismiss(); return }
+            if (!button.hasWindowFocus() || !button.isShown || !button.isEnabled ||
+                (!button.hasFocus() && !button.isHovered) || activity.isFinishing || activity.isDestroyed) {
+                dismiss(); return
+            }
             val frame = Rect().also(button::getWindowVisibleDisplayFrame)
             val point = IntArray(2).also(button::getLocationOnScreen)
             val gap = ServiceSettingsUi.dp(activity, 8)

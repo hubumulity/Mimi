@@ -15,6 +15,9 @@ import android.widget.RadioGroup
 import android.widget.ListView
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.ImageView
+import android.widget.ScrollView
+import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.LocaleManagerCompat
 import app.yuxino.mimi.android.capture.MimiService
@@ -25,12 +28,12 @@ import java.io.File
 /** Real picker, recreation and service UI checks on a blank emulator; never starts capture. */
 internal class InterfaceLanguageChecks(private val instrumentation: Instrumentation) {
     private val context get() = instrumentation.targetContext
-    @Volatile private var settings: SettingsActivity? = null
+    @Volatile private var settings: MainActivity? = null
     private val activities = mutableSetOf<Activity>()
     private val callbacks = object : Application.ActivityLifecycleCallbacks {
         override fun onActivityResumed(activity: Activity) {
             activities.add(activity)
-            if (activity is SettingsActivity) settings = activity
+            if (activity is MainActivity) settings = activity
         }
         override fun onActivityCreated(activity: Activity, state: Bundle?) { activities.add(activity) }
         override fun onActivityStarted(activity: Activity) = Unit
@@ -60,7 +63,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
             check(prefs.edit().putBoolean("seen", true).commit())
             val home = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-            onUi { home.findViewById<View>(R.id.go_settings).performClick() }
+            onUi { home.findViewById<View>(R.id.tab_service).performClick() }
             await { settings != null }
             val expected = arguments?.getString("expected_language")
             if (expected != null) {
@@ -81,7 +84,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                 onUi { check(WindowInspector.getGlobalWindowViews().any { containsText(it, "ภาษาไทย") }) }
                 capture("picker-$theme")
                 instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                onUi { settings!!.findViewById<View>(R.id.tab_appearance).performClick() }
+                onUi { openCaptionStyles(settings!!) }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW))
                 await { WindowInspector.getGlobalWindowViews().any { it.findViewWithTag<View>("compact-subtitle") != null } }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
@@ -91,12 +94,19 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     select(tag)
                     assertLanguage(tag)
                     onUi {
-                        settings!!.findViewById<View>(R.id.tab_appearance).performClick()
-                        check(settings!!.findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == R.id.tab_appearance)
+                        openCaptionStyles(settings!!)
+                        check(settings!!.findViewById<RadioGroup>(R.id.settings_tabs).checkedRadioButtonId == R.id.tab_caption)
                         val collapse = WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull {
                             it.findViewWithTag<View>("collapse-overlay")
                         } ?: error("Overlay control missing")
                         check(collapse.contentDescription == settings!!.getString(R.string.overlay_collapse_description))
+                        check(collapse.rotation == 180f) { "Collapse chevron must point upwards" }
+                        val immersion = WindowInspector.getGlobalWindowViews().firstNotNullOf {
+                            it.findViewWithTag<TextView>("enter-immersive")
+                        }
+                        check(immersion.text.toString() == settings!!.getString(R.string.overlay_enter_immersive)) {
+                            "Immersion needs a visible localized label"
+                        }
                     }
                     check(SubtitleBus.historySnapshot() == history) { "Language change lost subtitle history" }
                     check(SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
@@ -133,7 +143,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
     private fun picker() = checkNotNull(settings).findViewById<Spinner>(R.id.interface_language)
 
     private fun assertControlBounds() = onUi {
-        for (id in listOf(R.id.tab_service, R.id.tab_appearance, R.id.tab_general)) {
+        for (id in listOf(R.id.tab_caption, R.id.tab_service, R.id.tab_general)) {
             val tab = settings!!.findViewById<TextView>(id)
             check(tab.layout.height <= tab.height - tab.paddingTop - tab.paddingBottom) { "Settings tab clips vertically" }
         }
@@ -144,14 +154,28 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         val origin = IntArray(2)
         panel.getLocationOnScreen(origin)
         check(origin[0] >= 0 && origin[0] + panel.width <= settings!!.resources.displayMetrics.widthPixels)
-        for (tag in listOf("collapse-overlay", "overlay-font", "enter-immersive")) {
+        val touchSize = (48 * panel.resources.displayMetrics.density).toInt()
+        check(panel.findViewWithTag<ScrollView>("subtitle-transcript-scroll").height >=
+            (64 * panel.resources.displayMetrics.density).toInt()) { "Caption reading viewport is too short" }
+        val providers = panel.findViewWithTag<LinearLayout>("overlay-providers")
+        check((0 until providers.childCount).map { providers.getChildAt(it) }.filterIsInstance<ImageView>()
+            .all { it.isShown && it.width > 0 }) { "Provider marks disappeared" }
+        for (tag in listOf("collapse-overlay", "overlay-font", "enter-immersive", "overlay-resize", "overlay-providers")) {
             val control = panel.findViewWithTag<View>(tag)
             val position = IntArray(2)
             control.getLocationOnScreen(position)
             check(position[0] >= origin[0] && position[0] + control.width <= origin[0] + panel.width)
+            check(position[1] >= origin[1] && position[1] + control.height <= origin[1] + panel.height)
             check(control.contentDescription.isNotBlank())
-            if (control is TextView) check(control.paint.measureText(control.text.toString()) <= control.width - control.paddingLeft - control.paddingRight + 1) {
-                "Overlay action clips: $tag"
+            check(control.width >= touchSize && control.height >= touchSize) {
+                "Overlay action lost its touch target: $tag"
+            }
+            if (control is TextView) {
+                check(control.layout.height <= control.height - control.paddingTop - control.paddingBottom) { "Overlay action clips vertically: $tag" }
+                for (line in 0 until control.lineCount) check(control.layout.getEllipsisCount(line) == 0 &&
+                    control.layout.getLineWidth(line) <= control.width - control.paddingLeft - control.paddingRight + 1) {
+                    "Overlay action clips: $tag; locale=${settings!!.resources.configuration.locales[0]}; width=${control.width}, lineWidth=${control.layout.getLineWidth(line)}"
+                }
             }
         }
     }
@@ -193,7 +217,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         onUi { editor.finish() }
         await { settings?.hasWindowFocus() == true }
-        onUi { settings!!.findViewById<View>(R.id.tab_appearance).performClick() }
+        onUi { openCaptionStyles(settings!!) }
         await { !overlay.isShown }
     }
 
@@ -202,11 +226,19 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         // screenshot fixture over editors and hiding it for only one UI tick.
         val external = instrumentation.startActivitySync(Intent(context, CaptureProbeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CaptureProbeActivity
+        val previousWidth = SettingsStore.overlayWidthPercent(context)
         try {
             await { WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }.isShown }
             assertControlBounds()
             capture("${tag.ifEmpty { "system" }}-overlay-$theme")
-        } finally { onUi { external.finish() } }
+            onUi { SettingsStore.setOverlayWidthPercent(context, 55) }
+            instrumentation.waitForIdleSync()
+            assertControlBounds()
+            capture("${tag.ifEmpty { "system" }}-overlay-width55-$theme")
+        } finally { onUi {
+            SettingsStore.setOverlayWidthPercent(context, previousWidth)
+            external.finish()
+        } }
         await { settings?.hasWindowFocus() == true }
     }
 

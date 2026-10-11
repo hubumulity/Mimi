@@ -5,8 +5,6 @@
     <string name="settings_language_system">Langue du système</string>
     <string name="settings_language_failed">Impossible de changer la langue de l’interface. Réessayez.</string>
     <string name="settings_back">Retour</string>
-    <string name="settings_tab_service">Services</string>
-    <string name="settings_tab_appearance">Sous-titres</string>
     <string name="settings_advanced">Réglages avancés</string>
     <string name="settings_font">Taille des sous-titres</string>
     <string name="settings_color">Couleur des sous-titres</string>
@@ -32,7 +30,6 @@
     <string name="settings_advanced_collapse">Réduire les réglages avancés</string>
     <string name="settings_more">Plus d’options</string>
     <string name="settings_more_collapse">Moins d’options</string>
-    <string name="settings_tab_general">Général</string>
     <string name="settings_display_mode">Affichage</string>
     <string name="display_translation">Traduction seule</string>
     <string name="display_original">Original seul</string>
@@ -40,7 +37,6 @@
     <string name="settings_width">Largeur des sous-titres</string>
     <string name="overlay_drag">Déplacer les sous-titres</string>
     <string name="overlay_resize">Redimensionner les sous-titres</string>
-    <string name="overlay_appearance">Apparence</string>
     <string name="stopping_capture">Arrêt des sous-titres…</string>
     <string name="service_stop_failed">Impossible d’arrêter les sous-titres. Réessayez.</string>
     <string name="settings_display_mode_help">Modifie uniquement l’affichage. La reconnaissance et la traduction continuent avec le service sélectionné.</string>

@@ -16,6 +16,11 @@ import android.view.View
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.FrameLayout
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.util.SparseIntArray
+import androidx.activity.OnBackPressedCallback
+import androidx.core.view.doOnNextLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -36,6 +41,10 @@ class MainActivity : AppCompatActivity() {
         if (!isFinishing && MimiService.isRunning) refreshLivePreview()
     }
     private var stopObservingAppearance: (() -> Unit)? = null
+    private lateinit var appearance: AppearanceControls
+    private val sectionScroll = SparseIntArray()
+    private var currentSection = R.id.tab_caption
+    private var lastSessionState: Pair<Boolean, Boolean>? = null
     private val subtitleListener = object : app.yuxino.mimi.android.provider.SubtitleBus.Listener {
         override fun onSubtitleChanged() { previewHandler.removeCallbacks(previewUpdate); previewHandler.post(previewUpdate) }
     }
@@ -56,40 +65,25 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         applySystemBarInsets()
         findViewById<LinearLayout>(R.id.home_heading).addView(HelpUi.heading(this,
-            getString(R.string.home_title), getString(R.string.home_description),
-            26f, "home-help"))
+            getString(R.string.app_name), getString(R.string.home_description),
+            22f, "home-help").apply {
+                (this as android.view.ViewGroup).getChildAt(0).let { label ->
+                    (label as TextView).typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+                }
+            })
+        bindSections(savedInstanceState)
 
         guide = FirstRunGuide(this) { beginStartFlow(permissionOnly = guide.step == 2) }
         startStop = findViewById(R.id.start_stop)
         findViewById<View>(R.id.first_run_guide).setOnClickListener { guide.open() }
         if (savedInstanceState?.getBoolean("guide_open") == true) guide.open(savedInstanceState.getInt("guide_step"), savedInstanceState.getString("guide_provider"))
         else if (guide.shouldOpen()) guide.open()
-        findViewById<MaterialButton>(R.id.go_settings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
         findViewById<View>(R.id.service_settings).setOnClickListener { openSettings() }
         findViewById<View>(R.id.source_language_action).setOnClickListener { showLanguages(source = true) }
         findViewById<View>(R.id.target_language_action).setOnClickListener { showLanguages(source = false) }
         findViewById<SubtitlePreviewView>(R.id.subtitle_preview).apply {
             showAppearanceShortcut()
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, SettingsActivity::class.java)
-                    .putExtra("settings_section", "appearance"))
-            }
-        }
-        findViewById<View>(R.id.home_immersive).setOnClickListener {
-            if (SettingsStore.immersiveSubtitles(this)) {
-                runCatching { SettingsStore.setImmersiveSubtitles(this, false); refreshUi() }
-                    .onFailure { Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
-            } else {
-                immersiveHelp.requestEnable(
-                    onConfirmed = {
-                        runCatching { SettingsStore.setImmersiveSubtitles(this, true); refreshUi() }
-                            .onFailure { Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
-                    },
-                    onCancelled = { refreshUi() },
-                )
-            }
+            setOnClickListener { showSubtitleStyles() }
         }
         startStop.setOnClickListener {
             if (MimiService.isRunning) {
@@ -100,7 +94,7 @@ class MainActivity : AppCompatActivity() {
                 beginStartFlow()
             }
         }
-
+        if (savedInstanceState == null && intent.getStringExtra("settings_section") == "appearance") showSubtitleStyles()
     }
 
     override fun onStart() {
@@ -126,22 +120,110 @@ class MainActivity : AppCompatActivity() {
         outState.putBoolean("guide_open", guide.showing)
         outState.putInt("guide_step", guide.step)
         outState.putString("guide_provider", guide.providerId)
+        outState.putString("main_section", when (currentSection) {
+            R.id.tab_service -> "services"
+            R.id.tab_general -> "general"
+            else -> "captions"
+        })
+        outState.putBoolean("settings_more", appearance.isMoreExpanded())
+        outState.putBoolean("caption_styles", appearance.isStyleExpanded())
+        sectionScroll.put(currentSection, findViewById<ScrollView>(R.id.settings_scroll).scrollY)
+        outState.putIntArray("section_scroll", sections.map { sectionScroll[it.first] }.toIntArray())
         super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
         super.onResume()
+        lastSessionState = null
         refreshUi()
+        appearance.sync()
     }
 
     private fun openSettings() {
-        startActivity(Intent(this, SettingsActivity::class.java))
+        findViewById<RadioGroup>(R.id.settings_tabs).check(R.id.tab_service)
+    }
+
+    private val sections = listOf(R.id.tab_caption to R.id.home_panel, R.id.tab_service to R.id.service_panel,
+        R.id.tab_general to R.id.general_panel)
+
+    private fun bindSections(savedInstanceState: Bundle?) {
+        InterfaceLanguage.bind(this, findViewById(R.id.interface_language))
+        appearance = AppearanceControls(this, compactHome = true) { enabled ->
+            if (enabled) immersiveHelp.requestEnable(onConfirmed = {
+                runCatching { SettingsStore.setImmersiveSubtitles(this, true) }
+                    .onFailure { Toast.makeText(this, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
+                appearance.sync()
+            }, onCancelled = { appearance.sync() })
+            else { immersiveHelp.dismiss(); SettingsStore.setImmersiveSubtitles(this, false) }
+        }
+        findViewById<LinearLayout>(R.id.home_panel).apply {
+            addView(appearance, indexOfChild(findViewById(R.id.service_settings)), LinearLayout.LayoutParams(-1, -2))
+        }
+        appearance.setStyleExpanded(savedInstanceState?.getBoolean("caption_styles") == true)
+        appearance.setMoreExpanded(savedInstanceState?.getBoolean("settings_more") == true)
+        val tabs = findViewById<RadioGroup>(R.id.settings_tabs)
+        val scroll = findViewById<ScrollView>(R.id.settings_scroll)
+        savedInstanceState?.getIntArray("section_scroll")?.forEachIndexed { index, value ->
+            if (index < sections.size) sectionScroll.put(sections[index].first, value)
+        }
+        val back = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() { tabs.check(R.id.tab_caption) }
+        }
+        onBackPressedDispatcher.addCallback(this, back)
+        fun showSection(selected: Int) {
+            sections.forEach { (tab, panel) -> findViewById<View>(panel).visibility = if (tab == selected) View.VISIBLE else View.GONE }
+            currentSection = selected
+            back.isEnabled = selected != R.id.tab_caption
+            scroll.post { if (currentSection == selected) scroll.scrollTo(0, sectionScroll[selected]) }
+        }
+        val initial = when (savedInstanceState?.getString("main_section") ?: intent.getStringExtra("settings_section")) {
+            "general" -> R.id.tab_general
+            "services" -> R.id.tab_service
+            else -> R.id.tab_caption
+        }
+        tabs.check(initial)
+        showSection(tabs.checkedRadioButtonId)
+        tabs.setOnCheckedChangeListener { _, selected ->
+            sectionScroll.put(currentSection, scroll.scrollY)
+            HelpUi.dismiss(this)
+            immersiveHelp.dismiss()
+            showSection(selected)
+        }
+        findViewById<View>(R.id.copy_capture_diagnostics).setOnClickListener { copyDiagnostics() }
+    }
+
+    private fun showSubtitleStyles() {
+        HelpUi.dismiss(this)
+        findViewById<RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption)
+        val styles = findViewById<View>(R.id.appearance_panel)
+        styles.doOnNextLayout { styles.requestRectangleOnScreen(android.graphics.Rect(0, 0, styles.width, dp(176)), true) }
+        appearance.setStyleExpanded(true)
+        styles.requestLayout()
+    }
+
+    private fun copyDiagnostics() {
+        val observation = MimiService.captureObservation
+        val report = "mimi Android capture diagnostics v1\n" +
+            "androidApi=${Build.VERSION.SDK_INT}\nsource=android_playback_capture\nusage=media,game,unknown\nmicrophone=false\n" +
+            "running=${MimiService.isRunning}\nobservation=${observation?.state?.name ?: "STOPPED"}\n" +
+            "pcmAgeMs=${observation?.pcmAgeMs ?: "unknown"}\nsoundAgeMs=${observation?.soundAgeMs ?: "unknown"}\n" +
+            "captureError=${MimiService.lastCaptureError ?: "none"}"
+        val copied = runCatching {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                .setPrimaryClip(android.content.ClipData.newPlainText("mimi capture diagnostics", report))
+        }.isSuccess
+        Toast.makeText(this, if (copied) R.string.capture_diagnostics_copied else R.string.capture_diagnostics_copy_failed,
+            if (copied) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
     }
 
     private fun refreshUi() {
         try { refreshAvailableUi() } catch (_: Exception) {
-            startStop.isEnabled = false
-            findViewById<View>(R.id.home_immersive).isEnabled = false
+            startStop.isEnabled = MimiService.isRunning && !MimiService.isStopping
+            if (MimiService.isRunning) {
+                startStop.setText(if (MimiService.isStopping) R.string.stopping_capture else R.string.stop_capture)
+                startStop.setIconResource(R.drawable.ic_stop)
+            }
+            findViewById<View>(R.id.immersive_subtitles).isEnabled = false
             findViewById<TextView>(R.id.status).setText(R.string.service_save_failed)
             findViewById<TextView>(R.id.status_hint).setText(R.string.guide_storage_unavailable)
             findViewById<View>(R.id.status_hint).visibility = View.VISIBLE
@@ -152,13 +234,15 @@ class MainActivity : AppCompatActivity() {
     private fun refreshAvailableUi() {
         guide.refresh()
         val running = MimiService.isRunning
+        val sessionState = running to MimiService.isStopping
+        if (lastSessionState != sessionState) {
+            lastSessionState = sessionState
+            ServiceSettingsUi.renderList(this, findViewById(R.id.service_panel))
+        }
         val captureState = MimiService.captureObservation?.state
         val keyOk = SettingsStore.isConfigured(this)
         val overlayOk = Settings.canDrawOverlays(this)
-        findViewById<MaterialButton>(R.id.home_immersive).apply {
-            isEnabled = true
-            setText(if (SettingsStore.immersiveSubtitles(this@MainActivity)) R.string.overlay_exit_immersive else R.string.settings_immersive)
-        }
+        findViewById<View>(R.id.immersive_subtitles).isEnabled = true
         startStop.isEnabled = !starting && !MimiService.isStopping
         startStop.setText(when {
             MimiService.isStopping -> R.string.stopping_capture
@@ -194,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<android.widget.ImageButton>(R.id.status_help).apply {
             HelpUi.bind(this@MainActivity, this, this@MainActivity.findViewById<TextView>(R.id.status).text.toString(), getString(hint))
-            visibility = if (needsAction) View.GONE else View.VISIBLE
+            visibility = View.VISIBLE
         }
         findViewById<TextView>(R.id.source_summary).text = languageLabel(SettingsStore.sourceLang(this))
         val originalOnly = SettingsStore.originalTextOnly(this)
@@ -237,7 +321,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshLivePreview() {
         val bus = app.yuxino.mimi.android.provider.SubtitleBus
         findViewById<SubtitlePreviewView>(R.id.subtitle_preview).showLive(
-            bus.displaySource, bus.displayTranslation, bus.liveHidden, getString(R.string.capture_waiting))
+            bus.displaySource, bus.displayTranslation, bus.liveHidden, getString(R.string.overlay_listening_empty))
     }
 
     private fun languageLabel(code: String): String = languageDisplayName(this, code)
@@ -339,7 +423,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (!SettingsStore.isConfigured(this)) {
             Toast.makeText(this, R.string.need_api_key, Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, SettingsActivity::class.java))
+            openSettings()
             return
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)

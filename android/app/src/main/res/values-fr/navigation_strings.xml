@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_captions">Sous-titres</string>
+    <string name="navigation_services">Services</string>
+    <string name="navigation_more">Plus</string>
+    <string name="overlay_listening_empty">Écoute en cours — les traductions s’afficheront ici</string>
+    <string name="caption_style_controls">Style des sous-titres</string>
+    <string name="caption_style_collapse">Réduire le style</string>
+</resources>

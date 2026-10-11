@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_captions">คำบรรยาย</string>
+    <string name="navigation_services">บริการ</string>
+    <string name="navigation_more">เพิ่มเติม</string>
+    <string name="overlay_listening_empty">กำลังฟัง คำแปลจะแสดงที่นี่</string>
+    <string name="caption_style_controls">รูปแบบคำบรรยาย</string>
+    <string name="caption_style_collapse">ย่อการปรับรูปแบบ</string>
+</resources>

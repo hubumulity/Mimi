@@ -5,8 +5,6 @@
     <string name="settings_language_system">시스템 설정 따르기</string>
     <string name="settings_language_failed">화면 언어를 변경하지 못했습니다. 다시 시도하세요.</string>
     <string name="settings_back">뒤로</string>
-    <string name="settings_tab_service">서비스</string>
-    <string name="settings_tab_appearance">자막</string>
     <string name="settings_advanced">고급 설정</string>
     <string name="settings_font">자막 크기</string>
     <string name="settings_color">자막 색상</string>
@@ -32,7 +30,6 @@
     <string name="settings_advanced_collapse">고급 설정 접기</string>
     <string name="settings_more">옵션 더 보기</string>
     <string name="settings_more_collapse">옵션 접기</string>
-    <string name="settings_tab_general">일반</string>
     <string name="settings_display_mode">표시 내용</string>
     <string name="display_translation">번역만</string>
     <string name="display_original">원문만</string>
@@ -40,7 +37,6 @@
     <string name="settings_width">자막 너비</string>
     <string name="overlay_drag">자막 이동</string>
     <string name="overlay_resize">자막 너비 조절</string>
-    <string name="overlay_appearance">모양</string>
     <string name="stopping_capture">자막 중지 중…</string>
     <string name="service_stop_failed">자막을 중지하지 못했습니다. 다시 시도해 주세요.</string>
     <string name="settings_display_mode_help">표시 내용만 변경합니다. 음성 인식과 번역은 선택한 서비스에서 계속 진행됩니다.</string>

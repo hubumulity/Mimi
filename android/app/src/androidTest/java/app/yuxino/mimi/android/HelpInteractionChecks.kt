@@ -67,6 +67,8 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
         }
         SystemClock.sleep(300) // ScrollView must finish layout before system pointer coordinates are read.
         if (hover) {
+            test.setInTouchMode(true)
+            ui { HelpUi.dismiss(host as androidx.appcompat.app.AppCompatActivity) }
             test.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_TAB)
             test.waitForIdleSync()
             ui { check(button.requestFocus()) { "Keyboard help target cannot receive focus: $tag" } }
@@ -77,10 +79,13 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
                 val anchor = IntArray(2).also(button::getLocationOnScreen)
                 val bounds = android.graphics.Rect(origin[0], origin[1], origin[0] + popup.width, origin[1] + popup.height)
                 val anchorBounds = android.graphics.Rect(anchor[0], anchor[1], anchor[0] + button.width, anchor[1] + button.height)
-                check(!android.graphics.Rect.intersects(bounds, anchorBounds)) { "Help popup covers its anchor: popup=$bounds anchor=$anchorBounds" }
+                check(tooltipMessage(popup) == expected) { "Keyboard explanation differs from its anchor: $tag" }
+                check(!android.graphics.Rect.intersects(bounds, anchorBounds)) { "Help popup covers its anchor: $tag; popup=$bounds anchor=$anchorBounds" }
                 button.clearFocus()
             }
             SystemClock.sleep(250)
+            test.setInTouchMode(true)
+            ui { HelpUi.dismiss(host as androidx.appcompat.app.AppCompatActivity) }
             val point = IntArray(2)
             ui {
                 button.getLocationOnScreen(point)
@@ -124,6 +129,7 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
         back()
         ui { check(windows().none { it.findViewWithTag<View>("help-message") != null }) }
     }
+    private fun tooltipMessage(view: View) = view.findViewWithTag<TextView>("help-tooltip-message").text.toString()
     fun run(arguments: Bundle?) {
         if (MimiService.isRunning || SettingsStore.isConfigured(context)) {
             test.finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "Use a blank idle emulator.\n") })
@@ -139,7 +145,7 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
         val previousSeen = prefs.getBoolean("seen", false)
         val hadSeen = prefs.contains("seen")
         var home: MainActivity? = null
-        var settings: SettingsActivity? = null
+        var settings: MainActivity? = null
         var guide: FirstRunGuide? = null
         var failure: Throwable? = null
         try {
@@ -182,8 +188,8 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
             }
             back()
             ui { check(windows().none { it.findViewWithTag<View>("language-help") != null }) { "Language sheet still open" } }
-            val currentSettings = test.startActivitySync(Intent(context, SettingsActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity
+            val currentSettings = currentHome
+            ui { currentSettings.findViewById<View>(R.id.tab_service).performClick() }
             settings = currentSettings
             if (!baseline && currentSettings.resources.configuration.fontScale >= 1.5f) ui {
                 for (provider in app.yuxino.mimi.android.provider.ServiceProvider.entries) {
@@ -197,7 +203,7 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
             capture("$prefix-services")
             if (!baseline) help(currentSettings, "services-help", currentSettings.getString(R.string.services_hint) + "\n\n" +
                 currentSettings.getString(R.string.services_key_note), "$prefix-services", hover = true)
-            ui { currentSettings.findViewById<View>(R.id.tab_appearance).performClick() }
+            ui { openCaptionStyles(currentSettings) }
             capture("$prefix-appearance")
             if (!baseline) help(currentSettings, "immersive-help", currentSettings.getString(R.string.settings_immersive_help), "$prefix-immersive", hover = true)
             ui {
@@ -212,7 +218,7 @@ internal class HelpInteractionChecks(private val test: Instrumentation) {
             }
             capture("$prefix-history")
             if (!baseline) help(currentSettings, "history-help", currentSettings.getString(R.string.settings_history_help), "$prefix-history")
-            ui { currentSettings.finish() }
+            ui { currentSettings.findViewById<View>(R.id.tab_caption).performClick() }
             val resumedDeadline = SystemClock.elapsedRealtime() + 5000
             var resumed = false
             do {

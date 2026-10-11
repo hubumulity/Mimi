@@ -4,8 +4,6 @@
     <string name="settings_language_system">ตามระบบ</string>
     <string name="settings_language_failed">เปลี่ยนภาษาอินเทอร์เฟซไม่ได้ ลองอีกครั้ง</string>
     <string name="settings_back">กลับ</string>
-    <string name="settings_tab_service">บริการ</string>
-    <string name="settings_tab_appearance">คำบรรยาย</string>
     <string name="settings_advanced">การตั้งค่าขั้นสูง</string>
     <string name="settings_font">ขนาดคำบรรยาย</string>
     <string name="settings_color">สีคำบรรยาย</string>
@@ -31,7 +29,6 @@
     <string name="settings_advanced_collapse">ย่อการตั้งค่าขั้นสูง</string>
     <string name="settings_more">ตัวเลือกเพิ่มเติม</string>
     <string name="settings_more_collapse">ตัวเลือกน้อยลง</string>
-    <string name="settings_tab_general">ทั่วไป</string>
     <string name="settings_display_mode">เนื้อหาที่แสดง</string>
     <string name="display_translation">คำแปลเท่านั้น</string>
     <string name="display_original">ต้นฉบับเท่านั้น</string>
@@ -39,7 +36,6 @@
     <string name="settings_width">ความกว้างคำบรรยาย</string>
     <string name="overlay_drag">ย้ายคำบรรยาย</string>
     <string name="overlay_resize">ปรับความกว้างคำบรรยาย</string>
-    <string name="overlay_appearance">รูปแบบ</string>
     <string name="stopping_capture">กำลังหยุดคำบรรยาย…</string>
     <string name="service_stop_failed">หยุดคำบรรยายไม่ได้ โปรดลองอีกครั้ง</string>
     <string name="settings_display_mode_help">เปลี่ยนเฉพาะสิ่งที่แสดง การรู้จำเสียงและการแปลยังคงใช้บริการที่เลือกไว้</string>

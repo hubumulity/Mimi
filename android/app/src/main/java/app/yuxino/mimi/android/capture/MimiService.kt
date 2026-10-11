@@ -249,6 +249,7 @@ class MimiService : Service() {
             mediaProjection = projection
             startCapture(projection, testEngine)
             setRunning(true)
+            renderBus()
         } catch (_: Exception) {
             lastCaptureError = "capture.start_failed"
             Log.w(TAG, "capture_start_failed")
@@ -526,10 +527,11 @@ class MimiService : Service() {
                 ?: immersiveExitView?.takeIf { it.tag == tag } ?: return
             if (text != null && control is TextView) control.text = interfaceString(text)
             control.contentDescription = interfaceString(description)
+            control.tooltipText = control.contentDescription
         }
         label("collapse-overlay", R.string.overlay_collapse, R.string.overlay_collapse_description)
         label("enter-immersive", R.string.overlay_enter_immersive, R.string.overlay_enter_immersive)
-        label("overlay-font", null, R.string.settings_tab_appearance)
+        label("overlay-font", null, R.string.caption_style_controls)
         updateOverlayFontSize()
         label("exit-immersive", null, R.string.overlay_exit_immersive)
         label("overlay-drag", null, R.string.overlay_drag)
@@ -574,6 +576,7 @@ class MimiService : Service() {
         }
 
         val status = TextView(this).apply {
+            tag = "overlay-status"
             setTextColor(0xFFADADAD.toInt())
             textSize = 14f
             maxWidth = (resources.displayMetrics.widthPixels * 0.88f).toInt()
@@ -584,20 +587,21 @@ class MimiService : Service() {
             textSize = SettingsStore.fontSize(this@MimiService).toFloat()
             maxLines = 2
             maxWidth = (resources.displayMetrics.widthPixels * 0.88f).toInt()
-            if (immersiveSession) setShadowLayer(dp(4).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
         }
         val translation = LatestCaptionTextView(this).apply {
             setTextColor(SettingsStore.translationColor(this@MimiService))
             textSize = (SettingsStore.fontSize(this@MimiService) + 3).toFloat()
             setTypeface(typeface, Typeface.BOLD)
             maxLines = 3
-            if (immersiveSession) setShadowLayer(dp(4).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
             maxWidth = (resources.displayMetrics.widthPixels * 0.88f).toInt()
         }
 
         compact.addView(status)
         compact.addView(source)
         compact.addView(translation)
+        app.yuxino.mimi.android.CaptionTypography.apply(source, translation, SettingsStore.fontSize(this), immersiveSession,
+            sessionOriginalOnly || SettingsStore.displayMode(this) == CaptionDisplayMode.ORIGINAL)
+        app.yuxino.mimi.android.CaptionTypography.applyContrast(status, immersiveSession)
         val panel = buildExpandedPanel()
         val root = FrameLayout(this).apply {
             tag = "mimi-overlay"
@@ -744,9 +748,9 @@ class MimiService : Service() {
             addView(ImageView(this@MimiService).apply {
                 setImageResource(R.drawable.ic_overlay_close)
                 setPadding(dp(5), dp(5), dp(5), dp(5))
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xCC252525.toInt()) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x99000000.toInt()) }
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+            }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
             minimumWidth = dp(48); minimumHeight = dp(48)
             setOnClickListener { setImmersiveMode(false) }
             addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -812,6 +816,7 @@ class MimiService : Service() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(panelIcon(R.drawable.ic_expand, R.string.overlay_collapse_description).apply {
+            rotation = 180f
             tag = "collapse-overlay"; setOnClickListener { collapseOverlay() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(FrameLayout(this).apply {
@@ -831,18 +836,18 @@ class MimiService : Service() {
                 ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER
             }, FrameLayout.LayoutParams(-1, -1).apply { topMargin = dp(8) })
         }, LinearLayout.LayoutParams(0, dp(48), 1f))
-        header.addView(panelIcon(R.drawable.ic_settings, R.string.settings_tab_appearance).apply {
+        header.addView(panelIcon(R.drawable.ic_settings, R.string.caption_style_controls).apply {
             tag = "overlay-font"; setOnClickListener { showAppearanceControls() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
         panel.addView(header)
-        val footer = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        footer.addView(panelIcon(R.drawable.ic_translation_captions, R.string.overlay_enter_immersive).apply {
+        val immersion = panelButton(interfaceString(R.string.overlay_enter_immersive)).apply {
+            contentDescription = text; tooltipText = text
             tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        }
         val provider = ServiceProvider.fromId(SettingsStore.provider(this))
         val providerRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers"
-            isClickable = true; isFocusable = true; minimumHeight = dp(48)
+            isClickable = true; isFocusable = true; minimumHeight = dp(48); minimumWidth = dp(48)
             contentDescription = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank {
                 app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this@MimiService), provider)
             }
@@ -857,15 +862,40 @@ class MimiService : Service() {
         if (provider == ServiceProvider.DASHSCOPE && translator != TextTranslationProvider.BUILTIN && translator != TextTranslationProvider.NONE) {
             providerRow.addView(mark(translationProviderIcon(translator)), LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(4) })
         }
-        providerRow.addView(TextView(this).apply {
+        val providerModel = TextView(this).apply {
             tag = "overlay-model"; text = providerRow.contentDescription
             textSize = 14f; setTextColor(0xFFBBBBBB.toInt()); maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        footer.addView(providerRow, LinearLayout.LayoutParams(0, dp(48), 1f))
-        footer.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
+        }
+        providerRow.addView(providerModel, LinearLayout.LayoutParams(0, -2, 1f))
+        val detailsRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        detailsRow.addView(providerRow, LinearLayout.LayoutParams(0, dp(48), 1f))
+        detailsRow.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
             tag = "overlay-resize"; setOnClickListener { showAppearanceControls() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val footer = object : LinearLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                // Give the common action its own row before a narrow panel
+                // turns a localized label into a stack of clipped syllables.
+                val markWidth = maxOf((providerRow.childCount - 1) * dp(22), dp(48))
+                val labelWidth = kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
+                    immersion.paddingLeft + immersion.paddingRight
+                val singleRow = MeasureSpec.getSize(widthMeasureSpec) >= dp(48 + 8) + markWidth + maxOf(labelWidth, dp(48))
+                orientation = if (singleRow) HORIZONTAL else VERTICAL
+                (immersion.layoutParams as LayoutParams).apply {
+                    width = if (singleRow) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
+                    marginEnd = if (singleRow) dp(8) else 0
+                    weight = 0f
+                }
+                (detailsRow.layoutParams as LayoutParams).apply {
+                    width = if (singleRow) 0 else LayoutParams.MATCH_PARENT
+                    weight = if (singleRow) 1f else 0f
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+            }
+        }.apply { gravity = Gravity.CENTER_VERTICAL }
+        footer.addView(immersion, LinearLayout.LayoutParams(-2, -2))
+        footer.addView(detailsRow, LinearLayout.LayoutParams(0, -2, 1f))
 
         expandedStatusView = TextView(this).apply {
             setTextColor(0xFFB9B9B9.toInt())
@@ -943,8 +973,9 @@ class MimiService : Service() {
 
     private fun panelButton(label: String): TextView = TextView(this).apply {
         text = label
-        textSize = 13f
-        setSingleLine(true)
+        textSize = 14f
+        minimumHeight = dp(48)
+        minimumWidth = dp(48)
         setTypeface(typeface, Typeface.BOLD)
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
@@ -968,7 +999,7 @@ class MimiService : Service() {
             addView(controls)
         }
         val surface = GradientDrawable().apply { cornerRadius = dp(28).toFloat() }
-        val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface).setTitle(R.string.settings_tab_appearance)
+        val dialog = MaterialAlertDialogBuilder(themed).setBackground(surface).setTitle(R.string.caption_style_controls)
             .setView(content).setPositiveButton(R.string.guide_finish, null).create()
         dialog.setOnDismissListener { if (appearanceDialog === dialog) appearanceDialog = null }
         appearanceDialog = dialog
@@ -1019,9 +1050,6 @@ class MimiService : Service() {
         overlayPlacement.setPreferredOffsetDp(SettingsStore.overlayYOffset(this))
         overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
         compactView?.setPadding(dp(if (immersiveSession) 3 else 14), dp(9), dp(if (immersiveSession) 3 else 14), dp(10))
-        listOf(sourceView, translationView).forEach {
-            it?.setShadowLayer(if (immersiveSession) dp(4).toFloat() else 0f, 0f, dp(1).toFloat(), Color.BLACK)
-        }
         updateOverlayGeometry()
         expandedView?.requestLayout()
         renderBus()
@@ -1029,8 +1057,15 @@ class MimiService : Service() {
 
     private fun updateOverlayFontSize() {
         val size = SettingsStore.fontSize(this).toFloat()
-        sourceView?.textSize = size
-        translationView?.textSize = size + 3
+        val source = sourceView
+        val translation = translationView
+        if (source != null && translation != null) app.yuxino.mimi.android.CaptionTypography.apply(
+            source, translation, size.toInt(), immersiveSession,
+            sessionOriginalOnly || SettingsStore.displayMode(this) == CaptionDisplayMode.ORIGINAL)
+        statusView?.let { status ->
+            app.yuxino.mimi.android.CaptionTypography.applyContrast(status, immersiveSession)
+            status.setTextColor(if (immersiveSession) Color.WHITE else 0xFFADADAD.toInt())
+        }
         expandedSourceView?.textSize = size
         expandedTranslationView?.textSize = size + 3
         historyView?.textSize = (size - 1).coerceAtLeast(12f)
@@ -1204,10 +1239,16 @@ class MimiService : Service() {
             scrollToCurrentOnLayout = true
         }
         val observation = captureObservation?.state
-        val statusLine = if (observation == CaptureHealth.State.NO_PCM || observation == CaptureHealth.State.SILENT) {
-            interfaceString(R.string.capture_no_sound_hint)
-        } else app.yuxino.mimi.android.runtimeFeedbackResource(SubtitleBus.runtimeFeedback)
+        val liveVisible = !SubtitleBus.liveHidden
+        val hasVisibleCaption = liveVisible && (mode.sourceVisible && SubtitleBus.displaySource.isNotBlank() ||
+            mode.translationVisible && SubtitleBus.displayTranslation.isNotBlank())
+        val runtimeStatus = app.yuxino.mimi.android.runtimeFeedbackResource(SubtitleBus.runtimeFeedback)
             ?.let(::interfaceString) ?: SubtitleBus.statusLine
+        val statusLine = if (observation == CaptureHealth.State.NO_PCM) {
+            interfaceString(R.string.capture_no_sound_hint)
+        } else if (runtimeStatus.isNotBlank()) runtimeStatus
+        else if (isRunning && !isStopping && !hasVisibleCaption) interfaceString(R.string.overlay_listening_empty)
+        else ""
         statusView?.apply {
             visibility = if (statusLine.isEmpty()) View.GONE else View.VISIBLE
             text = statusLine
@@ -1223,7 +1264,6 @@ class MimiService : Service() {
         }
         // Display preferences filter views only; paired shared state is unchanged.
         // Recognition-only sessions always show their source.
-        val liveVisible = !SubtitleBus.liveHidden
         sourceView?.apply {
             setTextColor(if (mode == CaptionDisplayMode.ORIGINAL) SettingsStore.translationColor(this@MimiService) else 0xFFE7E7E7.toInt())
             visibility = if (liveVisible && mode.sourceVisible && SubtitleBus.displaySource.isNotBlank()) View.VISIBLE else View.GONE

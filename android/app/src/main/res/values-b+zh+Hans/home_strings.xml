@@ -22,8 +22,7 @@
     <string name="preview_zh">这是一条示例字幕。</string>
     <string name="preview_en">This is a sample subtitle.</string>
     <string name="preview_ja">字幕の表示例です。</string>
-    <string name="home_edit_appearance">调整字幕外观</string>
-    <string name="preview_edit">示例 · 调整外观 ›</string>
+    <string name="preview_edit">示例 · 字幕样式 ›</string>
     <string name="language_source_title">原声是什么语言？</string>
     <string name="language_target_title">想看哪种语言的字幕？</string>
     <string name="language_sheet_hint">选择后自动保存，下次开始字幕时使用。</string>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="back" type="id" />
+    <item name="appearance_controls_toggle" type="id" />
+    <item name="appearance_panel" type="id" />
+</resources>

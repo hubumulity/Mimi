@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_captions">Captions</string>
+    <string name="navigation_services">Services</string>
+    <string name="navigation_more">More</string>
+    <string name="overlay_listening_empty">Listening — translations will stay here</string>
+    <string name="caption_style_controls">Caption style</string>
+    <string name="caption_style_collapse">Collapse style controls</string>
+</resources>

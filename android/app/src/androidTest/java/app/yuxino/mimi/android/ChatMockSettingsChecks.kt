@@ -474,8 +474,8 @@ internal class ChatMockSettingsChecks(private val instrumentation: Instrumentati
                 "Changing translation destination changed the speech key"
             }
             check(!MimiService.isRunning)
-            val appearance = (instrumentation.startActivitySync(Intent(context, SettingsActivity::class.java)
-                .putExtra("settings_section", "appearance").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as SettingsActivity).also { activities += it }
+            val appearance = (instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .putExtra("settings_section", "appearance").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity).also { activities += it }
             instrumentation.waitForIdleSync()
             onUi { check(previewTranslation(appearance).visibility == View.VISIBLE) }
             val originalOnly = open(ServiceProvider.DASHSCOPE)
@@ -495,8 +495,8 @@ internal class ChatMockSettingsChecks(private val instrumentation: Instrumentati
             val oldSeen = firstRun.getBoolean("seen", false)
             try {
                 check(firstRun.edit().putBoolean("seen", true).commit())
-                val home = (instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity).also { activities += it }
+                val home = appearance
+                onUi { home.findViewById<View>(R.id.tab_caption).performClick() }
                 instrumentation.waitForIdleSync()
                 onUi {
                     check(!home.findViewById<View>(R.id.target_language_action).isEnabled) { "Original-only mode still offers a target language" }
