@@ -221,6 +221,15 @@ through continuous updates, height edits and real portrait/landscape round trips
 Cancel transient drag/resize state on configuration changes and ignore remaining
 events from the old gesture, so its final up cannot save dimensions measured in
 the previous screen or open an unintended editor.
+Observe sentence transitions in real playback as well as glyph bounds. A new
+original can arrive while its translation is empty; translated reading modes
+must keep the shared retained confirmed pair and its metadata readable rather
+than flash listening. Select that whole pair, never pair its old translation
+with the new original. Read the raw shared recognition lane in original-only
+mode even when complete translated pairs are held. Use confirmation time only
+for the same final source owner, including repeated identical text. Use the
+existing shared snapshot without another retained transcript or reducer, and
+cover first speech, history disabled, clear, hidden and next-pair arrival.
 Sentence dividers and local confirmation time default off and are controlled in
 both appearance entry points. Use the shared final's time, including with history
 disabled, hide time on drafts, and avoid duplicating the current pair in history.

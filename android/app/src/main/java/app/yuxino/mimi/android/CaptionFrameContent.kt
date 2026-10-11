@@ -52,10 +52,13 @@ internal data class CaptionFrameContent(
     }
 }
 
-/** Keep the shared confirmed pair readable while the next translation is pending.
- * Replace the entire pair, never attach an old translation to a new original. */
+/** Original reading follows recognition independently of translation. Translated reading
+ * keeps the shared complete pair while waiting, never mixing sentence owners. */
 internal fun SubtitleBus.DisplaySnapshot.forReading(mode: CaptionDisplayMode): SubtitleBus.DisplaySnapshot {
-    if (hidden || !mode.translationVisible || translation.isNotBlank()) return this
+    if (hidden) return this
+    if (mode == CaptionDisplayMode.ORIGINAL) return copy(source = currentSource.text,
+        confirmed = currentSource.confirmed, createdAt = currentSource.createdAt)
+    if (!mode.translationVisible || translation.isNotBlank()) return this
     val retained = retainedConfirmed?.takeIf { it.pair.translation.isNotBlank() } ?: return this
     return copy(source = retained.pair.source, translation = retained.pair.translation,
         confirmed = true, createdAt = retained.createdAt)

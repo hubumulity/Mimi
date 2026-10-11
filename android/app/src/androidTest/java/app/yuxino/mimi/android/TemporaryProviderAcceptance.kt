@@ -26,7 +26,11 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
             check(provider.id == value.getString("provider"))
             val fields = value.getJSONObject("credentials")
             check(fields.length() == provider.fields.size)
-            val configuration = ServiceConfiguration(provider, provider.fields.associate { it.id to fields.getString(it.id) })
+            val configuration = ServiceConfiguration(provider, provider.fields.associate {
+                val field = fields.get(it.id)
+                check(field is String)
+                it.id to field
+            })
             val (from, to) = provider.normalize(value.getString("source"), value.getString("target"))
             // Validate using the production PC factory before any saved state changes.
             val testModel = value.optString("translationModel", "lite")
@@ -37,6 +41,9 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
             check(SettingsStore.saveConfiguration(context, configuration, testTranslation, true, testModel) && SettingsStore.activateProvider(context, provider))
             SettingsStore.setSourceLang(context, from); SettingsStore.setTargetLang(context, to)
             check(SettingsStore.flushPendingWritesForTests(context))
+        } catch (_: Exception) {
+            // JSONObject parser/type errors can include their private input.
+            throw IllegalStateException("invalid_acceptance_provider_input")
         } finally { check(!input.exists() || input.delete()) }
     }
     override fun close() {

@@ -8,9 +8,11 @@ object SubtitleBus {
     data class TimedPair(val pair: Pair, val createdAt: Long?)
     data class RuntimeFeedback(val connectionStatus: String = "idle", val recoveryReason: String? = null,
         val retryScheduled: Boolean = false, val translationTimedOut: Boolean = false)
+    data class SourceReading(val text: String, val confirmed: Boolean, val createdAt: Long?)
     data class DisplaySnapshot(val source: String, val translation: String, val hidden: Boolean,
         val confirmed: Boolean, val createdAt: Long?, val history: List<TimedPair>,
-        val status: String, val feedback: RuntimeFeedback, val retainedConfirmed: TimedPair? = null)
+        val status: String, val feedback: RuntimeFeedback, val retainedConfirmed: TimedPair? = null,
+        val currentSource: SourceReading = SourceReading(source, confirmed, createdAt))
     @Volatile var runtimeFeedback = RuntimeFeedback()
         private set
     private val lock = Any()
@@ -135,12 +137,18 @@ object SubtitleBus {
     fun historySnapshot(): List<Pair> = historySnapshotWithTime().map { it.pair }
     /** Read one published shared state; a provider thread can publish during UI rendering. */
     fun displaySnapshot(): DisplaySnapshot = synchronized(lock) {
-        val retained = snapshot.optJSONObject("displayPair")?.takeIf { snapshot.optBoolean("displayPairFinal") }?.let {
+        val pair = snapshot.optJSONObject("displayPair")?.takeIf { snapshot.optBoolean("displayPairFinal") }
+        val retained = pair?.let {
             TimedPair(Pair(it.optString("source"), if (originalOnly) "" else it.optString("translation")),
                 snapshot.optLong("displayPairCreatedAt").takeIf { time -> time > 0 })
         }
+        val line = snapshot.optJSONObject("source")
+        val text = line?.optString("text").orEmpty()
+        val sourceConfirmed = line?.optBoolean("isFinal") == true && pair != null &&
+            text == pair.optString("source") && line.opt("utteranceId") == pair.opt("utteranceId")
         DisplaySnapshot(displaySource, displayTranslation, liveHidden, displayPairFinal,
-            displayPairCreatedAt, historySnapshotWithTime(), statusLine, runtimeFeedback, retained)
+            displayPairCreatedAt, historySnapshotWithTime(), statusLine, runtimeFeedback, retained,
+            SourceReading(text, sourceConfirmed, retained?.createdAt.takeIf { sourceConfirmed }))
     }
     fun historySnapshotWithTime(): List<TimedPair> = synchronized(lock) {
         val rows = snapshot.optJSONArray("history") ?: return@synchronized emptyList()

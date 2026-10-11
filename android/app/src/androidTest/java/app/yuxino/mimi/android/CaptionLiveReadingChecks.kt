@@ -126,7 +126,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 while (SystemClock.elapsedRealtime() - start < seconds * 1000) {
                     check(MimiService.isRunning) { "capture_stopped" }
                     drawFailure.get()?.let { error(it) }
-                    val state = SubtitleBus.displaySnapshot()
+                    val state = SubtitleBus.displaySnapshot().forReading(selected)
                     val a = state.source.hashCode(); val b = state.translation.hashCode()
                     val now = SystemClock.elapsedRealtime()
                     if (state.source.isNotEmpty() && a != sourceHash) {

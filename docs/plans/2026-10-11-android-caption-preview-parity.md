@@ -92,7 +92,7 @@ saved width/height and positions, and clamps the visible frame to safe bounds;
 returning to portrait must recover the original size. Ignore remaining events
 from a gesture started in the previous configuration, including its final up.
 Check continuous drawing
-with eight scripts, all three modes, height endpoints and actual orientation
+with eight language fixtures, all three modes, height endpoints and actual orientation
 round trips, then rerun comparable real playback.
 
 Realtime services can publish the next original before its translation. Keep
@@ -103,3 +103,8 @@ original. Original-only mode continues to show current recognition. This is a
 native frame selection from the existing shared snapshot, with no extra retained
 transcript, reducer, provider policy or timer. Clear/hidden frames must not revive
 old content, and a fresh session with no confirmed pair still shows listening.
+
+Original reading selects the shared raw recognition lane even when the service
+holds complete translated pairs. Translation delays must not delay that view.
+Show confirmation time only when the raw source is final and belongs to the
+shared confirmed pair; a different owner's time cannot accompany a new draft.

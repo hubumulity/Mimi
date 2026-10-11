@@ -75,6 +75,37 @@ class RuntimeSubtitleProjectionTest {
         for (mode in CaptionDisplayMode.entries) assertEquals(hidden, hidden.forReading(mode))
     }
 
+    @Test fun originalReadingFollowsRecognitionWhileAtomicTranslationRetainsItsPreviousPair() {
+        SubtitleBus.setHistoryLimit(0)
+        val snapshots = Snapshots(true, 0)
+        snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))
+        snapshots.apply(draft("source", "Synthetic B."))
+        val pending = SubtitleBus.displaySnapshot()
+        val original = pending.forReading(CaptionDisplayMode.ORIGINAL)
+        assertEquals("Synthetic B.", original.source)
+        assertFalse(original.confirmed)
+        assertNull(original.createdAt)
+        for (mode in listOf(CaptionDisplayMode.BILINGUAL, CaptionDisplayMode.TRANSLATION)) {
+            assertEquals("Synthetic A.", pending.forReading(mode).source)
+            assertEquals("合成 A。", pending.forReading(mode).translation)
+        }
+        snapshots.apply(draft("source", "Synthetic B.").put("is_final", true))
+        val recognized = SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL)
+        assertEquals("Synthetic B.", recognized.source)
+        assertFalse(recognized.confirmed)
+        assertNull(recognized.createdAt)
+        snapshots.apply(pair("B", "Synthetic B.", "合成 B。"))
+        val complete = SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL)
+        assertEquals("Synthetic B.", complete.source)
+        assertTrue(complete.confirmed)
+        assertNotNull(complete.createdAt)
+        snapshots.apply(draft("source", "Synthetic B.").put("utterance_id", "C").put("is_final", true))
+        val repeated = SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL)
+        assertEquals("Synthetic B.", repeated.source)
+        assertFalse(repeated.confirmed)
+        assertNull(repeated.createdAt)
+    }
+
     @Test fun recoveryFeedbackPreservesCaptionsAndDistinguishesScheduledRetriesFromNewSpeech() {
         val snapshots = Snapshots(true)
         snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))

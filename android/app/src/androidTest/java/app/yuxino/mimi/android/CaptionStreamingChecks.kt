@@ -10,7 +10,9 @@ import android.view.ViewTreeObserver
 import android.view.inspector.WindowInspector
 import android.widget.TextView
 import app.yuxino.mimi.android.capture.MimiService
+import app.yuxino.mimi.android.provider.SharedSubtitleCore
 import app.yuxino.mimi.android.provider.SubtitleBus
+import org.json.JSONObject
 
 /** Continuous native drawing, including TextView's own scroll reconciliation. No capture/providers. */
 internal class CaptionStreamingChecks(private val test: Instrumentation) {
@@ -98,28 +100,55 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                 ui { SettingsStore.setImmersiveSubtitles(context, immersive); SettingsStore.setDisplayMode(context, mode) }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_APPLY_APPEARANCE))
                 SystemClock.sleep(180)
-                stage = "handoff/$immersive/$mode"
-                ui {
-                    SubtitleBus.clear()
-                    SubtitleBus.onFinalPair("Synthetic complete A.", "完整的合成 A。", "en")
-                    SubtitleBus.onSourceDraft("Synthetic pending B.", "en")
-                }
-                SystemClock.sleep(180)
-                ui {
-                    val current = rows()
-                    check(current[0].text.toString() == if (mode == CaptionDisplayMode.ORIGINAL)
-                        "Synthetic pending B." else "Synthetic complete A.") { "Reading handoff changed sentence owner at $stage" }
-                    if (mode.translationVisible) {
-                        check(current[1].isShown && current[1].text.toString() == "完整的合成 A。") { "Pending translation flashed a placeholder at $stage" }
+                for (atomic in listOf(false, true)) {
+                    stage = "handoff/$immersive/$mode/atomic-$atomic"
+                    var response = if (atomic) SharedSubtitleCore.exchange(JSONObject().put("operation",
+                        JSONObject().put("type", "create").put("history_limit", 0))) else null
+                    fun publish(event: JSONObject) {
+                        response = SharedSubtitleCore.exchange(JSONObject().put("state", response!!.getString("state"))
+                            .put("operation", JSONObject().put("type", "apply").put("event", event)))
+                        SubtitleBus.onRuntimeSnapshot(JSONObject().put("atomicPreview", true).put("detectedLanguage", "en")
+                            .put("snapshot", response!!.getJSONObject("snapshot")), false)
                     }
-                    SubtitleBus.onTranslationDraft("新的合成 B。")
+                    ui {
+                        SubtitleBus.clear()
+                        if (atomic) {
+                            publish(JSONObject().put("type", "final_pair").put("source", "Synthetic complete A.").put("translation", "完整的合成 A。"))
+                            publish(JSONObject().put("type", "source_draft").put("text", "Synthetic pending B."))
+                        } else {
+                            SubtitleBus.onFinalPair("Synthetic complete A.", "完整的合成 A。", "en")
+                            SubtitleBus.onSourceDraft("Synthetic pending B.", "en")
+                        }
+                    }
+                    SystemClock.sleep(180)
+                    ui {
+                        val current = rows()
+                        check(current[0].text.toString() == if (mode == CaptionDisplayMode.ORIGINAL)
+                            "Synthetic pending B." else "Synthetic complete A.") { "Reading handoff changed sentence owner at $stage" }
+                        if (mode.translationVisible) {
+                            check(current[1].isShown && current[1].text.toString() == "完整的合成 A。") { "Pending translation flashed a placeholder at $stage" }
+                        }
+                        if (atomic) publish(JSONObject().put("type", "translation_draft").put("text", "新的合成 B。"))
+                        else SubtitleBus.onTranslationDraft("新的合成 B。")
+                    }
+                    SystemClock.sleep(180)
+                    if (atomic) {
+                        ui {
+                            check(rows()[0].text.toString() == if (mode == CaptionDisplayMode.ORIGINAL)
+                                "Synthetic pending B." else "Synthetic complete A.") { "Atomic translation lost its complete reading pair at $stage" }
+                            if (mode.translationVisible) check(rows()[1].text.toString() == "完整的合成 A。")
+                            publish(JSONObject().put("type", "preview_pair").put("source_utterance_id", JSONObject.NULL)
+                                .put("source", "Synthetic pending B.").put("translation", "新的合成 B。"))
+                        }
+                        SystemClock.sleep(180)
+                    }
+                    ui {
+                        check(rows()[0].text.toString() == "Synthetic pending B.") { "Completed next translation failed to advance at $stage" }
+                        check(rows()[1].text.toString() == "新的合成 B。")
+                        SubtitleBus.clear()
+                    }
+                    cases++
                 }
-                SystemClock.sleep(180)
-                ui {
-                    check(rows()[0].text.toString() == "Synthetic pending B.") { "Completed next translation failed to advance at $stage" }
-                    check(rows()[1].text.toString() == "新的合成 B。")
-                }
-                cases++
                 for ((index, sample) in samples.withIndex()) {
                     stage = "$immersive/$mode/language-$index"
                     ui { SubtitleBus.onFinalPair(samples[0].repeat(5), sample.repeat(5), "en") }
