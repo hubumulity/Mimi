@@ -56,6 +56,11 @@ without dimming the controls. Closing or failing to open the editor restores
 normal interactions on the same views. This applies to the quick entry as well
 as the primary Captions section; checking only one entry cannot establish parity.
 
+While the quick editor is open, the immersive restore companion must clear the
+editor's occupied bounds and have a native touch-through window. Disabling a
+View's click listener alone can still consume taps intended for an underlying
+switch. Dismissal restores the native touch target along with ordinary actions.
+
 Measure the live panel at its ordinary saved width/height while editing. If the
 editor leaves too little room, scale that complete drawing uniformly above it
 rather than reducing its reading viewport or clipping chrome. Do not persist

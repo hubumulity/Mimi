@@ -774,6 +774,7 @@ class MimiService : Service() {
     private fun exitControlY(): Int = OverlayPlacement.exitY(
         overlayParams?.y ?: 0, compactView?.height ?: 0, overlayAvailableSize().second,
         immersiveExitView?.height?.takeIf { it > 0 } ?: dp(48), dp(6),
+        editorOffset(),
     )
 
     private fun setImmersiveMode(enabled: Boolean) {
@@ -908,6 +909,14 @@ class MimiService : Service() {
             isClickable = !editing; isFocusable = !editing
             importantForAccessibility = if (editing) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                 else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        }
+        immersiveExitParams?.let { params ->
+            val flags = if (editing) params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                else params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            if (flags != params.flags) {
+                params.flags = flags
+                immersiveExitView?.let { windowManager?.updateViewLayout(it, params) }
+            }
         }
     }
 

@@ -189,7 +189,10 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         waitFor {
             val panelFrame = nativeFrame(root())
             val editorFrame = nativeFrame(editor())
-            panelFrame != null && editorFrame != null && panelFrame.bottom <= editorFrame.top
+            val restore = WindowInspector.getGlobalWindowViews().firstOrNull { it.tag == "exit-immersive" }
+            val restoreFrame = restore?.let(::nativeFrame)
+            panelFrame != null && editorFrame != null && panelFrame.bottom <= editorFrame.top &&
+                (restore == null || restoreFrame != null && restoreFrame.bottom <= editorFrame.top)
         }
         onUi { check(editor().findViewById<View>(R.id.subtitle_preview) == null) { "Quick settings duplicated the preview" } }
     }
@@ -451,7 +454,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             bringIntoView(immersionSwitch); tapVisible(immersionSwitch)
             waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "exit-immersive" } }
             val restore = WindowInspector.getGlobalWindowViews().first { it.tag == "exit-immersive" }
-            waitFor { !restore.isClickable && !restore.isFocusable }
+            waitFor { !restore.isClickable && !restore.isFocusable &&
+                (restore.layoutParams as android.view.WindowManager.LayoutParams).flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0 }
             tapVisible(restore)
             onUi { restore.performClick() }
             check(SettingsStore.immersiveSubtitles(context)) { "Quick preview restore action changed immersion" }
@@ -549,6 +553,11 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             repeat(2) {
                 tapVisible(root().findViewWithTag("enter-immersive"))
                 waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "exit-immersive" } }
+                onUi {
+                    val restore = WindowInspector.getGlobalWindowViews().first { it.tag == "exit-immersive" }
+                    check(restore.isClickable && (restore.layoutParams as android.view.WindowManager.LayoutParams).flags and
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0) { "Restore action remained touch-through after editing" }
+                }
                 for (choice in CaptionAlignment.entries) {
                     onUi { SettingsStore.setCaptionAlignment(context, choice) }
                     waitFor { (root().findViewWithTag<View>("compact-subtitle") as android.view.ViewGroup).getChildAt(2).let {
