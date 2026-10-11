@@ -5,6 +5,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
+import android.util.TypedValue
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -19,9 +22,10 @@ class SubtitlePreviewView @JvmOverloads constructor(
     private val previewLabel = TextView(context)
     private var appearanceShortcut = false
     private var widthPercent = 92
+    private var displayMode = CaptionDisplayMode.BILINGUAL
     private val status = TextView(context).apply { textSize = 16f; setTextColor(Color.LTGRAY); visibility = GONE }
-    private val source = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 2 }
-    private val translation = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 3 }
+    private val source = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 1 }
+    private val translation = app.yuxino.mimi.android.capture.LatestCaptionTextView(context).apply { maxLines = 1 }
     private val subtitle = LinearLayout(context)
 
     init {
@@ -56,6 +60,13 @@ class SubtitlePreviewView @JvmOverloads constructor(
         translation.textSize = 19f
         translation.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         translation.setLineSpacing(dp(4).toFloat(), 1f)
+        // Reserve one readable line at the largest supported size for each
+        // language. Width, font and live-text changes must not move the sliders
+        // under the user's finger. Full captions remain in the reading panel.
+        source.minimumHeight = maximumLineHeight(source, 24f)
+        translation.minimumHeight = maximumLineHeight(translation, 27f)
+        subtitle.minimumHeight = source.minimumHeight + translation.minimumHeight + dp(27)
+        subtitle.gravity = Gravity.CENTER_VERTICAL
         subtitle.addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         subtitle.addView(source, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         subtitle.addView(translation, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
@@ -79,6 +90,7 @@ class SubtitlePreviewView @JvmOverloads constructor(
             status.visibility = GONE
         }
         val effective = if (originalOnly) CaptionDisplayMode.ORIGINAL else mode
+        displayMode = effective
         source.visibility = if (effective.sourceVisible) VISIBLE else GONE
         translation.visibility = if (effective.translationVisible) VISIBLE else GONE
         this.widthPercent = widthPercent.coerceIn(55, 100)
@@ -114,6 +126,8 @@ class SubtitlePreviewView @JvmOverloads constructor(
         exampleLabel.setText(R.string.overlay_appearance)
         source.text = if (hidden) "" else original
         translation.text = if (hidden) "" else translated
+        source.visibility = if (displayMode.sourceVisible && source.text.isNotEmpty()) VISIBLE else GONE
+        translation.visibility = if (displayMode.translationVisible && translation.text.isNotEmpty()) VISIBLE else GONE
         status.text = waiting
         status.visibility = if ((source.visibility != VISIBLE || source.text.isNullOrBlank()) &&
             (translation.visibility != VISIBLE || translation.text.isNullOrBlank())) VISIBLE else GONE
@@ -131,4 +145,13 @@ class SubtitlePreviewView @JvmOverloads constructor(
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun maximumLineHeight(view: TextView, sizeSp: Float): Int {
+        val paint = TextPaint(view.paint).apply {
+            textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sizeSp, resources.displayMetrics)
+        }
+        // Include the supported scripts' fallback metrics, including Thai marks.
+        val glyphs = "Agé中文あ한กำลังฟัง"
+        return StaticLayout.Builder.obtain(glyphs, 0, glyphs.length, paint, 4096)
+            .setIncludePad(view.includeFontPadding).setUseLineSpacingFromFallbacks(true).build().height
+    }
 }

@@ -40,8 +40,11 @@ its controls. Floating windows temporarily hide above Mimi activities while
 capture, provider sessions and paired state continue; leaving Mimi restores the
 same floating views and reading position. Activity transitions cannot flash a
 caption over credential fields. Keep sample content labeled when idle.
-Bound Home/settings previews to the compact caption line limits so large fonts
-and long live text cannot push every appearance control offscreen. Keep Start /
+Home/settings previews follow one latest line per language in a stable viewport.
+Reserve the supported scripts' maximum font metrics so width, size and live-text
+changes cannot move a slider under the user's finger. Full captions remain in
+the reading panel; compact/immersive overlays keep their two/three-line limits.
+Keep Start /
 Stop pinned while status and recovery instructions scroll with the Home content.
 
 The expanded panel uses one top row for collapse, drag/language and appearance,

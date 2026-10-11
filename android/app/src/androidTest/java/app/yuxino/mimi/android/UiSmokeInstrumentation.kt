@@ -543,7 +543,13 @@ class UiSmokeInstrumentation : Instrumentation() {
         capture("settings-immersive-$theme")
         click(settings, R.id.immersive_subtitles)
         check(SettingsStore.immersiveSubtitles(targetContext) == initialImmersive)
+        val width = settings.findViewById<SeekBar>(R.id.overlay_width)
+        for (value in listOf(55, 100)) {
+            drag(width, value, requireStablePosition = true)
+            check(SettingsStore.overlayWidthPercent(targetContext) == value) { "Width gesture did not reach the requested endpoint" }
+        }
         val seek = settings.findViewById<SeekBar>(R.id.font_size)
+        for (value in listOf(12, 24)) drag(seek, value, requireStablePosition = true)
         drag(seek, if (initialFont < 20) 20 else 16)
         check(SettingsStore.fontSize(targetContext) == seek.progress) { "Font was not automatically saved" }
         val changedFont = seek.progress
@@ -1015,7 +1021,7 @@ class UiSmokeInstrumentation : Instrumentation() {
     }
 
     /** Actual touch events exercise fromUser persistence, including dragging inside a scroll view. */
-    private fun drag(seek: SeekBar, value: Int) {
+    private fun drag(seek: SeekBar, value: Int, requireStablePosition: Boolean = false) {
         onUi { seek.requestRectangleOnScreen(android.graphics.Rect(0, 0, seek.width, seek.height), true) }
         waitForIdleSync()
         Thread.sleep(220)
@@ -1041,6 +1047,12 @@ class UiSmokeInstrumentation : Instrumentation() {
         for (step in 1..12) { Thread.sleep(45); event(MotionEvent.ACTION_MOVE, start + (end - start) * step / 12) }
         event(MotionEvent.ACTION_UP, end)
         waitForIdleSync()
+        if (requireStablePosition) onUi {
+            val final = IntArray(2)
+            seek.getLocationOnScreen(final)
+            check(kotlin.math.abs(final[1] - location[1]) <= 1) { "Preview moved the slider during a touch gesture" }
+            check(kotlin.math.abs(seek.progress - value) <= 1) { "Slider gesture missed its endpoint" }
+        }
     }
 
     private fun capture(name: String) {
@@ -1071,6 +1083,8 @@ class UiSmokeInstrumentation : Instrumentation() {
         private val source = restoreSource ?: SettingsStore.sourceLang(targetContext)
         private val target = restoreTarget ?: SettingsStore.targetLang(targetContext)
         private val font = restoreFont ?: SettingsStore.fontSize(targetContext)
+        private val width = SettingsStore.overlayWidthPercent(targetContext)
+        private val mode = SettingsStore.displayMode(targetContext)
         private val color = restoreColor ?: SettingsStore.translationColorIndex(targetContext)
         private val opacity = SettingsStore.overlayOpacity(targetContext)
         private val background = restoreBackground ?: SettingsStore.overlayBgAlpha(targetContext)
@@ -1083,6 +1097,8 @@ class UiSmokeInstrumentation : Instrumentation() {
             SettingsStore.setSourceLang(targetContext, source)
             SettingsStore.setTargetLang(targetContext, target)
             SettingsStore.setFontSize(targetContext, font)
+            SettingsStore.setOverlayWidthPercent(targetContext, width)
+            SettingsStore.setDisplayMode(targetContext, mode)
             SettingsStore.setTranslationColorIndex(targetContext, color)
             SettingsStore.setOverlayOpacity(targetContext, opacity)
             SettingsStore.setOverlayBgAlpha(targetContext, background)

@@ -101,7 +101,6 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
                     check(SubtitleBus.historySnapshot() == history) { "Language change lost subtitle history" }
                     check(SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
                     capture("${tag.ifEmpty { "system" }}-$theme")
-                    assertControlBounds()
                     captureOverlay(tag, theme)
                     checkServiceEditor(tag, theme)
                 }
@@ -141,6 +140,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         val panel = WindowInspector.getGlobalWindowViews().firstNotNullOf {
             it.findViewWithTag<View>("expanded-subtitles")
         }
+        check(panel.isShown && panel.width > 0 && panel.height > 0) { "Overlay must be laid out before checking controls" }
         val origin = IntArray(2)
         panel.getLocationOnScreen(origin)
         check(origin[0] >= 0 && origin[0] + panel.width <= settings!!.resources.displayMetrics.widthPixels)
@@ -204,6 +204,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as CaptureProbeActivity
         try {
             await { WindowInspector.getGlobalWindowViews().first { it.tag == "mimi-overlay" }.isShown }
+            assertControlBounds()
             capture("${tag.ifEmpty { "system" }}-overlay-$theme")
         } finally { onUi { external.finish() } }
         await { settings?.hasWindowFocus() == true }

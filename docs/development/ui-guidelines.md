@@ -219,3 +219,10 @@ the visible language tab before selecting a value. Verify actual wide compositor
 bounds before calling a run landscape acceptance; rotation settings alone are
 insufficient when the launcher requests a fixed orientation. Check the caption
 reading viewport as well as the panel's outer bounds at large fonts.
+
+Android appearance previews reserve a stable viewport at the supported maximum
+font metrics, including script fallback. Width, font and streaming text changes
+must not move the sliders during a drag. Preview one latest line per language;
+keep full captions in the reading panel. Native acceptance must reach both
+slider endpoints and compare the control's screen position before and after,
+then restore width and display mode as well as the older appearance preferences.
