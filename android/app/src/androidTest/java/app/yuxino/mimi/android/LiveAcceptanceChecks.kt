@@ -77,7 +77,7 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
                         check(SettingsStore.qwenMtModel(context) == savedModel && MimiService.isRunning)
                         check(MimiService.activeModelNames == activeModels)
                     } finally { onUi { editor.finish() } }
-                    status("LIVE_MODEL_GUARD_PASSED round=$round model=$savedModel; disabled editor and stale save preserve active model; resume Bilibili playback if paused.")
+                    status("LIVE_MODEL_GUARD_PASSED round=$round model=$savedModel; disabled editor and stale save preserve active model; resume playback if paused.")
                 }
                 stage = "observe_$round"
                 val begin = SystemClock.elapsedRealtime()
@@ -106,6 +106,7 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
                 var lastSourceAt = begin
                 var largestSourceGap = 0L
                 var modelInspected = false
+                var nextProgressAt = begin + 30_000
                 fun observe() {
                     val now = SystemClock.elapsedRealtime()
                     // Hashes are transient comparison state only; no text/hash is logged or saved.
@@ -141,6 +142,11 @@ internal class LiveAcceptanceChecks(private val test: Instrumentation) {
                 }
                 while (SystemClock.elapsedRealtime() - begin < seconds * 1000 && MimiService.isRunning) {
                     onUi { observe() }
+                    val now = SystemClock.elapsedRealtime()
+                    if (now >= nextProgressAt) {
+                        status("LIVE_PROGRESS round=$round observedMs=${now - begin} sourceUpdates=$sourceUpdates translationUpdates=$translationUpdates pairedFinals=${finals.get()} sourceAgeMs=${now - lastSourceAt} capture=${MimiService.captureObservation?.state?.name ?: "WAITING"} running=${MimiService.isRunning}")
+                        nextProgressAt = now + 30_000
+                    }
                     if (!modelInspected && activeModels.isNotEmpty() && translationUpdates > 0 && SystemClock.elapsedRealtime() - begin > 10_000) {
                         stage = "active_model_display_$round"
                         onUi {

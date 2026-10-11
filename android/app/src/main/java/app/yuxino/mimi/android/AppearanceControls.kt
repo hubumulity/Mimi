@@ -20,6 +20,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 /** Same native controls in settings and the overlay; never starts a provider or capture. */
 internal class AppearanceControls(
     context: Context,
+    private val floating: Boolean = false,
     private val requestImmersive: (Boolean) -> Unit,
 ) : LinearLayout(context) {
     private val main = Handler(Looper.getMainLooper())
@@ -148,7 +149,7 @@ internal class AppearanceControls(
         heading.addView(value, LayoutParams(-2, -2).apply { marginStart = dp(12) })
         parent.addView(heading, LayoutParams(-1, -2).apply { topMargin = dp(20) })
         val seek = SeekBar(context).apply {
-            this.id = id; min = low; max = high; tag = if (id == R.id.font_size) "overlay-font-slider" else null
+            this.id = id; min = low; max = high; tag = if (id == R.id.font_size && floating) "overlay-font-slider" else null
             contentDescription = context.getString(title)
             progressTintList = ContextCompat.getColorStateList(context, R.color.mimi_text)
             thumbTintList = progressTintList

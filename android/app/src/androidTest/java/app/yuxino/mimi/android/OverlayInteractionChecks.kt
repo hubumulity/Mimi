@@ -241,6 +241,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         onUi { settings.findViewById<View>(R.id.tab_appearance).performClick() }
         capture("settings-uncovered")
         onUi { settings.finish(); home.finish() }
+        context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         waitFor { root().isShown }
         check(root() === existing) { "Own-page visibility replaced subtitle views" }
     }
@@ -384,7 +385,10 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                     providerMarkChecks(checkNotNull(home))
                     ownSurfaceChecks(checkNotNull(home))
                     // Confirmed pairs intentionally remain readable. Test the genuinely empty state.
-                    onUi { SubtitleBus.clear(); SubtitleBus.hideLive() }
+                    onUi {
+                        root().findViewWithTag<View>("collapse-overlay").performClick()
+                        SubtitleBus.clear(); SubtitleBus.hideLive()
+                    }
                     waitFor { !root().isShown }
                 }
             }
@@ -414,7 +418,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
             putString("stream", if (failure == null && reviewSeconds != null) "Manual overlay review fixture closed; preferences restored; no capture or provider.\n"
                 else if (failure == null) "Overlay $prefix checks passed: empty window, font action, live settings, history and silence; synthetic captions, no capture or provider.\n"
-            else "Overlay $prefix failed: ${failure.javaClass.simpleName}: ${failure.message}; ${failure.stackTrace.firstOrNull { it.fileName == "OverlayInteractionChecks.kt" }}\n")
+            else "Overlay $prefix failed: ${failure.javaClass.simpleName}: ${failure.message}; ${failure.stackTrace.filter { it.fileName == "OverlayInteractionChecks.kt" }.take(3)}\n")
         })
     }
 }

@@ -962,7 +962,7 @@ class MimiService : Service() {
     private fun showAppearanceControls() {
         if (appearanceDialog != null) return
         val themed = ContextThemeWrapper(InterfaceLanguage.context(this), R.style.Theme_Mimi)
-        val controls = AppearanceControls(themed) { enabled -> setImmersiveMode(enabled) }
+        val controls = AppearanceControls(themed, floating = true) { enabled -> setImmersiveMode(enabled) }
         controls.setPadding(dp(20), dp(12), dp(20), dp(16))
         val content = app.yuxino.mimi.android.ControlScrollView(themed).apply {
             addView(controls)
