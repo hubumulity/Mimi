@@ -33,7 +33,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         val originalSource = SettingsStore.sourceLang(context)
         val originalTarget = SettingsStore.targetLang(context)
         val seconds = arguments?.getString("phase_seconds")?.toIntOrNull()
-        check(seconds == null || seconds in 30..120)
+        check(seconds == null || seconds in 30..300)
         val phases = if (seconds == null) listOf(CaptionDisplayMode.BILINGUAL to 90, CaptionDisplayMode.TRANSLATION to 60,
             CaptionDisplayMode.ORIGINAL to 60, CaptionDisplayMode.BILINGUAL to 60)
             else listOf(CaptionDisplayMode.BILINGUAL to seconds, CaptionDisplayMode.TRANSLATION to seconds,
