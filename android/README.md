@@ -155,6 +155,9 @@ Credentials require explicit Save and use; changing appearance never saves crede
 
 Settings groups Services, Captions and General separately. Captions offers live
 original/translation/bilingual display, width, size, color and opacity controls.
+Its preview keeps one latest line per language in a stable viewport, so adjusting
+width or size does not move the controls under your finger. Full current captions
+remain available in the expanded reading panel.
 The expanded panel has drag and resize handles and the same appearance controls.
 Display choices do not change recognition or translation requests. A running
 session keeps service editing locked with an explicit Stop action.
@@ -281,6 +284,23 @@ samples; this finding is specific to that browser package. The additional provid
 including Tencent signing and Volcano binary frames, but have not been verified against live accounts. Do not
 interpret build or protocol-test success as physical-device or all-provider acceptance. The original contributor’s
 reported device test applies to the original port, not every subsequent change.
+
+For real playback acceptance, use the independent debug app with a stable local
+signing identity. `LiveAcceptanceChecks` requires native Start and fresh platform
+consent; its bounded report stores counts and status, not subtitle content.
+An explicitly authorized temporary provider fixture must enter the app's private
+cache through stdin, be read back before testing, and be consumed and restored
+in the test's finally block. Never put credentials in arguments, environment
+variables, screenshots, logs or Git, or treat this fixture as configuration sync.
+
+Disable video autoplay and verify the player's actual 0:00 and end states. The
+tested Firefox MediaSession can retain a stale position, so timestamps derived
+from it do not establish playback progress. Use visible player times together
+with continuous native observations. Do not run a separate `uiautomator dump`
+while instrumentation owns UiAutomation; use its own screenshots or a read-only
+ADB screencap. Native visual fixtures, emulator frame statistics and a live
+provider run establish different evidence; record their exact build and remaining
+device/provider gaps in the [integration ledger](../docs/development/integration-runs.md).
 
 ## Known limits
 
