@@ -13,7 +13,7 @@ import type { AppleSpeechSupport, ServiceProfile, SettingsSnapshot } from "../..
 import { ServiceProfiles } from "./ServiceProfiles";
 
 const actions = vi.hoisted(() => ({
-  createProfile: vi.fn(), updateProfile: vi.fn(), selectProfile: vi.fn(),
+  createProfile: vi.fn(), duplicateProfile: vi.fn(), updateProfile: vi.fn(), selectProfile: vi.fn(),
   saveSettings: vi.fn(), deleteProfile: vi.fn(), saveProfileCredentials: vi.fn(), deleteProfileAPIKey: vi.fn(),
 }));
 const boot = vi.hoisted(() => ({ initializationStatus: "ready" as "ready" | "loading" | "error", initializationError: null as "timeout" | "unavailable" | null, init: vi.fn(), nativeSettings: null as SettingsSnapshot | null }));
@@ -53,6 +53,165 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 async function render(snapshot = settings, sessionStatusKind: "idle" | "error" = "idle") { await act(async () => root.render(<><ServiceProfiles settings={snapshot} sessionIsActive={false} sessionStatusKind={sessionStatusKind} /><SettingsToastRegion /></>)); }
+
+it("opens a distinct configuration copy without selecting or revealing credentials", async () => {
+  const copy = { ...profile, id: "synthetic-copy", name: "Alibaba (copy)" };
+  const snapshot = { ...settings, profiles: [profile, copy] };
+  actions.duplicateProfile.mockResolvedValue(snapshot);
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await click(I18N.settings.duplicateProfile);
+  expect(actions.duplicateProfile).toHaveBeenCalledExactlyOnceWith(profile.id, copy.name);
+  expect(actions.selectProfile).not.toHaveBeenCalled();
+  expect(actions.saveProfileCredentials).not.toHaveBeenCalled();
+  expect(profileRevealCredential).not.toHaveBeenCalled();
+  await render(snapshot);
+  expect(host.querySelector<HTMLInputElement>(`#profile-name-${copy.id}`)!.value).toBe(copy.name);
+  expect(document.body.textContent).toContain(I18N.settings.profileDuplicated);
+});
+
+it("deduplicates a pending configuration copy and keeps the editor on failure", async () => {
+  let reject!: (error: Error) => void;
+  actions.duplicateProfile.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === I18N.settings.duplicateProfile)!;
+  await act(() => { button.click(); button.click(); });
+  expect(actions.duplicateProfile).toHaveBeenCalledOnce();
+  await act(async () => reject(new Error("private-copy-error")));
+  expect(host.querySelector<HTMLInputElement>(`#profile-name-${profile.id}`)!.value).toBe(profile.name);
+  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  expect(document.body.textContent).toContain(I18N.settings.profileDuplicateFailed);
+  expect(document.body.textContent).not.toContain("private-copy-error");
+});
+
+it.each([false, true])("blocks configuration copies during active or paused sessions (paused=%s)", async paused => {
+  await act(async () => root.render(<ServiceProfiles settings={settings} sessionIsActive={!paused} sessionIsPaused={paused} profileEditorRequest={1} />));
+  const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === I18N.settings.duplicateProfile)!;
+  expect(button.disabled).toBe(true);
+  await act(() => button.click());
+  expect(actions.duplicateProfile).not.toHaveBeenCalled();
+});
+
+it("keeps copying disabled at the profile limit", async () => {
+  await render({ ...settings, profiles: Array.from({ length: 20 }, (_, index) => ({ ...profile, id: index === 0 ? profile.id : `p-${index}` })) });
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === I18N.settings.duplicateProfile)!;
+  expect(button.disabled).toBe(true);
+  expect(host.textContent).toContain(I18N.settings.profileLimitReached);
+});
+
+it("shows four explicit list actions and copies the requested row without using it", async () => {
+  const other = { ...profile, id: "other", name: "Other", credentialState: "present" as const };
+  const copy = { ...other, id: "other-copy", name: "Other (copy)" };
+  const initial = { ...settings, profiles: [profile, other] };
+  const copied = { ...initial, profiles: [profile, other, copy] };
+  actions.duplicateProfile.mockResolvedValue(copied);
+  await render(initial);
+  const rows = host.querySelectorAll(".service-row");
+  for (const row of rows) {
+    expect(row.querySelectorAll(".service-row__actions button")).toHaveLength(4);
+    expect(row.querySelector(".service-row__main")?.tagName).toBe("DIV");
+  }
+  expect(rows[0].querySelector<HTMLButtonElement>(".service-row__use")!.disabled).toBe(true);
+  expect(rows[0].querySelector(".service-row__use")!.textContent).toContain(I18N.settings.profileActionUse);
+  expect(rows[0].querySelector(".service-row__state")!.textContent).toContain(I18N.settings.activeProfile);
+  await act(async () => rows[1].querySelector<HTMLButtonElement>(".service-row__duplicate")!.click());
+  expect(actions.duplicateProfile).toHaveBeenCalledExactlyOnceWith(other.id, copy.name);
+  expect(actions.selectProfile).not.toHaveBeenCalled();
+  expect(profileRevealCredential).not.toHaveBeenCalled();
+  await render(copied);
+  expect(host.querySelector<HTMLInputElement>(`#profile-name-${copy.id}`)!.value).toBe(copy.name);
+  expect(host.querySelector(".service-detail__quick-actions")!.textContent).not.toContain(I18N.settings.helpLabel);
+});
+
+it("keeps a failed row copy on the list and deduplicates pending actions", async () => {
+  let reject!: (reason: Error) => void;
+  actions.duplicateProfile.mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+  await render();
+  const button = host.querySelector<HTMLButtonElement>(".service-row__duplicate")!;
+  await act(() => { button.click(); button.click(); });
+  expect(actions.duplicateProfile).toHaveBeenCalledOnce();
+  expect([...host.querySelectorAll<HTMLButtonElement>(".service-row__actions button")].every(button => button.disabled)).toBe(true);
+  await act(async () => reject(new Error("private-copy-failure")));
+  expect(host.querySelector(".service-rows")).not.toBeNull();
+  expect(host.querySelector(".service-detail")).toBeNull();
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(I18N.settings.profileDuplicateFailed);
+  expect(document.body.textContent).not.toContain("private-copy-failure");
+});
+
+it("deletes the requested row after confirmation even when a different editor was last opened", async () => {
+  const other = { ...profile, id: "other", name: "Other", credentialState: "present" as const };
+  const initial = { ...settings, profiles: [profile, other] };
+  actions.deleteProfile.mockResolvedValue(settings);
+  await render(initial);
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await click(I18N.settings.backToServices);
+  const deleteOther = () => host.querySelectorAll<HTMLButtonElement>(".service-row__delete")[1].click();
+  await act(async () => deleteOther());
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(I18N.settings.deleteProfileConfirm(other.name));
+  expect(actions.deleteProfile).not.toHaveBeenCalled();
+  await click(I18N.settings.cancel);
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+  await act(async () => deleteOther());
+  await click(I18N.settings.confirmDelete);
+  expect(actions.deleteProfile).toHaveBeenCalledExactlyOnceWith(other.id);
+  expect(actions.selectProfile).not.toHaveBeenCalled();
+  expect(host.querySelector(".service-rows")).not.toBeNull();
+});
+
+it("keeps a failed row deletion on the list with a sanitized toast", async () => {
+  actions.deleteProfile.mockRejectedValue(new Error("private-delete-failure"));
+  await render({ ...settings, profiles: [profile, { ...profile, id: "other", name: "Other" }] });
+  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__delete")[1].click());
+  await click(I18N.settings.confirmDelete);
+  expect(host.querySelectorAll(".service-row")).toHaveLength(2);
+  expect(document.querySelector('[role="alert"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("private-delete-failure");
+});
+
+it.each(["active", "paused", "connecting", "stopping"] as const)("guards list copies and deletions while %s", async status => {
+  const initial = { ...settings, profiles: [profile, { ...profile, id: "other" }] };
+  await act(async () => root.render(<ServiceProfiles settings={initial} sessionIsActive={status === "active"} sessionIsPaused={status === "paused"}
+    sessionStatusKind={status === "active" || status === "paused" ? "listening" : status} />));
+  for (const button of host.querySelectorAll<HTMLButtonElement>(".service-row__duplicate, .service-row__delete")) {
+    expect(button.disabled).toBe(true);
+    await act(() => button.click());
+  }
+  expect(actions.duplicateProfile).not.toHaveBeenCalled();
+  expect(actions.deleteProfile).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it("keeps row copy limits and the last-profile deletion guard", async () => {
+  await render();
+  expect(host.querySelector<HTMLButtonElement>(".service-row__delete")!.disabled).toBe(true);
+  await render({ ...settings, profiles: Array.from({ length: 20 }, (_, index) => ({ ...profile, id: `p-${index}` })) });
+  expect([...host.querySelectorAll<HTMLButtonElement>(".service-row__duplicate")].every(button => button.disabled)).toBe(true);
+});
+
+it("marks the current row while allowing its saved language combination to be applied again", async () => {
+  const configured = { ...profile, credentialState: "present" as const, languagePreset: { sourceLanguage: "en" as const, targetLanguage: "ja" as const } };
+  const initial = { ...settings, profiles: [configured] };
+  actions.selectProfile.mockResolvedValue({ ...initial, sourceLanguage: "en", targetLanguage: "ja" });
+  await render(initial);
+  const use = host.querySelector<HTMLButtonElement>(".service-row__use")!;
+  expect(use.disabled).toBe(false);
+  expect(host.querySelector(".service-row__state")!.textContent).toContain(I18N.settings.activeProfile);
+  await act(async () => use.click());
+  expect(actions.selectProfile).toHaveBeenCalledExactlyOnceWith(profile.id);
+});
+
+it("blocks a deletion confirmation if a session starts while the dialog is open", async () => {
+  const initial = { ...settings, profiles: [profile, { ...profile, id: "other", name: "Other" }] };
+  await render(initial);
+  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__delete")[1].click());
+  await act(async () => root.render(<><ServiceProfiles settings={initial} sessionIsActive sessionStatusKind="listening" /><SettingsToastRegion /></>));
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find(button => button.textContent === I18N.settings.confirmDelete)!;
+  expect(confirm.disabled).toBe(true);
+  await act(() => confirm.click());
+  expect(actions.deleteProfile).not.toHaveBeenCalled();
+});
 
 it.each([undefined, "localFile"] as const)("saves the Alibaba text model for %s profiles without changing credentials", async credentialStorage => {
   const ready = { ...profile, credentialState: "present" as const, credentialStorage };
@@ -835,8 +994,8 @@ it("does not edit the active service's global languages from another profile's d
   await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__edit")[1].click());
   expect(host.querySelector("#translation-languages")).toBeNull();
   expect(host.querySelector(".service-detail__language-note")).toBeNull();
-  expect(host.querySelector(".service-detail__actions .settings-help-control__description")?.textContent).toBe(I18N.settings.profileSwitchHelp);
-  expect(host.querySelector(".service-detail__actions")?.textContent).toContain(I18N.settings.useProfile);
+  expect(host.querySelectorAll(".service-detail__quick-actions .settings-help-control__description")[0]?.textContent).toBe(I18N.settings.profileSwitchHelp);
+  expect(host.querySelector(".service-detail__quick-actions")?.textContent).toContain(I18N.settings.useProfile);
   expect(actions.saveSettings).not.toHaveBeenCalled();
 });
 
@@ -850,7 +1009,7 @@ it("keeps profile rename and delete actions reachable without opening another pa
   await act(async () => { host.querySelector<HTMLInputElement>(".service-detail__name input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); });
   expect(actions.updateProfile).toHaveBeenCalledExactlyOnceWith("other", "Renamed");
   const management = host.querySelector(".service-detail__actions")!;
-  expect(management.textContent).toContain(I18N.settings.useProfile);
+  expect(host.querySelector(".service-detail__quick-actions")!.textContent).toContain(I18N.settings.useProfile);
   expect(management.textContent).toContain(I18N.settings.deleteProfile);
   const deleteButton = [...management.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === I18N.settings.deleteProfile)!;
   expect(deleteButton.classList.contains("settings-button--danger")).toBe(true);
@@ -1508,7 +1667,7 @@ it.each([false, true])("switches saved services while live or paused without unl
   let finish!: (value: SettingsSnapshot) => void;
   actions.selectProfile.mockReturnValue(new Promise<SettingsSnapshot>(resolve => { finish = resolve; }));
   await act(async () => root.render(<><ServiceProfiles settings={snapshot} sessionIsActive={!paused} sessionIsPaused={paused} sessionStatusKind="listening" /><SettingsToastRegion /></>));
-  const choices = host.querySelectorAll<HTMLButtonElement>(".service-row__main");
+  const choices = host.querySelectorAll<HTMLButtonElement>(".service-row__use");
   expect(choices[1].disabled).toBe(false);
   const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes(I18N.settings.addProfile))!;
   expect(add.disabled).toBe(true);
@@ -1522,17 +1681,17 @@ it.each([false, true])("switches saved services while live or paused without unl
 
 it.each(["connecting", "stopping"] as const)("blocks service selection during %s", async status => {
   await act(async () => root.render(<ServiceProfiles settings={{ ...settings, profiles: [profile, { ...profile, id: "other" }] }} sessionIsActive sessionStatusKind={status} />));
-  for (const button of host.querySelectorAll<HTMLButtonElement>(".service-row__main")) expect(button.disabled).toBe(true);
+  for (const button of host.querySelectorAll<HTMLButtonElement>(".service-row__use")) expect(button.disabled).toBe(true);
   expect(actions.selectProfile).not.toHaveBeenCalled();
 });
 
 it("keeps the current service and shows a sanitized recording restriction when switching fails", async () => {
   actions.selectProfile.mockRejectedValue("profile_switch_recording_requires_stop");
   await act(async () => root.render(<><ServiceProfiles settings={{ ...settings, profiles: [profile, { ...profile, id: "other", credentialState: "present" }] }} sessionIsActive sessionStatusKind="listening" /><SettingsToastRegion /></>));
-  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__main")[1].click());
+  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__use")[1].click());
   expect(host.querySelector('.service-row[data-active="true"]')).toBe(host.querySelector(".service-row"));
   expect(host.querySelector(".settings-toast")?.textContent).toContain(I18N.settings.profileSwitchRecordingRequiresStop);
-  expect(host.querySelectorAll<HTMLButtonElement>(".service-row__main")[1].disabled).toBe(false);
+  expect(host.querySelectorAll<HTMLButtonElement>(".service-row__use")[1].disabled).toBe(false);
 });
 
 
@@ -1544,7 +1703,7 @@ it("reports reconnect failure after the selected profile is already saved withou
   let reject!: (reason: string) => void;
   actions.selectProfile.mockReturnValue(new Promise<SettingsSnapshot>((_resolve, failure) => { reject = failure; }));
   await act(async () => root.render(<><ServiceProfiles settings={snapshot} sessionIsActive sessionStatusKind="listening" /><SettingsToastRegion /></>));
-  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__main")[1].click());
+  await act(async () => host.querySelectorAll<HTMLButtonElement>(".service-row__use")[1].click());
   await render(saved, "error");
   await act(async () => reject(error));
   expect(host.querySelector('.service-row[data-active="true"]')).toBe(host.querySelectorAll(".service-row")[1]);

@@ -2142,3 +2142,74 @@
   contains user samples, negative/native/build logs, screenshots and receipts.
   API 29, physical-device performance and real provider/audio capture were not
   rerun for this native UI change; prior live runs retain their original revisions.
+
+### 2026-10-11 desktop configuration and field copying
+
+- Branch `feat/desktop-settings-actions` starts at `d7b2fe5f` (Android PR #250
+  already merged). Desktop editors now duplicate saved configurations into an
+  independent profile and open it without activating it. The native store copies
+  both private credential slots; failures preserve the source and roll back only
+  the new UUID. Existing stopped-session and 20-profile guards apply. Copy naming
+  respects the 64-character Unicode limit and all eight interface languages.
+- Nonsecret name, endpoint, model and proxy fields expose explicit Copy actions
+  with shared success/error toasts. Empty placeholders and secret fields,
+  including revealed credentials, cannot copy. Duplicate and Use are adjacent
+  to the editor heading; the list has a visible Edit label. Narrow headers wrap
+  and long list names use two lines with the full name available on hover.
+- Final behavioral source passed `./scripts/check.sh`: shared core 82, shared
+  runtime 710 (one ignored), desktop Rust 574 (one ignored), frontend 133 files /
+  2,082 tests, strict lint/typecheck/build and architecture guards. Focused tests
+  cover independent private slots, missing/unavailable/recovered credentials,
+  partial writes/catalog failures, profile limits, pending/repeated actions,
+  clipboard failure feedback and revealed-secret exclusion.
+- Real-component browser geometry passed 1,184 cases across eight locales,
+  both themes, macOS/Windows layout variants, normal/minimum widths, long names,
+  provider forms and confirmation dialogs. Browser interactions separately
+  verified visible-value clipboard writes and sanitized failure toasts.
+- Final signed `/Applications/mimi-dev.app` used UI-only mode and the unchanged
+  `app.yuxino.mimi.dev` designated requirement. Native Chinese, English and
+  Japanese editors, empty/list states, long names and an English deletion/cancel
+  dialog were inspected at normal 760-point and minimum 520-point widths. Native clipboard content,
+  successful duplication with a synthetic saved credential, independent rename,
+  unchanged activation and explicit Use passed. A synthetic session started;
+  subsequent settings interactions were not verified because the UI automation
+  did not reach them. The development app was normally quit and the production
+  app reopened with the user's authorization.
+- Native edge-drag attempts did not resize the settings window. An explicit
+  UI-only compact-settings fixture then opened at 520 × 560; all three language
+  editors and the long-name English deletion/cancel dialog passed visual review.
+  Japanese minimum-width subtitle and save/export pages were also inspected.
+  Live launches explicitly reset the fixture, covered by the launch-mode test.
+  Windows/Linux native UI, running/paused
+  native mutation guards, full tray/overlay states, live provider connectivity and
+  capture were not accepted in this run. Private logs and synthetic pixels are
+  archived outside Git; no production credential, audio or subtitle data was
+  used. CI and merge review remain separate from these local results.
+
+### 2026-10-11 configuration list actions and merge regression
+
+- Follow-up on `feat/desktop-settings-actions`: every desktop configuration row
+  exposes Use, Edit, Copy and Delete. The identity area is informational; the
+  current profile keeps a separate In Use marker when its saved language
+  combination can be reapplied. Copy opens its own independent editor without
+  activation. List deletion confirms the requested row rather than the editor's
+  last selection. The copy help paragraph was removed in all eight locales.
+- UI regression passed `check.sh` with 2,093 frontend tests. New cases cover
+  inactive-row copying, sanitized failures, repeated clicks, delete/cancel,
+  the last-profile/20-profile limits, active/paused/connecting/stopping guards,
+  applying the current profile's saved languages, and a session starting while
+  a deletion confirmation is already open.
+- Review found that failed copies left missing/error cache entries for fresh
+  UUIDs. Rollback now evicts only those unreachable entries. The focused native
+  store regression passed 16 repeated partial-credential failures and 16 catalog
+  failures, preserved the source/catalog/slots/cache, then successfully retried
+  after each failure was resolved.
+- Browser geometry passed 288 list-action/confirmation cases plus 1,184 adjacent
+  settings cases: eight locales, both themes, 520/952 widths and macOS, Windows
+  and Linux layout fixtures. These are component/layout checks, not native
+  acceptance of those platforms. The normal signed macOS development app's
+  configuration list was inspected with saved development profiles; no provider
+  requests, capture or credential reveal was needed for this follow-up.
+- The user authorized merging after regression. Prior native/UI-only acceptance
+  and its Windows/Linux, full tray/overlay and live-provider limits still apply.
+  Final-source local checks and CI are verified separately before merge.

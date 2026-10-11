@@ -136,6 +136,9 @@ pub fn run() {
             if is_ui_test {
                 if let Some(window) = app.get_webview_window("settings") {
                     let _ = window.set_title("mimi UI test settings");
+                    if std::env::var("MIMI_UI_TEST_COMPACT_SETTINGS").as_deref() == Ok("1") {
+                        window.set_size(tauri::LogicalSize::new(520.0, 560.0))?;
+                    }
                 }
             }
             let settings = Arc::new(if is_ui_test {
@@ -414,6 +417,7 @@ pub fn run() {
             commands::open_tencent_setup_page,
             commands::settings_save,
             commands::profile_create,
+            commands::profile_duplicate,
             commands::profile_update,
             commands::profile_select,
             commands::profile_delete,
