@@ -430,6 +430,23 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             waitFor { SettingsStore.translationColorIndex(context) == 3 && status.currentTextColor == SettingsStore.translationColor(context) }
             assertEditorAndCaptionSeparated()
             capture("quick-settings-live-green")
+            context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
+            waitFor { panel.history.text.isNotBlank() }
+            val dividerToggle = editor().findViewById<android.widget.CompoundButton>(R.id.subtitle_dividers)
+            val timeToggle = editor().findViewById<android.widget.CompoundButton>(R.id.subtitle_timestamps)
+            check(!dividerToggle.isChecked && !timeToggle.isChecked && !panel.findViewWithTag<View>("history-divider").isShown)
+            bringIntoView(dividerToggle); tapVisible(dividerToggle)
+            waitFor { SettingsStore.subtitleDividers(context) && panel.findViewWithTag<View>("history-divider").isShown }
+            onUi { SubtitleBus.onFinalPair("Synthetic confirmed caption.", "合成已确认字幕。", "en") }
+            bringIntoView(timeToggle); tapVisible(timeToggle)
+            waitFor { SettingsStore.subtitleTimestamps(context) && panel.timestamp.isShown }
+            check(panel.timestamp.text.toString().matches(Regex("[0-9]{2}:[0-9]{2}:[0-9]{2}")))
+            assertCompleteInertPreview()
+            capture("quick-settings-reading-options")
+            bringIntoView(timeToggle); tapVisible(timeToggle)
+            waitFor { !SettingsStore.subtitleTimestamps(context) && !panel.timestamp.isShown }
+            bringIntoView(dividerToggle); tapVisible(dividerToggle)
+            waitFor { !SettingsStore.subtitleDividers(context) && !panel.findViewWithTag<View>("history-divider").isShown }
             val immersionSwitch = editor().findViewById<View>(R.id.immersive_subtitles)
             bringIntoView(immersionSwitch); tapVisible(immersionSwitch)
             waitFor { WindowInspector.getGlobalWindowViews().any { it.tag == "exit-immersive" } }
@@ -530,6 +547,15 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             capture("panel-after-immersive")
             onUi { running(false); host!!.finish(); host = null }
             waitFor { home.hasWindowFocus() }
+            onUi { home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption) }
+            for ((id, read) in listOf(R.id.subtitle_dividers to { SettingsStore.subtitleDividers(context) },
+                R.id.subtitle_timestamps to { SettingsStore.subtitleTimestamps(context) })) {
+                val control = home.findViewById<android.widget.CompoundButton>(id)
+                bringIntoView(control); tapVisible(control)
+                waitFor { read() && control.isChecked }
+                tapVisible(control); waitFor { !read() && !control.isChecked }
+            }
+            capture("primary-reading-options")
             providerMarkChecks(home)
             context.stopService(Intent(context, MimiService::class.java))
             waitFor { WindowInspector.getGlobalWindowViews().none { it.tag == "mimi-overlay" } }
