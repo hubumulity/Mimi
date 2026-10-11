@@ -38,4 +38,8 @@
     <string name="settings_align_left">ชิดซ้าย</string>
     <string name="settings_align_center">กึ่งกลาง</string>
     <string name="settings_align_right">ชิดขวา</string>
+    <string name="settings_dividers">เส้นคั่นประโยค</string>
+    <string name="settings_dividers_help">แสดงเส้นบางระหว่างประโยค และซ่อนในโหมดเต็มอรรถรส</string>
+    <string name="settings_timestamps">แสดงเวลา</string>
+    <string name="settings_timestamps_help">แสดงเวลาท้องถิ่น (HH:mm:ss) ข้างคำบรรยายที่ยืนยันแล้ว เป็นเวลายืนยันข้อความ ไม่ใช่เวลาเริ่มพูดที่แน่นอน การตั้งค่านี้ใช้ในโหมดเต็มอรรถรสด้วย</string>
 </resources>

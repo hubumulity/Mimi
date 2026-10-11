@@ -635,6 +635,7 @@ impl TranslationSessionController {
                 realtime_preview: state.subtitles.realtime_preview.clone(),
                 display_pair: state.subtitles.display_pair.clone(),
                 display_pair_final: state.subtitles.display_pair_final,
+                display_pair_created_at_ms: state.subtitles.display_pair_created_at_ms,
                 detected_language: state
                     .detected_language
                     .as_ref()

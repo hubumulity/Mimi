@@ -39,4 +39,8 @@
     <string name="settings_align_left">Links</string>
     <string name="settings_align_center">Mitte</string>
     <string name="settings_align_right">Rechts</string>
+    <string name="settings_dividers">Satztrennlinien</string>
+    <string name="settings_dividers_help">Dezente Linien zwischen Sätzen; im immersiven Modus ausgeblendet.</string>
+    <string name="settings_timestamps">Uhrzeit anzeigen</string>
+    <string name="settings_timestamps_help">Zeigt die lokale Uhrzeit (HH:mm:ss) neben bestätigten Untertiteln. Dies ist die Bestätigungszeit, nicht der genaue Sprechbeginn. Gilt auch im immersiven Modus.</string>
 </resources>

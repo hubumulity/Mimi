@@ -39,4 +39,8 @@
     <string name="settings_align_left">靠左</string>
     <string name="settings_align_center">置中</string>
     <string name="settings_align_right">靠右</string>
+    <string name="settings_dividers">分句線</string>
+    <string name="settings_dividers_help">在句子之間顯示淡細線；沉浸模式不顯示。</string>
+    <string name="settings_timestamps">顯示時間</string>
+    <string name="settings_timestamps_help">在已確認字幕旁顯示本機時間（HH:mm:ss）。時間以字幕確認為準，並非精確的說話起點；沉浸模式也跟隨此開關。</string>
 </resources>

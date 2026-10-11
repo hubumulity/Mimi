@@ -39,4 +39,8 @@
     <string name="settings_align_left">왼쪽</string>
     <string name="settings_align_center">가운데</string>
     <string name="settings_align_right">오른쪽</string>
+    <string name="settings_dividers">문장 구분선</string>
+    <string name="settings_dividers_help">문장 사이에 옅은 선을 표시합니다. 몰입 모드에서는 숨깁니다.</string>
+    <string name="settings_timestamps">시간 표시</string>
+    <string name="settings_timestamps_help">확정 자막 옆에 현지 시간(HH:mm:ss)을 표시합니다. 발화 시작 시점이 아닌 확정 시점입니다. 몰입 모드에도 적용됩니다.</string>
 </resources>

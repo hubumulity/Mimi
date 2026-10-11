@@ -5,4 +5,6 @@
     <item name="overlay_height" type="id" />
     <item name="overlay_height_value" type="id" />
     <item name="caption_alignment" type="id" />
+    <item name="subtitle_dividers" type="id" />
+    <item name="subtitle_timestamps" type="id" />
 </resources>

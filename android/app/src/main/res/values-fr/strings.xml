@@ -39,4 +39,8 @@
     <string name="settings_align_left">Gauche</string>
     <string name="settings_align_center">Centré</string>
     <string name="settings_align_right">Droite</string>
+    <string name="settings_dividers">Séparateurs de phrases</string>
+    <string name="settings_dividers_help">Lignes discrètes entre les phrases, masquées en mode immersif.</string>
+    <string name="settings_timestamps">Afficher l’heure</string>
+    <string name="settings_timestamps_help">Afficher l’heure locale (HH:mm:ss) à côté des sous-titres confirmés. Il s’agit de l’heure de confirmation, pas du début exact de la parole. Ce réglage s’applique aussi en mode immersif.</string>
 </resources>

@@ -15,6 +15,7 @@ internal data class CaptionFrameContent(
     val history: String = "",
     val historyLimit: Int = 0,
     val confirmed: Boolean = false,
+    val timestamp: String = "",
 ) {
     fun applyRows(source: TextView, translation: TextView, statusView: TextView, mode: CaptionDisplayMode) {
         source.text = original; translation.text = translated; statusView.text = status
@@ -37,11 +38,16 @@ internal data class CaptionFrameContent(
                 running && !stopping && !visible -> localized.getString(R.string.overlay_listening_empty)
                 else -> ""
             }
-            val history = if (historyLimit > 0) bus.historySnapshot().takeLast(historyLimit).joinToString("\n\n") { pair ->
-                listOfNotNull(pair.source.takeIf { mode.sourceVisible && it.isNotBlank() },
+            val showTime = SettingsStore.subtitleTimestamps(context)
+            val currentTime = bus.displayPairCreatedAt
+            val history = if (historyLimit > 0) bus.historySnapshotWithTime().takeLast(historyLimit)
+                .filterNot { currentTime != null && it.createdAt == currentTime }.joinToString("\n\n") { timed ->
+                val pair = timed.pair
+                listOfNotNull(captionTime(timed.createdAt).takeIf { showTime && it.isNotBlank() }, pair.source.takeIf { mode.sourceVisible && it.isNotBlank() },
                     pair.translation.takeIf { mode.translationVisible && it.isNotBlank() }).joinToString("\n")
             } else ""
-            return CaptionFrameContent(bus.displaySource, bus.displayTranslation, bus.liveHidden, status, history, historyLimit, bus.displayPairFinal)
+            return CaptionFrameContent(bus.displaySource, bus.displayTranslation, bus.liveHidden, status, history, historyLimit, bus.displayPairFinal,
+                if (showTime) captionTime(currentTime) else "")
         }
     }
 }

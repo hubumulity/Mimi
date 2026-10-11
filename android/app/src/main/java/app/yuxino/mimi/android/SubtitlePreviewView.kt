@@ -59,7 +59,7 @@ class SubtitlePreviewView @JvmOverloads constructor(context: Context, attrs: Att
                 is CompactCaptionView -> { source = current.source; translation = current.translation; status = current.status }
             }
         }
-        val style = CaptionFrameStyle(fontSize, color, opacity.coerceIn(20, 100), backgroundAlpha, displayMode, alignment)
+        val style = CaptionFrameStyle(fontSize, color, opacity.coerceIn(20, 100), backgroundAlpha, displayMode, alignment, SettingsStore.subtitleDividers(context))
         when (val current = frame) {
             is CaptionPanelView -> current.applyStyle(style)
             is CompactCaptionView -> current.applyStyle(style, true)
@@ -80,7 +80,7 @@ class SubtitlePreviewView @JvmOverloads constructor(context: Context, attrs: Att
                 "th" -> R.string.preview_th
                 else -> R.string.preview_zh
             })
-            showContent(CaptionFrameContent(original, translated))
+            showContent(CaptionFrameContent(original, translated, timestamp = if (SettingsStore.subtitleTimestamps(context)) "13:08:42" else ""))
         }
     }
 
@@ -96,7 +96,7 @@ class SubtitlePreviewView @JvmOverloads constructor(context: Context, attrs: Att
     internal fun showContent(content: CaptionFrameContent) {
         when (val current = frame) {
             is CaptionPanelView -> current.showContent(content, displayMode)
-            is CompactCaptionView -> content.applyRows(current.source, current.translation, current.status, displayMode)
+            is CompactCaptionView -> current.showContent(content, displayMode)
         }
     }
 
@@ -147,7 +147,7 @@ internal class CaptionPreviewStage(context: Context) : ViewGroup(context) {
         frame.measure(exactWidth, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         if (frame is CaptionPanelView) {
             val nativeHeight = captionPanelHeight(extent.second, heightPercent, frame.chromeHeight(),
-                frame.translation.paint.fontSpacing.toInt(), resources.displayMetrics.density)
+                frame.minimumReadingHeight())
             frame.measure(exactWidth, MeasureSpec.makeMeasureSpec(nativeHeight, MeasureSpec.EXACTLY))
         }
         frameScale = minOf(1f, width.toFloat() / frame.measuredWidth.coerceAtLeast(1), height.toFloat() / frame.measuredHeight.coerceAtLeast(1))

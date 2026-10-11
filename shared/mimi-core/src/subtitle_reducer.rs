@@ -410,8 +410,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                             if !source.is_empty() && !text.is_empty() {
                                 self.snapshot.preview_pair = None;
                             }
-                            self.update_final_display_pair(&source, &text, None);
-                            self.append_history_if_possible(source, text);
+                            self.confirm_legacy_pair(source, text);
                         }
                     }
                 }
@@ -423,8 +422,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 if !source.is_empty() && !translation.is_empty() {
                     self.snapshot.preview_pair = None;
                 }
-                self.update_final_display_pair(&source, &translation, None);
-                self.append_history_if_possible(source, translation);
+                self.confirm_legacy_pair(source, translation);
             }
             SubtitleEvent::FinalPair {
                 source,
@@ -440,8 +438,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 if !source.is_empty() && !translation.is_empty() {
                     self.snapshot.preview_pair = None;
                 }
-                self.update_final_display_pair(&source, &translation, None);
-                self.append_history_if_possible(source, translation);
+                self.confirm_legacy_pair(source, translation);
             }
             SubtitleEvent::IdentifiedFinalPair {
                 utterance_id,
@@ -479,10 +476,10 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                     );
                     self.snapshot.preview_pair = None;
                 }
-                if self
+                let promoted = self
                     .display_source_ordinal
-                    .is_none_or(|display| display <= ordinal)
-                {
+                    .is_none_or(|display| display <= ordinal);
+                if promoted {
                     self.snapshot.display_pair = Some(PreviewSubtitlePair {
                         utterance_id: Some(utterance_id),
                         source: source.clone(),
@@ -493,7 +490,10 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                     self.display_source_ordinal = Some(ordinal);
                 }
                 self.source_draft_since_confirmation = false;
-                self.append_confirmed_history(source, translation, true);
+                let time = self.append_confirmed_history(source, translation, true);
+                if promoted && time.is_some() {
+                    self.snapshot.display_pair_created_at_ms = time;
+                }
             }
             SubtitleEvent::ConfirmedPair {
                 utterance_id,
@@ -542,8 +542,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                     self.snapshot.preview_pair = None;
                     self.preview_source_utterance_id = None;
                 }
-                self.update_final_display_pair(&source, &translation, source_utterance_id);
-                self.append_confirmed_history(source, translation, true);
+                self.confirm_display_pair(source, translation, source_utterance_id, true);
             }
             SubtitleEvent::Clear => {
                 let old_ids: Vec<_> = self
@@ -686,7 +685,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         source: &str,
         translation: &str,
         source_id: Option<u64>,
-    ) {
+    ) -> bool {
         let utterance_id = source_id
             .map(|id| self.source_layout_identity(id))
             .or_else(|| self.snapshot.source.utterance_id.clone());
@@ -698,7 +697,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             },
             source_id,
             true,
-        );
+        )
     }
 
     fn update_display_pair(
@@ -706,7 +705,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         pair: PreviewSubtitlePair,
         source_id: Option<u64>,
         is_final: bool,
-    ) {
+    ) -> bool {
         if pair.source.is_empty()
             || pair.translation.is_empty()
             || source_id.is_some_and(|id| {
@@ -714,28 +713,54 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                     .is_some_and(|owner| owner > id)
             })
         {
-            return;
+            return false;
         }
         self.snapshot.display_pair = Some(pair);
         self.display_source_ordinal = None;
         self.display_pair_source_utterance_id = source_id;
         self.snapshot.display_pair_final = is_final;
+        if !is_final {
+            self.snapshot.display_pair_created_at_ms = None;
+        }
+        true
     }
 
     fn clear_unconfirmed_display_pair(&mut self) {
         if !self.snapshot.display_pair_final {
             self.snapshot.display_pair = None;
+            self.snapshot.display_pair_created_at_ms = None;
             self.display_source_ordinal = None;
             self.display_pair_source_utterance_id = None;
         }
     }
 
-    fn append_history_if_possible(&mut self, source: String, translation: String) {
+    fn confirm_legacy_pair(&mut self, source: String, translation: String) {
         if source.is_empty() || translation.is_empty() {
             return;
         }
         let new_recognition = std::mem::take(&mut self.source_draft_since_confirmation);
-        self.append_confirmed_history(source, translation, new_recognition);
+        self.confirm_display_pair(source, translation, None, new_recognition);
+    }
+
+    fn confirm_display_pair(
+        &mut self,
+        source: String,
+        translation: String,
+        source_id: Option<u64>,
+        is_new: bool,
+    ) {
+        let duplicate = !is_new
+            && self.snapshot.display_pair_final
+            && self
+                .snapshot
+                .display_pair
+                .as_ref()
+                .is_some_and(|pair| pair.source == source && pair.translation == translation);
+        let promoted = self.update_final_display_pair(&source, &translation, source_id);
+        let time = self.append_confirmed_history(source, translation, is_new);
+        if promoted && !duplicate && time.is_some() {
+            self.snapshot.display_pair_created_at_ms = time;
+        }
     }
 
     fn append_confirmed_history(
@@ -743,9 +768,9 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         source: String,
         translation: String,
         is_new_utterance: bool,
-    ) {
+    ) -> Option<u64> {
         if source.is_empty() || translation.is_empty() {
-            return;
+            return None;
         }
         // Timestamps also identify the frontend's bounded history rows. Two
         // legitimate repeated finals can finish within one millisecond.
@@ -762,7 +787,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             && !is_new_utterance
             && self.snapshot.history.last() == Some(&pair)
         {
-            return;
+            return None;
         }
         self.has_session_confirmation = true;
         self.archive.append(&pair);
@@ -771,6 +796,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             let overflow = self.snapshot.history.len() - self.max_history_count;
             self.snapshot.history.drain(0..overflow);
         }
+        Some(created_at_ms)
     }
 }
 
@@ -1366,6 +1392,53 @@ mod tests {
         assert!(
             reducer.snapshot.history[0].created_at_ms < reducer.snapshot.history[1].created_at_ms
         );
+    }
+
+    #[test]
+    fn current_confirmation_time_survives_disabled_history_and_ignores_duplicates() {
+        let mut reducer = SubtitleReducer::new(0);
+        let event = SubtitleEvent::FinalPair {
+            source: "Synthetic source".into(),
+            translation: "Synthetic translation".into(),
+        };
+        reducer.apply(event.clone());
+        let time = reducer.snapshot.display_pair_created_at_ms.unwrap();
+        assert!(time > 0);
+        assert!(reducer.snapshot.history.is_empty());
+        reducer.apply(event);
+        assert_eq!(reducer.snapshot.display_pair_created_at_ms, Some(time));
+        reducer.apply(SubtitleEvent::Clear);
+        assert_eq!(reducer.snapshot.display_pair_created_at_ms, None);
+    }
+
+    #[test]
+    fn an_older_identified_final_cannot_replace_the_current_time() {
+        let mut reducer = SubtitleReducer::default();
+        for id in ["A", "B"] {
+            reducer.apply(SubtitleEvent::UtteranceText {
+                utterance_id: id.into(),
+                role: UtteranceRole::Source,
+                text: "Same synthetic source".into(),
+                is_final: false,
+            });
+        }
+        let event = |id: &str| SubtitleEvent::IdentifiedFinalPair {
+            utterance_id: id.into(),
+            source: "Same synthetic source".into(),
+            translation: "Same synthetic translation".into(),
+        };
+        reducer.apply(event("B"));
+        let time = reducer.snapshot.display_pair_created_at_ms;
+        assert_eq!(
+            time,
+            reducer
+                .snapshot
+                .history
+                .last()
+                .map(|pair| pair.created_at_ms)
+        );
+        reducer.apply(event("A"));
+        assert_eq!(reducer.snapshot.display_pair_created_at_ms, time);
     }
 
     #[test]

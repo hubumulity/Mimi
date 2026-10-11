@@ -40,6 +40,8 @@ export interface SourceSubtitleSnapshot {
   displayPair?: SubtitleSnapshot["previewPair"];
   /** Reducer confirmation, independent of preview completion. Missing means unconfirmed. */
   displayPairFinal?: boolean;
+  /** Shared-core confirmation time; absent for replaceable previews. */
+  displayPairCreatedAt?: number;
   audioSource: AudioSource;
   source: SubtitleLineSnapshot;
   translation: SubtitleLineSnapshot;
@@ -59,6 +61,8 @@ export interface SubtitleSnapshot {
   displayPair?: SubtitleSnapshot["previewPair"];
   /** Reducer confirmation, independent of preview completion. Missing means unconfirmed. */
   displayPairFinal?: boolean;
+  /** Shared-core confirmation time; absent for replaceable previews. */
+  displayPairCreatedAt?: number;
   /** Independent source streams; top-level history remains chronological. */
   tracks?: SourceSubtitleSnapshot[];
   /** One replaceable completed preview; never confirmed history. */

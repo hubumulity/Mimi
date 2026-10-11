@@ -143,6 +143,13 @@ pub struct SourceSubtitleSnapshot {
     /// True only after the reducer accepts a final pair; a completed preview is false.
     #[serde(default, rename = "displayPairFinal")]
     pub display_pair_final: bool,
+    /// Confirmation time of the current complete pair, even with history disabled.
+    #[serde(
+        default,
+        rename = "displayPairCreatedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub display_pair_created_at_ms: Option<u64>,
     pub detected_language: Option<String>,
     pub is_translation_pending: bool,
     pub is_translation_preview_pending: bool,
@@ -174,6 +181,13 @@ pub struct SubtitleSnapshot {
     /// True only after the reducer accepts a final pair; a completed preview is false.
     #[serde(default, rename = "displayPairFinal")]
     pub display_pair_final: bool,
+    /// Confirmation time of the current complete pair, even with history disabled.
+    #[serde(
+        default,
+        rename = "displayPairCreatedAt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub display_pair_created_at_ms: Option<u64>,
 }
 
 impl SubtitleSnapshot {
@@ -187,6 +201,7 @@ impl SubtitleSnapshot {
             preview_pair: None,
             display_pair: None,
             display_pair_final: false,
+            display_pair_created_at_ms: None,
         }
     }
 }

@@ -14,6 +14,7 @@ internal data class CaptionFrameStyle(
     val backgroundAlpha: Int,
     val mode: CaptionDisplayMode,
     val alignment: CaptionAlignment,
+    val dividers: Boolean = false,
 ) {
     companion object {
         fun saved(context: Context, originalOnly: Boolean = false) = CaptionFrameStyle(
@@ -21,6 +22,7 @@ internal data class CaptionFrameStyle(
             SettingsStore.overlayOpacity(context), SettingsStore.overlayBgAlpha(context),
             if (originalOnly || SettingsStore.originalTextOnly(context)) CaptionDisplayMode.ORIGINAL else SettingsStore.displayMode(context),
             SettingsStore.captionAlignment(context),
+            SettingsStore.subtitleDividers(context),
         )
     }
 }
@@ -47,7 +49,6 @@ internal fun captionProviderMarks(context: Context): List<Int> {
 }
 
 /** Native frame sizing shared by the preview and WindowManager adapter. */
-internal fun captionPanelHeight(availableHeight: Int, percent: Int, chromeHeight: Int, lineHeight: Int, density: Float, limit: Int = availableHeight): Int {
-    val reading = maxOf((64 * density).toInt(), lineHeight + (8 * density).toInt())
-    return maxOf(chromeHeight + reading, availableHeight * percent.coerceIn(20, 70) / 100).coerceAtMost(limit)
+internal fun captionPanelHeight(availableHeight: Int, percent: Int, chromeHeight: Int, minimumReadingHeight: Int, limit: Int = availableHeight): Int {
+    return maxOf(chromeHeight + minimumReadingHeight, availableHeight * percent.coerceIn(20, 70) / 100).coerceAtMost(limit)
 }

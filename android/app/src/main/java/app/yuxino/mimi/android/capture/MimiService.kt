@@ -1049,9 +1049,9 @@ class MimiService : Service() {
         val chrome = (panel?.paddingTop ?: dp(10)) + (panel?.paddingBottom ?: dp(10)) + dp(8) +
                 (panel?.findViewWithTag<View>("overlay-toolbar")?.height?.takeIf { it > 0 } ?: dp(48)) +
                 (panel?.findViewWithTag<View>("overlay-actions")?.height?.takeIf { it > 0 } ?: dp(48))
-        val lineHeight = expandedTranslationView?.paint?.fontSpacing?.toInt() ?: dp(24)
+        val reading = (panel as? app.yuxino.mimi.android.CaptionPanelView)?.minimumReadingHeight() ?: dp(64)
         return app.yuxino.mimi.android.captionPanelHeight(availableHeight,
-            resizeHeightPercent ?: SettingsStore.overlayHeightPercent(this), chrome, lineHeight, resources.displayMetrics.density)
+            resizeHeightPercent ?: SettingsStore.overlayHeightPercent(this), chrome, reading)
     }
 
     private fun hideOverlay() {
@@ -1091,7 +1091,7 @@ class MimiService : Service() {
             captureObservation?.state, isRunning, isStopping)
         val statusLine = content.status
         (compactView as? app.yuxino.mimi.android.CompactCaptionView)?.let {
-            content.applyRows(it.source, it.translation, it.status, mode)
+            it.showContent(content, mode)
             it.source.setTextColor(if (mode == CaptionDisplayMode.ORIGINAL) SettingsStore.translationColor(this) else 0xFFE7E7E7.toInt())
         }
         (expandedView as? app.yuxino.mimi.android.CaptionPanelView)?.let {

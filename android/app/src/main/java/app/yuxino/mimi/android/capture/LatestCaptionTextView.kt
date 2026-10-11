@@ -9,6 +9,7 @@ import android.widget.TextView
 // Shared by the preview and system overlay, which has no AppCompat Activity/theme.
 @SuppressLint("AppCompatCustomView")
 internal class LatestCaptionTextView(context: Context) : TextView(context) {
+    var followsLatest = true
     private val followLatest = ViewTreeObserver.OnPreDrawListener {
         // Text can relayout without changing this view's size. Wait for that
         // layout too, and redraw once if the viewport moved before painting.
@@ -36,7 +37,7 @@ internal class LatestCaptionTextView(context: Context) : TextView(context) {
         if (visibleHeight <= 0) return false
         // Align a whole line, rather than cutting through the preceding line's
         // glyphs because the first line includes extra font padding.
-        val firstVisibleLine = (textLayout.lineCount - maxLines).coerceAtLeast(0)
+        val firstVisibleLine = if (followsLatest) (textLayout.lineCount - maxLines).coerceAtLeast(0) else 0
         val tail = textLayout.getLineTop(firstVisibleLine)
         if (scrollY == tail) return false
         scrollTo(0, tail)

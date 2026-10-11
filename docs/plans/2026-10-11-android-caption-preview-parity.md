@@ -15,8 +15,13 @@ The preview measures a complete frame at the real overlay width and height
 against the display's safe viewport. Fit that frame uniformly into a stable
 preview stage, preserving line wrapping and proportions. Settings remain pinned
 and independently scrollable; font, width and height edits must not move the
-slider being dragged. Normal mode shows complete bounded content inside the
-same scrolling panel; immersion retains the real compact caption line limits.
+slider being dragged. While following, normal mode allocates measured visual
+lines to both languages from its actual reading height. Short text gives unused
+space to the other lane, and long text follows its newest complete lines. A
+deliberate upward scroll opens the complete bounded text for reading; returning
+to the bottom resumes following. Keep the user's window height stable as history
+grows, with a minimum for one complete line in each selected lane. Immersion
+retains the real compact caption line limits.
 
 Use pure black and an 80% default background, matching desktop's
 `subtitleBackgroundColor`. The separate Android whole-window opacity defaults
@@ -50,3 +55,12 @@ rather than reducing its reading viewport or clipping chrome. Do not persist
 temporary scaling or positioning. Cover live waiting/error/content updates,
 inert home/service/style/immersion/drag/resize gestures, restored actions, both
 provider badge cases and narrow/landscape large-font layouts in native checks.
+
+Sentence dividers and confirmation time are independent appearance switches,
+both off by default, available in primary and quick settings. Dividers belong
+between sentences and remain hidden in immersion. Time uses shared-core epoch
+milliseconds from an accepted final, formatted locally as HH:mm:ss, including
+with history disabled; never assign a Kotlin arrival time or label drafts as
+confirmed. Show the same metadata in the real and preview frames, and reserve
+its measured height before allocating bilingual lines. Android remains playback
+capture only; these settings do not add a microphone source.

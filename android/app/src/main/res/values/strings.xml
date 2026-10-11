@@ -38,4 +38,8 @@
     <string name="settings_align_left">Left</string>
     <string name="settings_align_center">Center</string>
     <string name="settings_align_right">Right</string>
+    <string name="settings_dividers">Sentence dividers</string>
+    <string name="settings_dividers_help">Faint lines between sentences, hidden in Immersive Mode.</string>
+    <string name="settings_timestamps">Show time</string>
+    <string name="settings_timestamps_help">Show local confirmation time (HH:mm:ss) beside confirmed subtitles. This is not the exact start of speech. Also applies in Immersive Mode.</string>
 </resources>

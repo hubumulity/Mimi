@@ -27,6 +27,8 @@ object SettingsStore {
     private const val KEY_OVERLAY_BG_ALPHA = "overlay_bg_alpha"
     private const val KEY_IMMERSIVE_SUBTITLES = "immersive_subtitles"
     private const val KEY_HISTORY_LINES = "history_lines"
+    private const val KEY_SUBTITLE_DIVIDERS = "subtitle_dividers"
+    private const val KEY_SUBTITLE_TIMESTAMPS = "subtitle_timestamps"
     private const val KEY_HOTWORDS = "hotwords"
     private const val KEY_TRANSLATION_COLOR = "translation_color"
     private const val KEY_OVERLAY_X = "overlay_x"
@@ -68,7 +70,7 @@ object SettingsStore {
         val keys = setOf(KEY_FONT_SIZE, KEY_OVERLAY_OPACITY, KEY_OVERLAY_BG_ALPHA,
             KEY_IMMERSIVE_SUBTITLES, KEY_HISTORY_LINES, KEY_TRANSLATION_COLOR, KEY_OVERLAY_Y,
             KEY_OVERLAY_X, KEY_EXPANDED_Y, KEY_EXPANDED_X, KEY_DISPLAY_MODE, KEY_OVERLAY_WIDTH,
-            KEY_OVERLAY_HEIGHT, KEY_CAPTION_ALIGNMENT)
+            KEY_OVERLAY_HEIGHT, KEY_CAPTION_ALIGNMENT, KEY_SUBTITLE_DIVIDERS, KEY_SUBTITLE_TIMESTAMPS)
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key in keys) onChange()
         }
@@ -243,6 +245,11 @@ object SettingsStore {
         writeAppearance(get(context).edit().putInt(KEY_HISTORY_LINES, limit))
         app.yuxino.mimi.android.provider.SubtitleBus.setHistoryLimit(limit)
     }
+
+    fun subtitleDividers(context: Context): Boolean = get(context).getBoolean(KEY_SUBTITLE_DIVIDERS, false)
+    fun setSubtitleDividers(context: Context, value: Boolean) = writeAppearance(get(context).edit().putBoolean(KEY_SUBTITLE_DIVIDERS, value))
+    fun subtitleTimestamps(context: Context): Boolean = get(context).getBoolean(KEY_SUBTITLE_TIMESTAMPS, false)
+    fun setSubtitleTimestamps(context: Context, value: Boolean) = writeAppearance(get(context).edit().putBoolean(KEY_SUBTITLE_TIMESTAMPS, value))
 
     /**
      * Hotword pairs parsed from comma/newline-separated `source=translation` or bare

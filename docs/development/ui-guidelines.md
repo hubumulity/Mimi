@@ -195,6 +195,18 @@ and actions are visible. Respect the user's height and bound its reading viewpor
 independently of history length. Large font controls and caption reading space
 must both remain visible.
 
+Android follows live captions with measured visual-line budgets for the selected
+languages. Neither original nor translation may occupy the other lane's last
+complete line. Short text gives spare height to the other language; resizing and
+font changes recompute from the native reading viewport, including visible time
+metadata. Deliberate upward scrolling opens the complete bounded text and keeps
+the reader's position through updates; returning to the bottom resumes following.
+Native checks must assert visible glyph bounds for both lanes, not just populated
+TextViews, an outer minimum height or pixel parity between two clipped renderers.
+Sentence dividers and local confirmation time default off and are controlled in
+both appearance entry points. Use the shared final's time, including with history
+disabled, hide time on drafts, and avoid duplicating the current pair in history.
+
 Before/After screenshots must show stable native frames: wait for the owning
 activity to regain focus and for modal exit/entry animations before capturing.
 Inspect every saved image against its scenario; a successful file write or test

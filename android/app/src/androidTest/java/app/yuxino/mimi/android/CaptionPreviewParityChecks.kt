@@ -37,6 +37,7 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         error("Frame did not settle at $location")
     }
     private fun root(): View? = WindowInspector.getGlobalWindowViews().firstOrNull { it.tag == "mimi-overlay" }
+    private fun actual(): View? = root()?.findViewWithTag<View>(if (SettingsStore.immersiveSubtitles(context)) "compact-subtitle" else "expanded-subtitles")
     private fun running(value: Boolean) {
         MimiService::class.java.getDeclaredField("isRunning").apply { isAccessible = true; set(null, value) }
     }
@@ -52,8 +53,8 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         view.draw(canvas); canvas.restoreToCount(layer)
     }
     private fun rows(view: View): List<TextView> = when (view) {
-        is CaptionPanelView -> listOf(view.status, view.source, view.translation, view.history)
-        is CompactCaptionView -> listOf(view.status, view.source, view.translation)
+        is CaptionPanelView -> listOf(view.status, view.source, view.translation, view.history, view.timestamp)
+        is CompactCaptionView -> listOf(view.status, view.source, view.translation, view.timestamp)
         else -> error("Unexpected frame type")
     }
     private fun quickEditor(actual: CaptionPanelView, name: String, screenshot: Boolean) {
@@ -120,6 +121,8 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
             if (actual is CaptionPanelView) {
                 val sample = preview.frame as CaptionPanelView
                 check(actual.chromeHeight() == sample.chromeHeight() && actual.transcriptScroll.scrollY == sample.transcriptScroll.scrollY) { "Reading viewport differs at $name" }
+                assertReadablePair(actual, name)
+                assertReadablePair(sample, "$name-preview")
                 for (tag in listOf("overlay-drag-mark", "overlay-route", "overlay-model", "overlay-providers", "enter-immersive")) {
                     val a = actual.findViewWithTag<View>(tag); val b = sample.findViewWithTag<View>(tag)
                     check(a.width == b.width && a.height == b.height && a.left == b.left && a.top == b.top) { "Frame chrome differs: $tag" }
@@ -157,6 +160,22 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         cases++
         (actual() as? CaptionPanelView)?.let { quickEditor(it, name, screenshot) }
     }
+    private fun assertReadablePair(panel: CaptionPanelView, name: String) {
+        if (!panel.followingLive) return
+        for (row in listOf(panel.source, panel.translation).filter { it.visibility == View.VISIBLE }) {
+            val layout = checkNotNull(row.layout)
+            val first = (layout.lineCount - row.maxLines).coerceAtLeast(0)
+            val origin = row.top - panel.transcriptScroll.scrollY + row.compoundPaddingTop - row.scrollY
+            val top = origin + layout.getLineTop(first)
+            val bottom = origin + layout.getLineBottom(layout.lineCount - 1)
+            check(top >= 0 && bottom <= panel.transcriptScroll.height) {
+                "Visible caption glyphs clipped at $name/${row.tag}: $top..$bottom in ${panel.transcriptScroll.height}, lines=${row.maxLines}/${layout.lineCount}"
+            }
+        }
+        if (panel.timestamp.visibility == View.VISIBLE) {
+            check(panel.timestamp.top - panel.transcriptScroll.scrollY >= 0) { "Confirmation time pushed out of view at $name" }
+        }
+    }
     fun run(arguments: Bundle?) {
         if (arguments?.getString("apply_desktop_surface") == "true") {
             ui { SettingsStore.setOverlayOpacity(context, 100); SettingsStore.setOverlayBgAlpha(context, 80) }
@@ -179,6 +198,8 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
             SettingsStore.sourceLang(context).let { { SettingsStore.setSourceLang(context, it) } },
             SettingsStore.targetLang(context).let { { SettingsStore.setTargetLang(context, it) } },
             SettingsStore.historyLines(context).let { { SettingsStore.setHistoryLines(context, it) } },
+            SettingsStore.subtitleDividers(context).let { { SettingsStore.setSubtitleDividers(context, it) } },
+            SettingsStore.subtitleTimestamps(context).let { { SettingsStore.setSubtitleTimestamps(context, it) } },
         )
         val seenPrefs = context.getSharedPreferences("first_run", 0)
         val hadSeen = seenPrefs.contains("seen"); val seen = seenPrefs.getBoolean("seen", false)
@@ -198,6 +219,7 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                     SettingsStore.setImmersiveSubtitles(context, false); SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
                     SettingsStore.setFontSize(context, 17); SettingsStore.setOverlayWidthPercent(context, 92)
                     SettingsStore.setOverlayHeightPercent(context, 30); SettingsStore.setOverlayBgAlpha(context, 80); SettingsStore.setOverlayOpacity(context, 100)
+                    SettingsStore.setSubtitleDividers(context, false); SettingsStore.setSubtitleTimestamps(context, false)
                 }
                 compare(home, "$prefix-normal", true)
                 val preview = home.findViewById<SubtitlePreviewView>(R.id.subtitle_preview)
@@ -221,6 +243,23 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                     SettingsStore.setFontSize(context, 24); SettingsStore.setOverlayWidthPercent(context, 55); SettingsStore.setOverlayHeightPercent(context, 20)
                 }
                 compare(home, "$prefix-narrow-long", true)
+                ui {
+                    SubtitleBus.onSourceDraft("A synthetic English caption wraps to several lines while its Chinese translation remains visible in the same small window.", "en")
+                    SubtitleBus.onTranslationDraft("合成译文应与英文同时可见，不能被原文挤出窗口。")
+                    SettingsStore.setFontSize(context, 15); SettingsStore.setOverlayWidthPercent(context, 92)
+                }
+                compare(home, "$prefix-bilingual-small", true)
+                ui {
+                    SettingsStore.setSubtitleTimestamps(context, true)
+                    SubtitleBus.onFinalPair("Synthetic confirmed caption with a long English reference lane. ".repeat(4), "合成已确认译文必须和英文一起显示。".repeat(4), "en")
+                }
+                compare(home, "$prefix-confirmation-time", true)
+                ui {
+                    check((actual() as CaptionPanelView).timestamp.text.toString().matches(Regex("[0-9]{2}:[0-9]{2}:[0-9]{2}")))
+                    SubtitleBus.onSourceDraft("Synthetic replacement draft.", "en")
+                }
+                compare(home, "$prefix-draft-no-time")
+                ui { check((actual() as CaptionPanelView).timestamp.visibility == View.GONE); SettingsStore.setSubtitleTimestamps(context, false) }
                 ui { SettingsStore.setFontSize(context, 12); SettingsStore.setOverlayWidthPercent(context, 100); SettingsStore.setOverlayHeightPercent(context, 70); SettingsStore.setOverlayBgAlpha(context, 100) }
                 compare(home, "$prefix-solid-large")
                 ui {
@@ -238,6 +277,9 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
                 await { SubtitleBus.historySnapshot().isNotEmpty() }
                 compare(home, "$prefix-history", true)
+                ui { check(!(actual() as CaptionPanelView).findViewWithTag<View>("history-divider").isShown); SettingsStore.setSubtitleDividers(context, true) }
+                compare(home, "$prefix-dividers-on", true)
+                ui { check((actual() as CaptionPanelView).findViewWithTag<View>("history-divider").isShown); SettingsStore.setSubtitleDividers(context, false) }
                 ui {
                     SettingsStore.setImmersiveSubtitles(context, true); SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
                     SubtitleBus.onSourceDraft("Synthetic immersion caption with enough words to overflow the compact viewport. ".repeat(5), "ja")
@@ -250,6 +292,12 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                         "Long immersion fixture did not overflow both viewports"
                     }
                 }
+                ui {
+                    SettingsStore.setSubtitleTimestamps(context, true)
+                    SubtitleBus.onFinalPair("Synthetic immersion final.", "合成沉浸终稿。", "en")
+                }
+                compare(home, "$prefix-immersive-time", true)
+                ui { check((actual() as CompactCaptionView).timestamp.text.isNotBlank()); SettingsStore.setSubtitleTimestamps(context, false) }
                 ui { SubtitleBus.clear() }; compare(home, "$prefix-immersive-waiting")
                 context.stopService(Intent(context, MimiService::class.java)); await { root() == null }; ui { running(false); home.finish() }
             }

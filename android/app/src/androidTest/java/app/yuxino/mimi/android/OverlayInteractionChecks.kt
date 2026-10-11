@@ -314,6 +314,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
         val color = SettingsStore.translationColorIndex(context)
         val opacity = SettingsStore.overlayOpacity(context)
         val background = SettingsStore.overlayBgAlpha(context)
+        val dividers = SettingsStore.subtitleDividers(context)
+        val timestamps = SettingsStore.subtitleTimestamps(context)
         val x = SettingsStore.overlayXOffset(context, true)
         val y = SettingsStore.expandedYOffset(context)
         val prefs = context.getSharedPreferences("first_run", 0)
@@ -331,6 +333,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 SettingsStore.setOverlayBgAlpha(context, 37)
                 SettingsStore.setOverlayOpacity(context, 60)
                 SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
+                SettingsStore.setSubtitleDividers(context, false); SettingsStore.setSubtitleTimestamps(context, false)
                 check(prefs.edit().putBoolean("seen", true).putBoolean("immersive_seen", true).commit())
             }
             home = test.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -487,11 +490,29 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 check(captionPair == (SubtitleBus.displaySource to SubtitleBus.displayTranslation))
             }
             onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL) }
+            onUi { SettingsStore.setSubtitleDividers(context, true) }
             val fixedHeight = root().height
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
             waitFor { SubtitleBus.historySnapshot().isNotEmpty() && root().findViewWithTag<View>("history-divider").isShown }
             check(root().height == fixedHeight) { "History changed the user's window height" }
             capture("panel-history-fixed-height")
+            onUi {
+                SubtitleBus.onSourceDraft("Synthetic long caption for native reading gestures. ".repeat(12), "en")
+                SubtitleBus.onTranslationDraft("合成长句用于验证双语分配和全文回看。".repeat(12))
+            }
+            waitFor { panel.source.lineCount > panel.source.maxLines && panel.translation.lineCount > panel.translation.maxLines }
+            move(panel.transcriptScroll, 0, 32)
+            waitFor { !panel.followingLive && panel.source.maxLines == Int.MAX_VALUE && panel.translation.maxLines == Int.MAX_VALUE }
+            val readingPosition = panel.transcriptScroll.scrollY
+            onUi { SubtitleBus.onTranslationDraft("合成长句更新时应保留主动回看的位置。".repeat(14)) }
+            idle()
+            check(panel.transcriptScroll.scrollY == readingPosition) { "A subtitle update stole the history reader's position" }
+            capture("panel-full-text-reading")
+            onUi { panel.transcriptScroll.fullScroll(View.FOCUS_DOWN) }
+            idle()
+            move(panel.transcriptScroll, 0, -24)
+            waitFor { panel.followingLive && panel.source.maxLines != Int.MAX_VALUE && panel.translation.maxLines != Int.MAX_VALUE }
+            capture("panel-return-to-bilingual-live")
             val savedX = SettingsStore.overlayXOffset(context, true); val savedY = SettingsStore.expandedYOffset(context)
             repeat(2) {
                 tapVisible(root().findViewWithTag("enter-immersive"))
@@ -535,6 +556,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 SettingsStore.setFontSize(context, font); SettingsStore.setImmersiveSubtitles(context, immersive)
                 SettingsStore.setTranslationColorIndex(context, color)
                 SettingsStore.setOverlayBgAlpha(context, background); SettingsStore.setOverlayOpacity(context, opacity)
+                SettingsStore.setSubtitleDividers(context, dividers); SettingsStore.setSubtitleTimestamps(context, timestamps)
                 val restore = prefs.edit()
                 if (hadSeen) restore.putBoolean("seen", seen) else restore.remove("seen")
                 if (hadImmersiveSeen) restore.putBoolean("immersive_seen", immersiveSeen) else restore.remove("immersive_seen")

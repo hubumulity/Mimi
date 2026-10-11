@@ -38,4 +38,8 @@
     <string name="settings_align_left">左揃え</string>
     <string name="settings_align_center">中央揃え</string>
     <string name="settings_align_right">右揃え</string>
+    <string name="settings_dividers">文の区切り線</string>
+    <string name="settings_dividers_help">文の間に薄い細線を表示します。イマーシブモードでは非表示です。</string>
+    <string name="settings_timestamps">時刻を表示</string>
+    <string name="settings_timestamps_help">確定した字幕の横にローカル時刻（HH:mm:ss）を表示します。字幕の確定時刻であり、正確な発話開始時刻ではありません。イマーシブモードでもこの設定に従います。</string>
 </resources>

@@ -5,6 +5,7 @@ import org.json.JSONObject
 /** Native UI facade over the exact Rust reducer used by desktop. */
 object SubtitleBus {
     data class Pair(val source: String, val translation: String)
+    data class TimedPair(val pair: Pair, val createdAt: Long?)
     data class RuntimeFeedback(val connectionStatus: String = "idle", val recoveryReason: String? = null,
         val retryScheduled: Boolean = false, val translationTimedOut: Boolean = false)
     @Volatile var runtimeFeedback = RuntimeFeedback()
@@ -32,6 +33,8 @@ object SubtitleBus {
     val displayTranslation: String get() = if (originalOnly) "" else
         realtimeText("translation") ?: snapshot.optJSONObject("displayPair")?.optString("translation") ?: translationDraft.ifEmpty { translationFinal }
     val displayPairFinal: Boolean get() = (atomicPreview || snapshot.optJSONObject("realtimePreview") == null) && snapshot.optBoolean("displayPairFinal")
+    val displayPairCreatedAt: Long? get() = if (displayPairFinal)
+        snapshot.optLong("displayPairCreatedAt").takeIf { it > 0 } else null
     @Volatile var statusLine = ""
     @Volatile var liveHidden = false
     @Volatile var detectedSourceLanguage: String? = null
@@ -126,7 +129,8 @@ object SubtitleBus {
         }
         notifyListeners()
     }
-    fun historySnapshot(): List<Pair> = synchronized(lock) {
+    fun historySnapshot(): List<Pair> = historySnapshotWithTime().map { it.pair }
+    fun historySnapshotWithTime(): List<TimedPair> = synchronized(lock) {
         val rows = snapshot.optJSONArray("history") ?: return@synchronized emptyList()
         val count = minOf(rows.length(), historyLimit)
         List(count) { offset ->
@@ -134,7 +138,8 @@ object SubtitleBus {
             val row = rows.getJSONObject(index)
             val source = row.getString("source")
             val translation = row.getString("translation")
-            Pair(source, if (originalOnly && source == translation) "" else translation)
+            TimedPair(Pair(source, if (originalOnly && source == translation) "" else translation),
+                row.optLong("createdAt").takeIf { it > 0 })
         }
     }
     fun onStatus(line: String) { statusLine = line; notifyListeners() }

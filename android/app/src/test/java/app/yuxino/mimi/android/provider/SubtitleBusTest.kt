@@ -7,6 +7,23 @@ import org.junit.Test
 
 /** Exercises the real JNI reducer, rather than a duplicate Kotlin implementation. */
 class SubtitleBusTest {
+    @Test fun confirmationTimeComesThroughActualJniWithHistoryDisabled() {
+        SubtitleBus.onFinalPair("Synthetic sentence.", "合成句子。")
+        val time = checkNotNull(SubtitleBus.displayPairCreatedAt)
+        assertTrue(time > 0)
+        assertTrue(SubtitleBus.historySnapshot().isEmpty())
+        SubtitleBus.onFinalPair("Synthetic sentence.", "合成句子。")
+        assertEquals(time, SubtitleBus.displayPairCreatedAt)
+        SubtitleBus.onSourceDraft("Synthetic new draft.")
+        assertNull(SubtitleBus.displayPairCreatedAt)
+        SubtitleBus.clear()
+        assertNull(SubtitleBus.displayPairCreatedAt)
+    }
+    @Test fun retainedAndCurrentConfirmationUseTheSameSharedTime() {
+        SubtitleBus.setHistoryLimit(2)
+        SubtitleBus.onFinalPair("Synthetic final.", "合成终稿。")
+        assertEquals(SubtitleBus.historySnapshotWithTime().last().createdAt, SubtitleBus.displayPairCreatedAt)
+    }
     @Before fun reset() { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
     @After fun cleanup() = reset()
 

@@ -89,6 +89,10 @@ internal class AppearanceControls(
         slider(R.id.history_lines, R.id.history_lines_value, R.string.settings_history, 0, 6,
             { SettingsStore.historyLines(context) }, { SettingsStore.setHistoryLines(context, it) },
             R.string.settings_history_value, more)
+        toggle(more, R.id.subtitle_dividers, R.string.settings_dividers, R.string.settings_dividers_help,
+            { SettingsStore.subtitleDividers(context) }, { SettingsStore.setSubtitleDividers(context, it) })
+        toggle(more, R.id.subtitle_timestamps, R.string.settings_timestamps, R.string.settings_timestamps_help,
+            { SettingsStore.subtitleTimestamps(context) }, { SettingsStore.setSubtitleTimestamps(context, it) })
         more.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
             id = R.id.reset_position; setText(R.string.settings_reset); isAllCaps = false; isSingleLine = false
             minimumHeight = dp(48); setTextColor(ContextCompat.getColor(context, R.color.mimi_text))
@@ -158,6 +162,19 @@ internal class AppearanceControls(
         try { action() }
         catch (_: RuntimeException) { Toast.makeText(context, R.string.service_save_failed, Toast.LENGTH_LONG).show() }
         sync()
+    }
+    private fun toggle(parent: LinearLayout, id: Int, title: Int, help: Int, read: () -> Boolean, write: (Boolean) -> Unit) {
+        val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(helpHeading(title, help, "caption-option-$id"), LayoutParams(0, -2, 1f))
+        val toggle = MaterialSwitch(context).apply {
+            this.id = id; minimumHeight = dp(48); contentDescription = context.getString(title)
+            trackTintList = ContextCompat.getColorStateList(context, R.color.mimi_switch_track)
+            thumbTintList = ContextCompat.getColorStateList(context, R.color.mimi_switch_thumb)
+            setOnCheckedChangeListener { _, value -> if (!syncing) save { write(value) } }
+        }
+        row.addView(toggle, LayoutParams(-2, -2))
+        parent.addView(row, LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        refreshers.add { toggle.isChecked = read() }
     }
     private fun slider(id: Int, valueId: Int, title: Int, low: Int, high: Int, read: () -> Int, write: (Int) -> Unit,
         format: Int = R.string.settings_percent_value, parent: LinearLayout = this): SeekBar {
