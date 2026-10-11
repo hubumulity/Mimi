@@ -562,10 +562,17 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             capture("panel-after-immersive")
             onUi { running(false); host!!.finish(); host = null }
             waitFor { home.hasWindowFocus() }
-            onUi { home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption) }
+            onUi {
+                home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption)
+                // The history fixture enabled dividers above. Establish the
+                // intended starting state before exercising both tap directions.
+                SettingsStore.setSubtitleDividers(context, false)
+                SettingsStore.setSubtitleTimestamps(context, false)
+            }
             for ((id, read) in listOf(R.id.subtitle_dividers to { SettingsStore.subtitleDividers(context) },
                 R.id.subtitle_timestamps to { SettingsStore.subtitleTimestamps(context) })) {
                 val control = home.findViewById<android.widget.CompoundButton>(id)
+                waitFor { !read() && !control.isChecked }
                 bringIntoView(control); tapVisible(control)
                 waitFor { read() && control.isChecked }
                 tapVisible(control); waitFor { !read() && !control.isChecked }
