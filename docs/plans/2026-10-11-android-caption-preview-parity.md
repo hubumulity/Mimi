@@ -108,3 +108,14 @@ Original reading selects the shared raw recognition lane even when the service
 holds complete translated pairs. Translation delays must not delay that view.
 Show confirmation time only when the raw source is final and belongs to the
 shared confirmed pair; a different owner's time cannot accompany a new draft.
+
+Keep realtime intermediate captions without adding a reading-speed switch or
+filtering drafts. Normal-mode text follows the desktop bottom reading edge:
+short current content sits above the footer and grows upward. Increasing the
+original's line count must not move an unchanged translation downward. Preserve
+the actual glyph-based lane allocation and deliberate history scrolling; do not
+reserve empty fixed-height language lanes or change the saved window height.
+Verify native baseline positions while one language grows, across all three
+modes, as well as preview parity and a comparable continuous live sample. This
+placement does not prevent a service from revising an incomplete translation;
+reader comfort and semantic revisions require separate observation.

@@ -41,6 +41,23 @@ fn contract() -> Value {
 }
 
 #[test]
+fn initial_preview_candidate_contracts() {
+    for case in contract()["initialPreviewCandidates"].as_array().unwrap() {
+        let mut committer = crate::core::committer::ASRDraftCommitter::new(
+            case["minimumCharacters"].as_u64().unwrap() as usize,
+        );
+        committer.update_draft(case["draft"].as_str().unwrap());
+        let candidate = committer.preview_latest_draft(case["opening"].as_bool().unwrap());
+        assert_eq!(
+            serde_json::to_value(candidate).unwrap(),
+            case["expected"],
+            "{}",
+            case["id"]
+        );
+    }
+}
+
+#[test]
 fn shared_request_contracts() {
     let fixtures = contract();
     for case in fixtures["requests"].as_array().unwrap() {

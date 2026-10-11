@@ -49,6 +49,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         var failure: Throwable? = null
         val drawFailure = AtomicReference<String?>()
         val draws = AtomicInteger()
+        val captionDraws = AtomicInteger()
         val handoffDraws = AtomicInteger()
         val observedMode = AtomicReference<CaptionDisplayMode?>()
         var lastSize: Pair<Int, Int>? = null
@@ -60,6 +61,9 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             if (current != null) {
                 val panel = current.findViewWithTag<CaptionPanelView>("expanded-subtitles")
                 if (panel.isShown && panel.followingLive) {
+                    if (listOf(panel.source, panel.translation).any { it.isShown && it.text.isNotBlank() }) {
+                        captionDraws.incrementAndGet()
+                    }
                     val snapshot = SubtitleBus.displaySnapshot()
                     if (observedMode.get()?.translationVisible == true && !snapshot.hidden &&
                         snapshot.retainedConfirmed?.pair?.translation?.isNotBlank() == true) {
@@ -102,6 +106,12 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             while ((!MimiService.isRunning || root() == null) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
             check(MimiService.isRunning && root() != null) { "native_start_timeout" }
             check(MimiService.activeModelNames == models) { "active_model_mismatch" }
+            // Starting capture and sending a media key do not prove that the
+            // browser resumed playback. Do not score a paused-input interval.
+            val audioDeadline = SystemClock.elapsedRealtime() + 30000
+            while (MimiService.isRunning && MimiService.captureObservation?.state?.name != "AUDIO" &&
+                SystemClock.elapsedRealtime() < audioDeadline) SystemClock.sleep(100)
+            check(MimiService.isRunning && MimiService.captureObservation?.state?.name == "AUDIO") { "playback_audio_start_timeout" }
             ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(listener) }
             for ((selected, seconds) in phases) {
                 observedMode.set(null)
@@ -110,6 +120,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 ui { lastSize = null; changes.set(0) }
                 observedMode.set(selected)
                 val beforeDraws = draws.get()
+                val beforeCaptionDraws = captionDraws.get()
                 val beforeHandoffs = handoffDraws.get()
                 var sourceUpdates = 0; var translationUpdates = 0
                 var sourceHash = 0; var translationHash = 0
@@ -117,7 +128,12 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 var audioSamples = 0
                 var maximumSourceGapMs = 0L
                 var firstSourceMs: Long? = null; var firstTranslationMs: Long? = null
+                var confirmedUpdates = 0
+                var lastConfirmedAt: Long? = SubtitleBus.displaySnapshot().createdAt
+                var firstConfirmedMs: Long? = null
+                var maximumConfirmedGapMs = 0L
                 val start = SystemClock.elapsedRealtime()
+                var lastConfirmedUpdateAt = start
                 var lastSourceAt = start
                 val feedbackEvents = JSONArray()
                 var lastFeedback: SubtitleBus.RuntimeFeedback? = null
@@ -126,9 +142,17 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 while (SystemClock.elapsedRealtime() - start < seconds * 1000) {
                     check(MimiService.isRunning) { "capture_stopped" }
                     drawFailure.get()?.let { error(it) }
-                    val state = SubtitleBus.displaySnapshot().forReading(selected)
+                    val raw = SubtitleBus.displaySnapshot()
+                    val state = raw.forReading(selected)
                     val a = state.source.hashCode(); val b = state.translation.hashCode()
                     val now = SystemClock.elapsedRealtime()
+                    if (raw.confirmed && raw.createdAt != null && raw.createdAt != lastConfirmedAt) {
+                        confirmedUpdates++
+                        if (firstConfirmedMs == null) firstConfirmedMs = now - start
+                        maximumConfirmedGapMs = maxOf(maximumConfirmedGapMs, now - lastConfirmedUpdateAt)
+                        lastConfirmedUpdateAt = now
+                        lastConfirmedAt = raw.createdAt
+                    }
                     if (state.source.isNotEmpty() && a != sourceHash) {
                         sourceUpdates++
                         if (firstSourceMs == null) firstSourceMs = now - start
@@ -152,7 +176,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                     maximumSource = maxOf(maximumSource, state.source.length)
                     maximumTranslation = maxOf(maximumTranslation, state.translation.length)
                     if (SystemClock.elapsedRealtime() >= progress) {
-                        status("CAPTION_LIVE_PROGRESS mode=${selected.id} sourceUpdates=$sourceUpdates translationUpdates=$translationUpdates nativeDraws=${draws.get() - beforeDraws} heightChanges=${changes.get()} capture=${MimiService.captureObservation?.state?.name}")
+                        status("CAPTION_LIVE_PROGRESS mode=${selected.id} sourceUpdates=$sourceUpdates translationUpdates=$translationUpdates confirmedUpdates=$confirmedUpdates nativeDraws=${draws.get() - beforeDraws} heightChanges=${changes.get()} capture=${MimiService.captureObservation?.state?.name}")
                         progress += 30000
                     }
                     SystemClock.sleep(50)
@@ -161,11 +185,15 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                     .put("translationUpdates", translationUpdates).put("nativeDraws", draws.get() - beforeDraws)
                     .put("maximumSourceChars", maximumSource).put("maximumTranslationChars", maximumTranslation).put("heightChanges", changes.get())
                     .put("readingHandoffDraws", handoffDraws.get() - beforeHandoffs)
+                    .put("captionDraws", captionDraws.get() - beforeCaptionDraws)
                     .put("audioSamples", audioSamples).put("firstSourceMs", firstSourceMs ?: JSONObject.NULL)
                     .put("firstTranslationMs", firstTranslationMs ?: JSONObject.NULL).put("maximumSourceGapMs", maximumSourceGapMs)
+                    .put("confirmedUpdates", confirmedUpdates).put("firstConfirmedMs", firstConfirmedMs ?: JSONObject.NULL)
+                    .put("maximumConfirmedGapMs", maximumConfirmedGapMs)
                     .put("connectionEvents", feedbackEvents))
                 check(sourceUpdates >= 3 && translationUpdates >= 3) { "insufficient_live_updates" }
                 check(audioSamples > 0) { "no_playback_audio" }
+                check(captionDraws.get() - beforeCaptionDraws >= 3) { "no_visible_native_captions" }
                 check(changes.get() == 0) { "content_changed_window_height" }
                 status("CAPTION_LIVE_PHASE_PASSED mode=${selected.id}")
             }

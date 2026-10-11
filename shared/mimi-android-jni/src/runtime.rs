@@ -419,6 +419,23 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
             json!({"snapshotPublishIntervalMs":mimi_runtime::core::health::SNAPSHOT_PUBLISH_INTERVAL.as_millis() as u64,
                 "sessionFinishTimeoutMs":mimi_runtime::core::health::SESSION_FINISH_TIMEOUT.as_millis() as u64})
         }
+        "preview_candidate" => {
+            let minimum = value["minimumCharacters"]
+                .as_u64()
+                .filter(|n| (1..=65536).contains(n))
+                .ok_or("native_runtime_invalid_request")?;
+            let draft = value["draft"]
+                .as_str()
+                .filter(|text| mimi_runtime::core::models::subtitle_text_within_limit(text))
+                .ok_or("native_runtime_invalid_request")?;
+            let opening = value["opening"]
+                .as_bool()
+                .ok_or("native_runtime_invalid_request")?;
+            let mut committer =
+                mimi_runtime::core::committer::ASRDraftCommitter::new(minimum as usize);
+            committer.update_draft(draft);
+            json!({"candidate":committer.preview_latest_draft(opening)})
+        }
         "text_probe_endpoint" => {
             let configuration = text_probe_configuration(&value["configuration"])?;
             let endpoint =

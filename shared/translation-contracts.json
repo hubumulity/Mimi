@@ -1,5 +1,14 @@
 {
   "schemaVersion": 1,
+  "initialPreviewCandidates": [
+    { "id": "short-opening", "minimumCharacters": 12, "opening": true, "draft": "Sample", "expected": null },
+    { "id": "opening-at-limit", "minimumCharacters": 12, "opening": true, "draft": "Sample words", "expected": "Sample words" },
+    { "id": "complete-tail", "minimumCharacters": 12, "opening": true, "draft": "Sample words. Still growing", "expected": "Sample words. Still growing" },
+    { "id": "short-correction", "minimumCharacters": 12, "opening": false, "draft": "Sample", "expected": "Sample" },
+    { "id": "unicode-opening", "minimumCharacters": 4, "opening": true, "draft": "测试字幕", "expected": "测试字幕" },
+    { "id": "unicode-short-opening", "minimumCharacters": 4, "opening": true, "draft": "测试字", "expected": null },
+    { "id": "punctuation", "minimumCharacters": 1, "opening": false, "draft": "……！？", "expected": null }
+  ],
   "geminiFinishPolicy": {
     "quietCheckpointMs": 2000,
     "finishTimeoutMs": 4500,

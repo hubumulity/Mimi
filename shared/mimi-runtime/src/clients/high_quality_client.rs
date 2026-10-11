@@ -1134,7 +1134,16 @@ impl HighQualityTranslationClient {
         if inner.draft_maximum_wait_task.is_none() {
             let maximum_id = next_nonzero(&mut inner.next_task_id);
             let maximum_self = self.clone();
-            let maximum_delay = self.maximum_wait_delay;
+            // Briefly collect an opening phrase, but never wait indefinitely
+            // for a length threshold or a missing provider final. Later work
+            // retains the configured cadence and the same non-resetting timer.
+            let opening = inner.preview_task.is_none()
+                && !inner.preview_request_pacer.has_previewed_utterance();
+            let maximum_delay = if opening {
+                self.maximum_wait_delay.max(Duration::from_secs(2))
+            } else {
+                self.maximum_wait_delay
+            };
             let maximum_task = tokio::spawn(async move {
                 tokio::time::sleep(maximum_delay).await;
                 maximum_self
@@ -1189,9 +1198,15 @@ impl HighQualityTranslationClient {
             if inner.final_lane_busy() {
                 return;
             }
-            // Both timers preview the whole meaningful draft. Preferring its
-            // complete-sentence prefix can rewind a previously displayed tail.
-            let text = inner.committer.preview_latest_draft(false);
+            // Do not replace a readable complete sentence with the first tiny
+            // fragment of the next one. Honor the existing opening threshold;
+            // once preview work starts, shorter ASR corrections remain eligible.
+            // Both timers still translate the whole draft, including its tail.
+            let opening = inner.preview_task.is_none()
+                && !inner.preview_request_pacer.has_previewed_utterance();
+            let text = inner
+                .committer
+                .preview_latest_draft(opening && matches!(kind, DraftTimerKind::Stable));
             text.map(|text| {
                 (
                     text,
@@ -5834,9 +5849,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn short_unpunctuated_drafts_can_preview_on_both_timers_without_becoming_final() {
+    async fn opening_fragments_wait_for_stability_but_maximum_and_corrections_still_preview() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        for kind in [DraftTimerKind::Stable, DraftTimerKind::Maximum] {
+        for (kind, correcting) in [
+            (DraftTimerKind::Stable, false),
+            (DraftTimerKind::Maximum, false),
+            (DraftTimerKind::Stable, true),
+            (DraftTimerKind::Maximum, true),
+        ] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
             let server = tokio::spawn(async move {
@@ -5862,6 +5882,17 @@ mod tests {
             .unwrap();
             client.stable_draft_delay = Duration::from_secs(60);
             client.maximum_wait_delay = Duration::from_secs(60);
+            if correcting {
+                client
+                    .inner
+                    .lock()
+                    .await
+                    .preview_request_pacer
+                    .record_candidate_start(
+                        std::time::Instant::now() - Duration::from_secs(10),
+                        PreviewCandidate::new("Previous synthetic preview", Some("en"), 0),
+                    );
+            }
             for text in ["hi", "hello"] {
                 client
                     .handle_asr_event(LiveTranslateServerEvent::SourceDraft {
@@ -5870,6 +5901,36 @@ mod tests {
                     })
                     .await;
             }
+            if !correcting && matches!(kind, DraftTimerKind::Stable) {
+                let (timer_id, revision) = {
+                    let inner = client.inner.lock().await;
+                    let slot = match kind {
+                        DraftTimerKind::Stable => &inner.draft_stability_task,
+                        DraftTimerKind::Maximum => &inner.draft_maximum_wait_task,
+                    };
+                    (slot.as_ref().unwrap().id, inner.draft_revision)
+                };
+                client.handle_draft_timer(kind, timer_id, revision).await;
+                assert!(client.inner.lock().await.preview_task.is_none());
+                assert_eq!(client.translation_latency(), None);
+                while let Ok(event) = events.try_recv() {
+                    assert!(
+                        matches!(event, LiveTranslateServerEvent::SourceDraft { .. })
+                            || matches!(event, LiveTranslateServerEvent::TranslationDraft(ref text) if text.is_empty())
+                    );
+                }
+                client
+                    .handle_asr_event(LiveTranslateServerEvent::SourceDraft {
+                        text: "hello synthetic sentence".into(),
+                        language: Some("en".into()),
+                    })
+                    .await;
+            }
+            let expected_source = if !correcting && matches!(kind, DraftTimerKind::Stable) {
+                "hello synthetic sentence"
+            } else {
+                "hello"
+            };
             let (timer_id, revision) = {
                 let inner = client.inner.lock().await;
                 let slot = match kind {
@@ -5883,7 +5944,7 @@ mod tests {
                 loop {
                     match events.recv().await.unwrap() {
                         LiveTranslateServerEvent::SourceDraft { text, .. } => {
-                            assert_eq!(text, "hello");
+                            assert_eq!(text, expected_source);
                         }
                         LiveTranslateServerEvent::TranslationDraft(text) => {
                             if text.is_empty() {
@@ -5899,7 +5960,7 @@ mod tests {
                             translation,
                             ..
                         } => {
-                            assert_eq!(source, "hello");
+                            assert_eq!(source, expected_source);
                             assert_eq!(translation, "Synthetic preview");
                         }
                         event => panic!("preview must not publish a durable event: {event:?}"),
@@ -5920,6 +5981,95 @@ mod tests {
             }
             client.disconnect().await;
             server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn opening_wait_is_bounded_without_a_final_and_short_finals_do_not_wait() {
+        for final_event in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let started = std::time::Instant::now();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let elapsed = started.elapsed();
+                let request = String::from_utf8(read_synthetic_request(&mut socket).await).unwrap();
+                assert!(request.contains("short"));
+                write_synthetic_response(
+                    &mut socket,
+                    200,
+                    r#"{"code":200,"data":"Synthetic short result"}"#,
+                )
+                .await;
+                elapsed
+            });
+            let (sender, mut events) = provider_event_channel();
+            let mut client = HighQualityTranslationClient::new_deeplx(
+                "synthetic-asr",
+                &endpoint,
+                "",
+                SourceLanguage::English,
+                TargetLanguage::Japanese,
+                sender,
+            )
+            .unwrap();
+            client.stable_draft_delay = Duration::from_millis(250);
+            client.maximum_wait_delay = Duration::from_secs(1);
+            if final_event {
+                client
+                    .handle_asr_event(LiveTranslateServerEvent::SourceFinal {
+                        text: "short".into(),
+                        language: Some("en".into()),
+                    })
+                    .await;
+            } else {
+                for text in ["s", "sh", "sho", "short"] {
+                    client
+                        .handle_asr_event(LiveTranslateServerEvent::SourceDraft {
+                            text: text.into(),
+                            language: Some("en".into()),
+                        })
+                        .await;
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                }
+            }
+            tokio::time::timeout(Duration::from_secs(4), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    match event {
+                        LiveTranslateServerEvent::SubtitleConfirmedPair {
+                            source,
+                            translation,
+                            ..
+                        } => {
+                            assert!(final_event);
+                            assert_eq!(source, "short");
+                            assert_eq!(translation, "Synthetic short result");
+                            break;
+                        }
+                        LiveTranslateServerEvent::SubtitlePreviewPair {
+                            source,
+                            translation,
+                            ..
+                        } => {
+                            assert!(!final_event);
+                            assert_eq!(source, "short");
+                            assert_eq!(translation, "Synthetic short result");
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            let elapsed = server.await.unwrap();
+            if final_event {
+                assert!(elapsed < Duration::from_secs(1));
+            } else {
+                assert!(elapsed >= Duration::from_millis(1950) && elapsed < Duration::from_secs(3));
+            }
+            client.disconnect().await;
         }
     }
 

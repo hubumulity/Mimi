@@ -188,7 +188,13 @@ internal class CaptionPanelView(
             }
             true
         }
-        val transcript = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val transcript = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            // Match the desktop reading edge: growth in the reference lane
+            // must not push an unchanged translation down the panel. Fill the
+            // viewport from its bottom; overflowing history remains scrollable.
+            gravity = Gravity.BOTTOM
+        }
         transcript.addView(status, LinearLayout.LayoutParams(-1, -2))
         history = CaptionHistoryTextView(context).apply {
             setTextColor(0xFFB9B9B9.toInt())

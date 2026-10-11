@@ -135,6 +135,11 @@ impl Default for PreviewRequestPacer {
 }
 
 impl PreviewRequestPacer {
+    /// Only the current utterance's consumed preview candidate, never text.
+    pub fn has_previewed_utterance(&self) -> bool {
+        self.last_candidate.is_some()
+    }
+
     pub fn next_start_at(&self, now: Instant) -> Instant {
         let paced = self
             .last_started_at
@@ -283,7 +288,9 @@ mod tests {
             Some(now + Duration::from_secs(8))
         );
         pacer.record_candidate_start(now, long);
+        assert!(pacer.has_previewed_utterance());
         pacer.finish_utterance();
+        assert!(!pacer.has_previewed_utterance());
         assert!(pacer.next_candidate_start_at(now, short).unwrap() > now + Duration::from_secs(10));
         assert!(std::mem::size_of::<PreviewRequestPacer>() < 192);
         assert_eq!(estimated_token_units("abcd四字"), 3);

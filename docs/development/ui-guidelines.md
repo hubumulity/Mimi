@@ -29,6 +29,11 @@ These project rules apply to implementation and review.
 - Verify wrapping, narrow windows, long labels, empty content and light/dark
   themes. Interactive controls, including help and toast dismissal, keep pointer
   cursors; preserve disabled, text-input, slider and resize cursors.
+- Live subtitle geometry needs a stable reading edge as well as unclipped text.
+  In normal Android mode, bottom-align the current measured lanes, matching the
+  desktop reading edge. Growing reference text must not push an unchanged
+  translation down; preserve complete glyph lines and deliberate history reading.
+  Check changing line counts in native draws rather than only static screenshots.
 - Reserve readable label space and bound picker columns. Put ongoing device
   feedback in `SettingsRow.feedback`, below the label/control grid; never put a
   long status sentence beside a picker inside the auto-sized control column.

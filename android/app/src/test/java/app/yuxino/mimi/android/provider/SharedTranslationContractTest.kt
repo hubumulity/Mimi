@@ -27,6 +27,21 @@ class SharedTranslationContractTest {
         assertTrue(policy.getLong("gemini_finish_timeout_ms") > expected.getLong("quietCheckpointMs"))
     }
 
+    @Test fun initialPreviewCandidatesCrossActualJniWithoutProviderRequests() = cases("initialPreviewCandidates") { case ->
+        val actual = NativeRuntimeConfiguration.exchange(JSONObject(case.toString()).put("operation", "preview_candidate"))
+        assertEquals(case.getString("id"), case.get("expected"), actual.get("candidate"))
+    }
+
+    @Test fun invalidPreviewCandidateFieldsHaveSanitizedNativeErrors() {
+        fun request() = JSONObject().put("operation", "preview_candidate").put("minimumCharacters", 12)
+            .put("opening", true).put("draft", "synthetic-private-marker")
+        for (invalid in listOf(request().put("minimumCharacters", 0), request().put("minimumCharacters", 65_537),
+            request().put("opening", "invalid"), request().put("draft", "x".repeat(65_537)))) {
+            val error = assertThrows(IllegalArgumentException::class.java) { NativeRuntimeConfiguration.exchange(invalid) }
+            assertEquals("native_runtime_invalid_request", error.message)
+        }
+    }
+
     private fun cases(name: String, check: (JSONObject) -> Unit) {
         val entries = contract.getJSONArray(name)
         assertTrue("Empty $name contract", entries.length() > 0)

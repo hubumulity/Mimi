@@ -95,6 +95,39 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                 "Längere Untertitel müssen während jeder Aktualisierung stabil lesbar bleiben. ",
                 "คำบรรยายที่ยาวขึ้นควรแสดงอย่างมั่นคงและอ่านได้ชัดเจนตลอดเวลา ",
             )
+            // Match the desktop bottom reading edge. An unchanged translated
+            // line must not move down when its reference sentence grows.
+            for (mode in CaptionDisplayMode.entries) {
+                stage = "reading-edge/$mode"
+                ui {
+                    SettingsStore.setDisplayMode(context, mode)
+                    SubtitleBus.onFinalPair("Short source.", "固定的译文。", "en")
+                }
+                context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_APPLY_APPEARANCE))
+                SystemClock.sleep(180)
+                var readingBottom = 0
+                fun lastRowBottom(): Int {
+                    val panel = root()!!.findViewWithTag<CaptionPanelView>("expanded-subtitles")
+                    val row = if (mode.translationVisible) panel.translation else panel.source
+                    val layout = row.layout!!
+                    return row.top - panel.transcriptScroll.scrollY + row.compoundPaddingTop - row.scrollY +
+                        layout.getLineBottom(layout.lineCount - 1)
+                }
+                ui {
+                    val panel = root()!!.findViewWithTag<CaptionPanelView>("expanded-subtitles")
+                    readingBottom = lastRowBottom()
+                    check(readingBottom == panel.transcriptScroll.height) { "Short captions left an unused bottom reading edge at $stage" }
+                }
+                for (length in listOf(2, 4, 8, 1)) {
+                    ui { SubtitleBus.onFinalPair(samples[0].repeat(length), "固定的译文。", "en") }
+                    SystemClock.sleep(90)
+                    ui {
+                        check(lastRowBottom() == readingBottom) { "Reference growth moved the reading baseline at $stage" }
+                        assertVisibleLines()
+                    }
+                }
+                cases++
+            }
             for (immersive in listOf(false, true)) for (mode in CaptionDisplayMode.entries) {
                 stage = "$immersive/$mode"
                 ui { SettingsStore.setImmersiveSubtitles(context, immersive); SettingsStore.setDisplayMode(context, mode) }
@@ -151,7 +184,8 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                 }
                 for ((index, sample) in samples.withIndex()) {
                     stage = "$immersive/$mode/language-$index"
-                    ui { SubtitleBus.onFinalPair(samples[0].repeat(5), sample.repeat(5), "en") }
+                    val translated = samples[(index + 1) % samples.size]
+                    ui { SubtitleBus.onFinalPair(sample.repeat(5), translated.repeat(5), "en") }
                     SystemClock.sleep(120)
                     // TextView registers this reconciliation after text/size changes.
                     // It must never undo tail-following or require cancelling a window draw.
@@ -164,7 +198,7 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                     ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(drawListener) }
                     repeat(24) { update ->
                         ui {
-                            SubtitleBus.onFinalPair(samples[0].repeat(4 + update / 4) + " $update", sample.repeat(4 + update / 3) + " $update", "en")
+                            SubtitleBus.onFinalPair(sample.repeat(4 + update / 4) + " $update", translated.repeat(4 + update / 3) + " $update", "en")
                         }
                         updates++
                         SystemClock.sleep(45)

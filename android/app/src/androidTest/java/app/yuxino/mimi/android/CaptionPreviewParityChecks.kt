@@ -68,10 +68,16 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
             fun editor() = WindowInspector.getGlobalWindowViews().firstOrNull {
                 it.findViewWithTag<View>("overlay-font-slider") != null
             }
-            await { editor() != null && !actual.findViewWithTag<View>("overlay-font").isClickable && actual.scaleX == actual.scaleY }
+            await {
+                editor() != null && !actual.findViewWithTag<View>("overlay-font").isClickable &&
+                    actual.scaleX == actual.scaleY && actual.scaleX > 0f && actual.scaleX <= 1f &&
+                    actual.height * actual.scaleY <= (root()?.height ?: 0) + 1
+            }
             ui {
                 check(actual.width == ordinaryWidth && actual.height == ordinaryHeight) { "Quick editor rewrapped the native frame" }
-                check(actual.scaleX > 0f && actual.scaleX <= 1f && actual.height * actual.scaleY <= root()!!.height + 1)
+                check(actual.scaleX > 0f && actual.scaleX <= 1f && actual.height * actual.scaleY <= root()!!.height + 1) {
+                    "Quick editor frame exceeds its settled viewport: ${actual.height} × ${actual.scaleY} in ${root()!!.height}"
+                }
                 for (tag in listOf("overlay-toolbar", "overlay-drag-mark", "overlay-route", "overlay-actions", "overlay-model")) {
                     check(actual.findViewWithTag<View>(tag).isShown) { "Quick editor hides $tag" }
                 }
@@ -287,8 +293,20 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                     check((actual() as CaptionPanelView).timestamp.text.toString().matches(Regex("[0-9]{2}:[0-9]{2}:[0-9]{2}")))
                     SubtitleBus.onSourceDraft("Synthetic replacement draft.", "en")
                 }
+                compare(home, "$prefix-retained-confirmation-time")
+                ui {
+                    check((actual() as CaptionPanelView).timestamp.visibility == View.VISIBLE) {
+                        "Retained confirmed pair lost its own confirmation time"
+                    }
+                    SubtitleBus.onTranslationDraft("合成下一句的实时译文。")
+                }
                 compare(home, "$prefix-draft-no-time")
-                ui { check((actual() as CaptionPanelView).timestamp.visibility == View.GONE); SettingsStore.setSubtitleTimestamps(context, false) }
+                ui {
+                    check((actual() as CaptionPanelView).timestamp.visibility == View.GONE) {
+                        "New draft inherited the previous pair's confirmation time"
+                    }
+                    SettingsStore.setSubtitleTimestamps(context, false)
+                }
                 ui { SettingsStore.setFontSize(context, 12); SettingsStore.setOverlayWidthPercent(context, 100); SettingsStore.setOverlayHeightPercent(context, 70); SettingsStore.setOverlayBgAlpha(context, 100) }
                 compare(home, "$prefix-solid-large")
                 ui {
@@ -339,7 +357,9 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
             putString("stream", if (failure == null) "Caption preview parity passed: $cases native cases; identical frame pixels/geometry; no capture or provider session.\n"
-                else "Caption preview parity failed at $location: ${failure!!.javaClass.simpleName}: ${failure!!.message}\n")
+                else "Caption preview parity failed at $location: ${failure!!.javaClass.simpleName}: ${failure!!.message}\n" +
+                    failure!!.stackTrace.filter { it.className.startsWith("app.yuxino.mimi.android") }
+                        .joinToString("\n") { "${it.fileName}:${it.lineNumber}" } + "\n")
         })
     }
 }

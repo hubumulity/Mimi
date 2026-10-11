@@ -2466,3 +2466,177 @@
   not rerun. Large-font acceptance covers Japanese narrow and English landscape,
   not every locale at those sizes. Exact-head CI and main merge are checked before
   delivery. No public version or existing release assets are changed.
+
+## 2026-10-12: Android streaming stability and multiple saved services
+
+- Product inputs: `64e9ad76`, followed by instrumentation-only `3c046480`.
+  Signed Dev on the existing Android 15/API 35 ARM64 emulator; no new public
+  release/version. The original preferences were backed up privately on-device
+  after stopping capture normally; synthetic checks use blank preferences.
+- Reproduced native tail instability on the old `631a7d16` build: TextView's own
+  pre-draw reset a long translation from scroll 239 to 0. The old global
+  pre-draw correction also canceled complete window draws. Follow the newest
+  complete lines after TextView's callback and always allow the draw; identical
+  row publishes no longer reset text. Read one bounded atomic shared snapshot
+  per paint and coalesce pending native paints without dropping shared finals.
+- Keep the selected translation font size, with a 90% reference size in bilingual
+  mode. Derive stable minimum height from fallback-aware line metrics. The first
+  narrow, Japanese, 2x-font run failed because equal lane allocation left only
+  one translated line. Reserve two translated lines whenever one reference line
+  plus those two lines fit; the same case now passes. Ignore old drag/resize
+  events after configuration changes rather than persisting old-axis bounds.
+- Native continuous checks passed 162 cases, 3,456 streaming updates and 5,844
+  native draws across eight language fixtures, three display modes, ordinary/immersive
+  frames and default/narrow/landscape layouts. Default tests include nine real
+  portrait/landscape round trips with a resize gesture interrupted by rotation.
+  Narrow and landscape each passed 35 preview/live frame comparisons and actual
+  quick-editor/resize/reader/provider-badge interactions. In 2x-font landscape,
+  minimum readable height can exceed both height slider endpoints; assert the
+  actual minimum and safe-screen clamp rather than demanding false growth.
+- Canonical checks passed (2,043 frontend tests); Debug/Release each passed 191
+  JVM/actual-JNI tests, both lint variants and four-ABI packaging. Later changes
+  extend only instrumentation for fresh-consent real playback, content-free
+  update/capture/connection measurements and temporary private saved profiles.
+- First live comparison: Ali Audio 3.0 with MT Lite (270 seconds, then a separate
+  135-second repeat), Flash (90) and Plus (135), Gemini live translate (135),
+  Volcano (135) and Baidu (135), all across three display modes on the user's
+  current public video. Capture continued receiving audio with the Mac output
+  muted. Most comparisons repeat the long introductory segment by dragging the
+  observed native video thumb; the first Lite and Flash checks also include
+  other parts of that same video. URL timestamp navigation alone did not
+  reliably seek and is not evidence of comparable sampling.
+- Draw/tail/size assertions passed those samples, but continuous Volcano video
+  exposed a separate sentence-transition placeholder flash. At `40f46ce1`, the
+  native frame selects the shared retained confirmed pair and its metadata
+  while the next translation is empty, without mixing owners or caching another
+  transcript. This fixed realtime handoff; original-only recognition on atomic
+  services was still unverified at this revision. Direct actual-JNI
+  projection tests cover history disabled, next translation, clear and hidden
+  frames; Debug/Release each passed 193 tests. Canonical checks passed again.
+  New native acceptance passed 66 cases, 1,152 updates and 1,941 draws, including
+  six normal/immersive handoff checks and nine real rotation round trips.
+- Same-segment Volcano rerun passed 135 seconds, including 39 actual pending
+  translation draws in bilingual/translation modes without replacing the
+  retained caption by listening. Continuous frame evidence corroborates the
+  assertion; the earlier flashing video stays separate. Ali Flash reported one
+  rate-limit recovery; Plus had repeated rate limits and a 29.215-second maximum
+  observed source-update gap, so its layout pass does not establish smooth
+  service behavior. The video also includes applause; the update gap does not
+  isolate a service-delay cause. These counters and phase-relative first updates are not
+  end-to-end speech latency measurements.
+- The same product inputs also passed Gemini and Baidu reruns (90 seconds each),
+  Tencent (135 seconds, explicitly authorized; OpenAI skipped at the user's
+  request), and English recognition with Japanese, Korean and Thai translation
+  (90 seconds each using Ali Lite), all three display modes. Baidu exercised 184
+  additional retained-pair draws and Gemini two, with no placeholder replacement.
+  The 14 completed comparison sessions total 1,755 seconds and 6,005 native
+  draws; a layout pass is not a general provider or semantic-quality acceptance.
+- Instrumentation-only `a592faaa` permits bounded five-minute phases. The first
+  15-minute continuous Lite run on product `40f46ce1` passed all three modes,
+  3,286 draws, audio reception and zero content-driven height changes. A first navigation attempt failed
+  because a blind tap hid the already-visible video controls; capture stopped
+  normally and that failed attempt stays separate. Observe the controls before
+  toggling them, drag their actual thumb, and verify paused 0:00 before capture.
+- A further actual-JNI repro showed original-only mode on atomic services
+  reading retained pair A while shared recognition had already advanced to B.
+  At `778428fb`, both the native window and primary preview select the existing
+  raw source lane for original reading. Translation/bilingual retain a complete
+  pair. Confirmation time requires the same final source owner, including
+  repeated identical text; no provider/runtime policy or native reducer changed.
+  The regression failed before the repair and passed after it. Debug/Release
+  each passed 194 JVM/actual-JNI tests, lint and four-ABI packaging; canonical
+  checks passed again (2,043 frontend tests). Native checks passed 72 cases,
+  1,152 updates and 1,845 draws, covering both realtime and atomic handoffs,
+  eight language fixtures, three modes and nine real rotation round trips.
+  Actual Android private-input checks reject two malformed credential container/
+  field forms with a sanitized label, without echoing input or changing settings.
+- The later `778428fb` sustained run was stopped normally after two complete
+  five-minute phases and part of original mode when the user rejected intermediate
+  reading comfort. It is an interrupted, unaccepted baseline, not a second
+  15-minute pass. An initial setup screenshot had shown 0:07 after seeking to the
+  track edge; that normally stopped attempt remains separate too. Drag beyond
+  the minimum and visually verify paused 0:00 before fresh capture.
+  Physical devices, API 29, split-screen, full-video playback,
+  semantic translation quality and every language at every font size remain
+  outside this run. Failed and passing logs/images are retained separately
+  outside Git; no media, subtitles or credential values belong in this ledger.
+
+## 2026-10-12: Reading edge and premature opening previews
+
+- Inputs: `778428fb` plus the uncommitted reading-edge/opening-preview changes
+  described in the two caption design notes. The same signed Android 15/API 35
+  ARM64 Dev and canonical signed macOS Dev were used. These are dirty builds,
+  not exact `778428fb` packages. Preserve the user's realtime captions without
+  adding a switch or silently changing the explicit Android history display
+  selection. No public version or release assets change.
+- Desktop and Android use the same Rust provider/MT/reducer implementation, but
+  their native renderers differ. Desktop bottom placement and bounded completed
+  rows make a new draft less disruptive. Android normal-mode text now grows up
+  from its bottom reading edge: additional reference lines do not push an
+  unchanged translation down. Keep measured glyph allocation, selected geometry
+  and intentional full-text/history reading; no empty fixed language lanes.
+- Native streaming acceptance passed 75 cases, 1,152 updates and 1,935 draws.
+  Both raw originals and translations now exercise eight language fixtures,
+  three modes, normal/immersive frames and nine real rotation round trips. Three
+  added native baseline checks also hold the newest visible glyphs at the reading
+  edge as the original grows and shrinks. These are synthetic layout checks.
+- Two real-input setup attempts failed with no actual audio: media Play did not
+  resume the paused Firefox video, and an immediate coordinate tap preceded its
+  foreground transition. Keep both failed logs separately. Wait for observed
+  native browser controls, then tap the actual Play button. The live checker now
+  waits for AUDIO before starting phase timing and requires visible caption draws
+  in every phase; ordinary window draws alone cannot pass a silent run.
+- Reading-edge-only comparison: Audio3/Qwen-MT Lite, auto to Chinese, the current
+  public Stanford video (`Hd_ptbiPoXM`), the same long introductory segment,
+  three 45-second phases. All phases received AUDIO, with 176/152/139 visible
+  caption draws and zero content-driven height changes, tail resets or clipped
+  glyph lines. Private 30-second native video/frame evidence showed a stable
+  translation edge but still showed isolated initial words replacing complete
+  sentences and whole incomplete translations changing with recognition.
+- The shared high-quality client previously let both draft timers bypass its
+  configured opening length threshold. The opening stability timer now honors
+  that existing threshold; the non-resetting maximum still admits short drafts
+  with an opening wait of at least two seconds. Later preview corrections and
+  source finals retain their paths and pacing. Whole eligible drafts remain
+  replaceable previews; no punctuation-prefix clipping, fabricated final,
+  prompt, model, VAD or provider wire change.
+- Direct local-HTTP regressions cover both timers, shorter corrections, complete
+  tails and short authoritative finals. A continuously changing short draft
+  without a final starts HTTP between 1.95 and 3 seconds in the timer test;
+  a short final starts within one second. These are local scheduling boundaries,
+  not live speech latency. Seven Unicode/punctuation/length cases run directly
+  in Rust and through actual JNI, with sanitized malformed-field rejection.
+  Canonical checks passed (712 shared-runtime tests, one ignored; 2,043 frontend
+  tests); Android Debug/Release each passed 196 JVM/actual-JNI tests. Release lint
+  and all four packaged ABIs passed; Debug builds/lint had passed earlier with
+  the same product inputs.
+- Opening-preview rerun: same service/languages/segment and three 45-second
+  phases. All phases received AUDIO, with 156/144/145 visible caption draws,
+  zero content-driven height changes and no recovery events. Private 30-second
+  frames show fewer isolated opening fragments, while recognition still revises
+  incomplete phrases. ASR and server boundaries vary between runs; counts and
+  visual differences do not prove semantic accuracy or eliminate every draft
+  revision. First-update counters are phase-relative and may start with existing
+  content; they are not end-to-end speech latency.
+- Initial preview parity attempts failed at an outdated assertion requiring
+  a hidden time even while the complete previous confirmed pair remained shown.
+  Retain that pair's own time, then assert the next actual translated draft has
+  no inherited time. Corrected acceptance passed 37 native comparisons, including
+  primary/quick preview pixels and geometry, and actual quick-style, size/drag,
+  history, provider-badge and immersion-restoration interactions. Test diagnostics
+  record only source locations. Test preferences/device settings were restored
+  byte for byte before and after startup after each run.
+- macOS canonical Dev received actual system sound from the same public video
+  with Mac output muted, microphone and subtitle/audio persistence off. Roughly
+  five minutes of qualitative native observation covered bilingual, translation
+  and original displays. Saved screenshots confirm native captions, separate
+  completed rows and readable live tails; this is no scripted timing or semantic
+  benchmark. The earlier isolated original-mode screenshot was only the floating
+  control bubble and was replaced by an actual subtitle-window screenshot.
+  Normal Stop completed; display mode and the original saved service selection
+  were restored. No DeepL or OpenAI paid comparison was started.
+- Final sustained Android playback and original model-test configuration restore
+  remain pending. Full-video playback, physical devices, API 29, split-screen,
+  every language/font combination and independent semantic-quality acceptance
+  remain outside these completed checks. Preserve private evidence and failed
+  baselines outside Git.
