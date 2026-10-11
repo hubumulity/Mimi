@@ -411,6 +411,11 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             waitFor { SettingsStore.overlayWidthPercent(context) == 55 && root().width < initialWidth }
             setSlider(R.id.overlay_width, 92)
             waitFor { root().width == initialWidth }
+            // Large system fonts can give both height endpoints the same
+            // bilingual minimum. Use a readable smaller font to exercise
+            // actual resizing, then restore the large-font reading case.
+            setSlider(R.id.font_size, 12)
+            waitFor { SettingsStore.fontSize(context) == 12 }
             setSlider(R.id.overlay_height, 20)
             waitFor { SettingsStore.overlayHeightPercent(context) == 20 }
             val shortHeight = panel.height
@@ -422,6 +427,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             waitFor { panel.height > shortHeight }
             assertCompleteInertPreview()
             setSlider(R.id.overlay_height, 30)
+            setSlider(R.id.font_size, 17)
+            waitFor { SettingsStore.fontSize(context) == 17 }
             for (choice in CaptionAlignment.entries) {
                 val spinner = editor().findViewById<android.widget.Spinner>(R.id.caption_alignment)
                 bringIntoView(spinner)
