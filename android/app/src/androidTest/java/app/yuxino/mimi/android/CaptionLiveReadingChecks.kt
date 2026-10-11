@@ -113,7 +113,6 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 temporary.apply()
             }
             check(SettingsStore.isConfigured(context))
-            if (screenChanges) check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
             arguments?.getString("test_target")?.let { requested ->
                 check(requested in listOf("ja", "ko", "th"))
                 val selected = SettingsStore.configuration(context).provider
@@ -135,6 +134,9 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             while (MimiService.isRunning && MimiService.captureObservation?.state?.name != "AUDIO" &&
                 SystemClock.elapsedRealtime() < audioDeadline) SystemClock.sleep(100)
             check(MimiService.isRunning && MimiService.captureObservation?.state?.name == "AUDIO") { "playback_audio_start_timeout" }
+            // Leave the operator's native consent/browser inspector free until
+            // playback starts; only one UiAutomation connection can own it.
+            if (screenChanges) check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
             ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(listener) }
             for ((selected, seconds) in phases) {
                 observedMode.set(null)
