@@ -534,10 +534,19 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             }
             onUi { SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL) }
             onUi { SettingsStore.setSubtitleDividers(context, true) }
+            SystemClock.sleep(350); idle() // Finish the preceding display-mode layouts.
             val fixedHeight = root().height
+            val currentPair = SubtitleBus.displaySource to SubtitleBus.displayTranslation
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_UI_PREVIEW_HISTORY))
             waitFor { SubtitleBus.historySnapshot().isNotEmpty() && root().findViewWithTag<View>("history-divider").isShown }
-            check(root().height == fixedHeight) { "History changed the user's window height" }
+            // The seed also replaces English with Japanese current text. Hold
+            // the current glyphs constant to isolate retention from font metrics.
+            onUi {
+                SubtitleBus.onSourceDraft(currentPair.first, "en")
+                SubtitleBus.onTranslationDraft(currentPair.second)
+            }
+            waitFor { panel.source.text.toString() == currentPair.first && panel.translation.text.toString() == currentPair.second && root().height == fixedHeight }
+            check(root().height == fixedHeight) { "History changed the user's window height: $fixedHeight -> ${root().height}" }
             capture("panel-history-fixed-height")
             onUi {
                 SubtitleBus.onSourceDraft("Synthetic long caption for native reading gestures. ".repeat(12), "en")
