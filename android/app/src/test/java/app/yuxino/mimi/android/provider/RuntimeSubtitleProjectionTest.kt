@@ -106,6 +106,51 @@ class RuntimeSubtitleProjectionTest {
         assertNull(repeated.createdAt)
     }
 
+    @Test fun originalReadingKeepsCompletedWordsAcrossEmptyAsrHandoffsWithoutHistory() {
+        SubtitleBus.setHistoryLimit(0)
+        for (atomic in listOf(false, true)) {
+            SubtitleBus.clear()
+            val snapshots = Snapshots(atomic, 0)
+            snapshots.apply(pair("A", "Synthetic completed original.", "合成已完成译文。"))
+            val confirmedTime = SubtitleBus.displaySnapshot().createdAt
+            snapshots.apply(draft("source", " \n"))
+            val gap = SubtitleBus.displaySnapshot()
+            assertTrue(gap.currentSource.text.isBlank())
+            assertTrue(gap.history.isEmpty())
+            val reading = gap.forReading(CaptionDisplayMode.ORIGINAL)
+            assertEquals("Synthetic completed original.", reading.source)
+            assertTrue(reading.confirmed)
+            assertEquals(confirmedTime, reading.createdAt)
+            val hidden = gap.copy(hidden = true)
+            assertEquals(hidden, hidden.forReading(CaptionDisplayMode.ORIGINAL))
+            snapshots.apply(draft("source", "Synthetic next original"))
+            val next = SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL)
+            assertEquals("Synthetic next original", next.source)
+            assertFalse(next.confirmed)
+            assertNull(next.createdAt)
+            SubtitleBus.clear()
+            assertEquals("", SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL).source)
+        }
+    }
+
+    @Test fun emptyOriginalHandoffCanKeepTheSharedCompletePreviewWithoutConfirmingIt() {
+        SubtitleBus.setHistoryLimit(0)
+        val snapshots = Snapshots(true, 0)
+        snapshots.apply(draft("source", "Synthetic complete preview source."))
+        snapshots.apply(JSONObject().put("type", "preview_pair").put("source_utterance_id", JSONObject.NULL)
+            .put("source", "Synthetic complete preview source.").put("translation", "合成完整预览译文。"))
+        snapshots.apply(draft("source", ""))
+        val gap = SubtitleBus.displaySnapshot()
+        assertNull(gap.retainedConfirmed)
+        assertTrue(gap.currentSource.text.isBlank())
+        val reading = gap.forReading(CaptionDisplayMode.ORIGINAL)
+        assertEquals("Synthetic complete preview source.", reading.source)
+        assertFalse(reading.confirmed)
+        assertNull(reading.createdAt)
+        snapshots.apply(draft("source", "Synthetic new original"))
+        assertEquals("Synthetic new original", SubtitleBus.displaySnapshot().forReading(CaptionDisplayMode.ORIGINAL).source)
+    }
+
     @Test fun recoveryFeedbackPreservesCaptionsAndDistinguishesScheduledRetriesFromNewSpeech() {
         val snapshots = Snapshots(true)
         snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))

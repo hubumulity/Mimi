@@ -70,6 +70,11 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                         if (snapshot.translation.isBlank()) handoffDraws.incrementAndGet()
                         if (!panel.translation.isShown) drawFailure.set("confirmed_translation_replaced_by_placeholder")
                     }
+                    if (observedMode.get() == CaptionDisplayMode.ORIGINAL && !snapshot.hidden &&
+                        (snapshot.source.isNotBlank() || snapshot.retainedConfirmed?.pair?.source?.isNotBlank() == true)) {
+                        if (snapshot.currentSource.text.isBlank()) handoffDraws.incrementAndGet()
+                        if (!panel.source.isShown) drawFailure.set("retained_original_replaced_by_placeholder")
+                    }
                     for (row in listOf(panel.source, panel.translation).filter { it.isShown }) {
                         val layout = row.layout ?: continue
                         val first = (layout.lineCount - row.maxLines).coerceAtLeast(0)

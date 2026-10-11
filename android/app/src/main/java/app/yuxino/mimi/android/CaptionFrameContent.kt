@@ -56,8 +56,17 @@ internal data class CaptionFrameContent(
  * keeps the shared complete pair while waiting, never mixing sentence owners. */
 internal fun SubtitleBus.DisplaySnapshot.forReading(mode: CaptionDisplayMode): SubtitleBus.DisplaySnapshot {
     if (hidden) return this
-    if (mode == CaptionDisplayMode.ORIGINAL) return copy(source = currentSource.text,
-        confirmed = currentSource.confirmed, createdAt = currentSource.createdAt)
+    if (mode == CaptionDisplayMode.ORIGINAL) {
+        val current = copy(source = currentSource.text,
+            confirmed = currentSource.confirmed, createdAt = currentSource.createdAt)
+        if (currentSource.text.isNotBlank()) return current
+        // ASR may publish an empty opening draft between utterances. Keep the
+        // shared completed original until actual new words arrive, just as the
+        // translated modes keep their completed pair while MT is pending.
+        val retained = retainedConfirmed?.takeIf { it.pair.source.isNotBlank() }
+            ?: return if (source.isNotBlank()) this else current
+        return copy(source = retained.pair.source, confirmed = true, createdAt = retained.createdAt)
+    }
     if (!mode.translationVisible || translation.isNotBlank()) return this
     val retained = retainedConfirmed?.takeIf { it.pair.translation.isNotBlank() } ?: return this
     return copy(source = retained.pair.source, translation = retained.pair.translation,

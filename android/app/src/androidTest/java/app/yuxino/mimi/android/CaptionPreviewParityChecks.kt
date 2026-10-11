@@ -307,6 +307,30 @@ internal class CaptionPreviewParityChecks(private val test: Instrumentation) {
                     }
                     SettingsStore.setSubtitleTimestamps(context, false)
                 }
+                ui {
+                    SettingsStore.setDisplayMode(context, CaptionDisplayMode.ORIGINAL)
+                    SettingsStore.setSubtitleTimestamps(context, true)
+                    SubtitleBus.onFinalPair("Synthetic completed original before an ASR gap.", "合成已完成译文。", "en")
+                    SubtitleBus.onSourceDraft("", "en")
+                }
+                compare(home, "$prefix-original-empty-handoff", true)
+                ui {
+                    val panel = actual() as CaptionPanelView
+                    check(panel.source.isShown && panel.source.text.toString() == "Synthetic completed original before an ASR gap.") {
+                        "Completed original replaced by the listening placeholder"
+                    }
+                    check(panel.timestamp.visibility == View.VISIBLE)
+                    SubtitleBus.onSourceDraft("Synthetic next original.", "en")
+                }
+                compare(home, "$prefix-original-next-draft", true)
+                ui {
+                    val panel = actual() as CaptionPanelView
+                    check(panel.source.text.toString() == "Synthetic next original." && panel.timestamp.visibility == View.GONE)
+                    SettingsStore.setSubtitleTimestamps(context, false)
+                    SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
+                    SubtitleBus.clear()
+                    SubtitleBus.onFinalPair("Synthetic caption for appearance and alignment.", "合成字幕用于检查外观与对齐。", "en")
+                }
                 ui { SettingsStore.setFontSize(context, 12); SettingsStore.setOverlayWidthPercent(context, 100); SettingsStore.setOverlayHeightPercent(context, 70); SettingsStore.setOverlayBgAlpha(context, 100) }
                 compare(home, "$prefix-solid-large")
                 ui {

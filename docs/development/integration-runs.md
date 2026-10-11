@@ -2635,8 +2635,22 @@
   control bubble and was replaced by an actual subtitle-window screenshot.
   Normal Stop completed; display mode and the original saved service selection
   were restored. No DeepL or OpenAI paid comparison was started.
-- Final sustained Android playback and original model-test configuration restore
-  remain pending. Full-video playback, physical devices, API 29, split-screen,
+- Clean `8d00c395` Dev/test APK receipts and visually confirmed 0:00 precede the
+  15-minute Android run: three 300-second modes received AUDIO, with
+  1,172/983/991 visible caption draws, zero content-driven height changes and
+  no recovery events. Automated geometry checks passed, but inspection of the
+  original-mode 30-second clip exposed a listening-placeholder flash around its
+  12-second mark during an empty ASR handoff. This baseline is not accepted as
+  complete reading comfort; the old listener only guarded translated handoffs.
+- Original frame selection now retains the existing shared completed original
+  during an empty ASR draft, or the complete shared preview without confirming
+  it. Actual new recognition immediately takes over, with its own confirmation
+  metadata. No new transcript storage or provider policy is introduced. Direct
+  JNI tests cover atomic/realtime projections, disabled history, empty drafts,
+  next words, confirmation time, hidden frames and Clear. Native preview and live
+  checks now guard original handoffs too. Corrected native/live acceptance and
+  original model-test configuration restore remain pending.
+- Full-video playback, physical devices, API 29, split-screen,
   every language/font combination and independent semantic-quality acceptance
   remain outside these completed checks. Preserve private evidence and failed
   baselines outside Git.

@@ -108,6 +108,14 @@ Original reading selects the shared raw recognition lane even when the service
 holds complete translated pairs. Translation delays must not delay that view.
 Show confirmation time only when the raw source is final and belongs to the
 shared confirmed pair; a different owner's time cannot accompany a new draft.
+If ASR opens its next utterance with an empty draft, keep the shared completed
+original and its own time until actual new words arrive. An empty recognition
+handoff must not flash the listening placeholder. This selects existing shared
+content, with no additional transcript retention; hidden/clear frames and a
+fresh session still remain empty. A complete shared preview may likewise stay
+visible across an empty opening draft, but remains unconfirmed without a time.
+Exercise both atomic and realtime projections
+through JNI, native previews and real original-only playback handoffs.
 
 Keep realtime intermediate captions without adding a reading-speed switch or
 filtering drafts. Normal-mode text follows the desktop bottom reading edge:
