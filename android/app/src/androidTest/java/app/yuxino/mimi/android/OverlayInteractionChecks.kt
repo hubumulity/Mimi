@@ -500,7 +500,22 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             val beforeWidth = root().width; val beforeHeight = root().height
             move(root().findViewWithTag("overlay-resize"), 24, 32)
             onUi { test.sendStatus(0, Bundle().apply { putString("stream", "SIZE_GEOMETRY before=${beforeWidth}x$beforeHeight after=${root().width}x${root().height} saved=${SettingsStore.overlayWidthPercent(context)}/${SettingsStore.overlayHeightPercent(context)}\n") }) }
-            waitFor { root().width > beforeWidth && root().height > beforeHeight }
+            waitFor { root().width > beforeWidth && root().height >= beforeHeight }
+            onUi {
+                if (root().height == beforeHeight) {
+                    val availableHeight = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        val metrics = context.getSystemService(android.view.WindowManager::class.java).currentWindowMetrics
+                        val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+                            android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                        metrics.bounds.height() - insets.top - insets.bottom
+                    } else android.graphics.Rect().also(root()::getWindowVisibleDisplayFrame).height()
+                    // An already larger bilingual minimum cannot grow toward a
+                    // lower 70% preference. Otherwise both dimensions must move.
+                    check(beforeHeight >= availableHeight * 70 / 100 && SettingsStore.overlayHeightPercent(context) == 70) {
+                        "Resize failed to increase height despite available space"
+                    }
+                }
+            }
             check(SettingsStore.overlayWidthPercent(context) > 55 && SettingsStore.overlayHeightPercent(context) > 30)
             val beforeY = SettingsStore.expandedYOffset(context)
             // Large-font landscape frames can already be at the top clamp.
