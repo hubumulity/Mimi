@@ -10,7 +10,7 @@ object SubtitleBus {
         val retryScheduled: Boolean = false, val translationTimedOut: Boolean = false)
     data class DisplaySnapshot(val source: String, val translation: String, val hidden: Boolean,
         val confirmed: Boolean, val createdAt: Long?, val history: List<TimedPair>,
-        val status: String, val feedback: RuntimeFeedback)
+        val status: String, val feedback: RuntimeFeedback, val retainedConfirmed: TimedPair? = null)
     @Volatile var runtimeFeedback = RuntimeFeedback()
         private set
     private val lock = Any()
@@ -135,8 +135,12 @@ object SubtitleBus {
     fun historySnapshot(): List<Pair> = historySnapshotWithTime().map { it.pair }
     /** Read one published shared state; a provider thread can publish during UI rendering. */
     fun displaySnapshot(): DisplaySnapshot = synchronized(lock) {
+        val retained = snapshot.optJSONObject("displayPair")?.takeIf { snapshot.optBoolean("displayPairFinal") }?.let {
+            TimedPair(Pair(it.optString("source"), if (originalOnly) "" else it.optString("translation")),
+                snapshot.optLong("displayPairCreatedAt").takeIf { time -> time > 0 })
+        }
         DisplaySnapshot(displaySource, displayTranslation, liveHidden, displayPairFinal,
-            displayPairCreatedAt, historySnapshotWithTime(), statusLine, runtimeFeedback)
+            displayPairCreatedAt, historySnapshotWithTime(), statusLine, runtimeFeedback, retained)
     }
     fun historySnapshotWithTime(): List<TimedPair> = synchronized(lock) {
         val rows = snapshot.optJSONArray("history") ?: return@synchronized emptyList()

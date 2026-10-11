@@ -94,3 +94,12 @@ from a gesture started in the previous configuration, including its final up.
 Check continuous drawing
 with eight scripts, all three modes, height endpoints and actual orientation
 round trips, then rerun comparable real playback.
+
+Realtime services can publish the next original before its translation. Keep
+the shared reducer's retained confirmed pair visible in translated reading modes
+until a new translation exists, even with history disabled. Select the whole
+pair and its confirmation metadata; never combine its translation with the new
+original. Original-only mode continues to show current recognition. This is a
+native frame selection from the existing shared snapshot, with no extra retained
+transcript, reducer, provider policy or timer. Clear/hidden frames must not revive
+old content, and a fresh session with no confirmed pair still shows listening.

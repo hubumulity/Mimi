@@ -27,7 +27,7 @@ internal data class CaptionFrameContent(
     companion object {
         fun live(context: Context, mode: CaptionDisplayMode, historyLimit: Int,
                  captureState: CaptureHealth.State?, running: Boolean, stopping: Boolean): CaptionFrameContent {
-            val state = SubtitleBus.displaySnapshot()
+            val state = SubtitleBus.displaySnapshot().forReading(mode)
             val visible = !state.hidden && (mode.sourceVisible && state.source.isNotBlank() ||
                 mode.translationVisible && state.translation.isNotBlank())
             val localized = InterfaceLanguage.context(context)
@@ -50,6 +50,15 @@ internal data class CaptionFrameContent(
                 if (showTime) captionTime(currentTime) else "")
         }
     }
+}
+
+/** Keep the shared confirmed pair readable while the next translation is pending.
+ * Replace the entire pair, never attach an old translation to a new original. */
+internal fun SubtitleBus.DisplaySnapshot.forReading(mode: CaptionDisplayMode): SubtitleBus.DisplaySnapshot {
+    if (hidden || !mode.translationVisible || translation.isNotBlank()) return this
+    val retained = retainedConfirmed?.takeIf { it.pair.translation.isNotBlank() } ?: return this
+    return copy(source = retained.pair.source, translation = retained.pair.translation,
+        confirmed = true, createdAt = retained.createdAt)
 }
 
 /** Unchanged runtime/health publications must not reset a TextView's native viewport. */

@@ -7,15 +7,17 @@ import org.junit.Before
 import org.junit.Test
 import app.yuxino.mimi.android.R
 import app.yuxino.mimi.android.runtimeFeedbackResource
+import app.yuxino.mimi.android.CaptionDisplayMode
+import app.yuxino.mimi.android.forReading
 
 /** Feed real Rust reducer snapshots through the production session-to-UI boundary. */
 class RuntimeSubtitleProjectionTest {
     @Before fun reset() { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(2) }
     @After fun cleanup() { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
 
-    private class Snapshots(private val atomic: Boolean) {
+    private class Snapshots(private val atomic: Boolean, historyLimit: Int = 2) {
         private var response = SharedSubtitleCore.exchange(JSONObject().put("operation",
-            JSONObject().put("type", "create").put("history_limit", 2)))
+            JSONObject().put("type", "create").put("history_limit", historyLimit)))
         fun apply(event: JSONObject) {
             response = SharedSubtitleCore.exchange(JSONObject().put("state", response.getString("state"))
                 .put("operation", JSONObject().put("type", "apply").put("event", event)))
@@ -29,6 +31,49 @@ class RuntimeSubtitleProjectionTest {
         .put("type", "identified_final_pair").put("utterance_id", id).put("source", source).put("translation", translation)
     private fun draft(role: String, text: String) = JSONObject().put("type", "utterance_text")
         .put("utterance_id", "B").put("role", role).put("text", text).put("is_final", false)
+
+    @Test fun pendingRealtimeTranslationKeepsAWholeConfirmedReadingPairWithoutHistory() {
+        SubtitleBus.setHistoryLimit(0)
+        val snapshots = Snapshots(false, 0)
+        snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))
+        val confirmed = SubtitleBus.displaySnapshot().createdAt
+        snapshots.apply(draft("source", "Synthetic B."))
+        val pending = SubtitleBus.displaySnapshot()
+        assertEquals("Synthetic B.", pending.source)
+        assertEquals("", pending.translation)
+        assertTrue(pending.history.isEmpty())
+        for (mode in listOf(CaptionDisplayMode.BILINGUAL, CaptionDisplayMode.TRANSLATION)) {
+            val reading = pending.forReading(mode)
+            assertEquals("Synthetic A.", reading.source)
+            assertEquals("合成 A。", reading.translation)
+            assertTrue(reading.confirmed)
+            assertEquals(confirmed, reading.createdAt)
+        }
+        assertEquals(pending, pending.forReading(CaptionDisplayMode.ORIGINAL))
+        snapshots.apply(draft("translation", "合成 B。"))
+        for (mode in CaptionDisplayMode.entries) {
+            val reading = SubtitleBus.displaySnapshot().forReading(mode)
+            assertEquals("Synthetic B.", reading.source)
+            assertEquals("合成 B。", reading.translation)
+            assertFalse(reading.confirmed)
+            assertNull(reading.createdAt)
+        }
+        SubtitleBus.clear()
+        for (mode in CaptionDisplayMode.entries) assertEquals("", SubtitleBus.displaySnapshot().forReading(mode).translation)
+    }
+
+    @Test fun firstDraftAndHiddenFramesCannotInventOrReviveAConfirmedTranslation() {
+        val snapshots = Snapshots(false)
+        snapshots.apply(draft("source", "Synthetic first draft."))
+        for (mode in CaptionDisplayMode.entries) {
+            val state = SubtitleBus.displaySnapshot()
+            assertEquals(state, state.forReading(mode))
+        }
+        snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))
+        snapshots.apply(draft("source", "Synthetic B."))
+        val hidden = SubtitleBus.displaySnapshot().copy(hidden = true)
+        for (mode in CaptionDisplayMode.entries) assertEquals(hidden, hidden.forReading(mode))
+    }
 
     @Test fun recoveryFeedbackPreservesCaptionsAndDistinguishesScheduledRetriesFromNewSpeech() {
         val snapshots = Snapshots(true)

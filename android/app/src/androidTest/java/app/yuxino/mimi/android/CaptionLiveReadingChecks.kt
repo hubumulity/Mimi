@@ -49,6 +49,8 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         var failure: Throwable? = null
         val drawFailure = AtomicReference<String?>()
         val draws = AtomicInteger()
+        val handoffDraws = AtomicInteger()
+        val observedMode = AtomicReference<CaptionDisplayMode?>()
         var lastSize: Pair<Int, Int>? = null
         val changes = AtomicInteger()
         var observer: ViewTreeObserver? = null
@@ -58,6 +60,12 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             if (current != null) {
                 val panel = current.findViewWithTag<CaptionPanelView>("expanded-subtitles")
                 if (panel.isShown && panel.followingLive) {
+                    val snapshot = SubtitleBus.displaySnapshot()
+                    if (observedMode.get()?.translationVisible == true && !snapshot.hidden &&
+                        snapshot.retainedConfirmed?.pair?.translation?.isNotBlank() == true) {
+                        if (snapshot.translation.isBlank()) handoffDraws.incrementAndGet()
+                        if (!panel.translation.isShown) drawFailure.set("confirmed_translation_replaced_by_placeholder")
+                    }
                     for (row in listOf(panel.source, panel.translation).filter { it.isShown }) {
                         val layout = row.layout ?: continue
                         val first = (layout.lineCount - row.maxLines).coerceAtLeast(0)
@@ -96,10 +104,13 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             check(MimiService.activeModelNames == models) { "active_model_mismatch" }
             ui { observer = root()!!.viewTreeObserver; observer!!.addOnDrawListener(listener) }
             for ((selected, seconds) in phases) {
+                observedMode.set(null)
                 ui { SettingsStore.setImmersiveSubtitles(context, false); SettingsStore.setDisplayMode(context, selected) }
                 SystemClock.sleep(600)
                 ui { lastSize = null; changes.set(0) }
+                observedMode.set(selected)
                 val beforeDraws = draws.get()
+                val beforeHandoffs = handoffDraws.get()
                 var sourceUpdates = 0; var translationUpdates = 0
                 var sourceHash = 0; var translationHash = 0
                 var maximumSource = 0; var maximumTranslation = 0
@@ -149,6 +160,7 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 results.put(JSONObject().put("mode", selected.id).put("seconds", seconds).put("sourceUpdates", sourceUpdates)
                     .put("translationUpdates", translationUpdates).put("nativeDraws", draws.get() - beforeDraws)
                     .put("maximumSourceChars", maximumSource).put("maximumTranslationChars", maximumTranslation).put("heightChanges", changes.get())
+                    .put("readingHandoffDraws", handoffDraws.get() - beforeHandoffs)
                     .put("audioSamples", audioSamples).put("firstSourceMs", firstSourceMs ?: JSONObject.NULL)
                     .put("firstTranslationMs", firstTranslationMs ?: JSONObject.NULL).put("maximumSourceGapMs", maximumSourceGapMs)
                     .put("connectionEvents", feedbackEvents))

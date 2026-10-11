@@ -98,6 +98,28 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                 ui { SettingsStore.setImmersiveSubtitles(context, immersive); SettingsStore.setDisplayMode(context, mode) }
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_APPLY_APPEARANCE))
                 SystemClock.sleep(180)
+                stage = "handoff/$immersive/$mode"
+                ui {
+                    SubtitleBus.clear()
+                    SubtitleBus.onFinalPair("Synthetic complete A.", "完整的合成 A。", "en")
+                    SubtitleBus.onSourceDraft("Synthetic pending B.", "en")
+                }
+                SystemClock.sleep(180)
+                ui {
+                    val current = rows()
+                    check(current[0].text.toString() == if (mode == CaptionDisplayMode.ORIGINAL)
+                        "Synthetic pending B." else "Synthetic complete A.") { "Reading handoff changed sentence owner at $stage" }
+                    if (mode.translationVisible) {
+                        check(current[1].isShown && current[1].text.toString() == "完整的合成 A。") { "Pending translation flashed a placeholder at $stage" }
+                    }
+                    SubtitleBus.onTranslationDraft("新的合成 B。")
+                }
+                SystemClock.sleep(180)
+                ui {
+                    check(rows()[0].text.toString() == "Synthetic pending B.") { "Completed next translation failed to advance at $stage" }
+                    check(rows()[1].text.toString() == "新的合成 B。")
+                }
+                cases++
                 for ((index, sample) in samples.withIndex()) {
                     stage = "$immersive/$mode/language-$index"
                     ui { SubtitleBus.onFinalPair(samples[0].repeat(5), sample.repeat(5), "en") }
