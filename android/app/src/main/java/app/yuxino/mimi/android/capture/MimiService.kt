@@ -905,9 +905,14 @@ class MimiService : Service() {
         val footer = object : FrameLayout(this) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 val available = MeasureSpec.getSize(widthMeasureSpec)
-                immersion.measure(MeasureSpec.makeMeasureSpec((available - dp(56)).coerceAtLeast(dp(48)), MeasureSpec.AT_MOST),
+                val actionWidth = (kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
+                    immersion.compoundPaddingLeft + immersion.compoundPaddingRight)
+                    .coerceIn(dp(48), (available - dp(56)).coerceAtLeast(dp(48)))
+                // Measure wrapping at the exact width FrameLayout will assign.
+                // AT_MOST can shrink to a rounded text width that gains another
+                // line during the subsequent exact pass after a locale change.
+                immersion.measure(MeasureSpec.makeMeasureSpec(actionWidth, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-                val actionWidth = maxOf(immersion.measuredWidth, dp(48))
                 val actionHeight = maxOf(immersion.measuredHeight, dp(48))
                 val marksWidth = (providerRow.childCount - 1) * dp(22)
                 val nameWidth = kotlin.math.ceil(providerModel.paint.measureText(providerModel.text.toString())).toInt()

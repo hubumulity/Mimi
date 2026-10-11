@@ -305,6 +305,10 @@ immersion left and resizing right; use a separate centered provider row when
 names cannot fit between symmetric action margins. Native geometry checks
 compare window-relative centers and action separation after resizing and locale
 changes, including both single and independent provider badges.
+Measure wrapped footer labels at the exact width assigned by their parent.
+An AT_MOST text measurement followed by a narrower exact width can add a line
+without reserving its height. Verify locale changes at font scale 2, including
+the complete action's rendered line height, rather than only its touch target.
 Keep mobile floating service identities compact: show brands and marks, with
 model details available in Services. A tap opens that section in the existing
 main activity. Initialize background/opacity before adding the native window
