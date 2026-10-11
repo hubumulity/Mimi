@@ -203,6 +203,10 @@ metadata. Deliberate upward scrolling opens the complete bounded text and keeps
 the reader's position through updates; returning to the bottom resumes following.
 Native checks must assert visible glyph bounds for both lanes, not just populated
 TextViews, an outer minimum height or pixel parity between two clipped renderers.
+Android TextView's maxLines measures the first lines; a following tail must
+measure the actual last lines too. Fallback fonts can have different glyph
+heights within one sentence. Size and allocate from those native layout bounds,
+and check the first and last visible glyphs after wrapping, font and size changes.
 Sentence dividers and local confirmation time default off and are controlled in
 both appearance entry points. Use the shared final's time, including with history
 disabled, hide time on drafts, and avoid duplicating the current pair in history.
