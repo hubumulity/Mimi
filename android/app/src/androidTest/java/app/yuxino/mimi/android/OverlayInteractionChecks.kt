@@ -32,6 +32,18 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
     private fun captionPixels(sp: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_SP, sp.toFloat(), caption().resources.displayMetrics,
     )
+    private fun surface(): Pair<Int, Float> {
+        val panel = root().findViewWithTag<View>("expanded-subtitles")
+        return checkNotNull((panel.background as android.graphics.drawable.GradientDrawable).color).defaultColor to panel.alpha
+    }
+    private fun backgroundPixel(): Int {
+        idle(); SystemClock.sleep(350)
+        val frame = checkNotNull(nativeFrame(root()))
+        val image = checkNotNull(test.uiAutomation.takeScreenshot())
+        return try {
+            image.getPixel(frame.centerX(), frame.top + (4 * context.resources.displayMetrics.density).toInt())
+        } finally { image.recycle() }
+    }
     private fun nativeFrame(view: View): android.graphics.Rect? {
         val window = view.rootView
         if (window.width <= 0 || window.height <= 0) return null
@@ -216,8 +228,13 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 onUi {
                     val marks = root().findViewWithTag<android.widget.LinearLayout>("overlay-providers")
                     check(marks.childCount == if (independent) 3 else 2)
+                    checkOverlayChromeAlignment(root())
                 }
                 capture(if (independent) "two-provider-marks" else "one-provider-mark")
+                tapVisible(root().findViewWithTag("overlay-providers"))
+                waitFor { home.hasWindowFocus() && home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs)
+                    .checkedRadioButtonId == R.id.tab_service }
+                onUi { home.findViewById<android.widget.RadioGroup>(R.id.settings_tabs).check(R.id.tab_caption) }
             }
         } finally {
             check(SettingsStore.saveConfiguration(context, saved, deepL, false, model))
@@ -252,6 +269,8 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 SettingsStore.setImmersiveSubtitles(context, false)
                 SettingsStore.setOverlayBounds(context, 92, 30, 0, 0)
                 SettingsStore.setFontSize(context, 16)
+                SettingsStore.setOverlayBgAlpha(context, 37)
+                SettingsStore.setOverlayOpacity(context, 60)
                 SettingsStore.setDisplayMode(context, CaptionDisplayMode.BILINGUAL)
                 check(prefs.edit().putBoolean("seen", true).putBoolean("immersive_seen", true).commit())
             }
@@ -269,6 +288,12 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             onUi { running(true); SubtitleBus.clear() }
             waitFor { root().findViewWithTag<TextView>("expanded-status").isShown }
             check(root().findViewWithTag<View>("collapse-overlay") == null)
+            onUi { checkOverlayChromeAlignment(root()) }
+            val initialSurface = surface()
+            check(initialSurface == (android.graphics.Color.argb(37 * 255 / 100, 16, 16, 16) to .6f)) {
+                "First caption frame ignored saved background/opacity"
+            }
+            val initialPixel = backgroundPixel()
             capture("panel-waiting")
             tapVisible(root().findViewWithTag("overlay-font"))
             capture("quick-settings-open")
@@ -279,8 +304,22 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             for (value in listOf(12, 24, 17)) {
                 setSlider(R.id.font_size, value)
                 waitFor { SettingsStore.fontSize(context) == value && abs(status.textSize - captionPixels(value)) < 1 }
+                check(surface() == initialSurface && backgroundPixel() == initialPixel) { "Font adjustment changed caption background" }
                 assertEditorAndCaptionSeparated()
             }
+            setSlider(R.id.overlay_opacity, 100)
+            waitFor { surface().second == 1f }
+            val opaquePixel = backgroundPixel()
+            for (value in listOf(24, 12, 17)) {
+                setSlider(R.id.font_size, value)
+                waitFor { SettingsStore.fontSize(context) == value }
+                check(surface().first == initialSurface.first && backgroundPixel() == opaquePixel) {
+                    "Font adjustment changed background at 100% opacity"
+                }
+            }
+            setSlider(R.id.overlay_opacity, 60)
+            waitFor { surface() == initialSurface }
+            check(backgroundPixel() == initialPixel) { "Opacity round-trip did not restore the original pixels" }
             val initialWidth = root().width
             setSlider(R.id.overlay_width, 55)
             waitFor { SettingsStore.overlayWidthPercent(context) == 55 && root().width < initialWidth }
@@ -322,6 +361,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 SubtitleBus.onTranslationDraft("合成字幕示例。")
             }
             waitFor { caption().isShown && root().width < initialWidth }
+            onUi { checkOverlayChromeAlignment(root()) }
             capture("panel-before-direct-resize")
             val frame = checkNotNull(nativeFrame(root()))
             val bitmap = checkNotNull(test.uiAutomation.takeScreenshot())
@@ -340,6 +380,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
             val beforeY = SettingsStore.expandedYOffset(context)
             move(root().findViewWithTag("overlay-drag"), 0, -32)
             waitFor { SettingsStore.expandedYOffset(context) > beforeY }
+            onUi { checkOverlayChromeAlignment(root()) }
             capture("panel-direct-resize-and-drag")
             val captionPair = SubtitleBus.displaySource to SubtitleBus.displayTranslation
             for (display in CaptionDisplayMode.entries) {
@@ -367,6 +408,7 @@ internal class OverlayInteractionChecks(private val test: Instrumentation) {
                 waitFor { root().findViewWithTag<View>("expanded-subtitles").isShown }
                 check(root() === window && SettingsStore.overlayXOffset(context, true) == savedX && SettingsStore.expandedYOffset(context) == savedY)
             }
+            onUi { checkOverlayChromeAlignment(root()) }
             capture("panel-after-immersive")
             onUi { running(false); host!!.finish(); host = null }
             waitFor { home.hasWindowFocus() }

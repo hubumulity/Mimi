@@ -20,6 +20,22 @@ and minimum reading/control bounds clamp the displayed frame without rewriting
 preferences. History scrolls inside the selected height rather than enlarging
 the window. No expand/collapse controls remain.
 
+Center the top drag mark and language route against the whole panel, reserving
+equal space around the route for the right-side settings action. Center the
+provider group at the bottom, with immersion at the left and resizing at the
+right. If complete provider names cannot fit between symmetric action margins,
+give the provider group its own centered row above the two actions. Bound long
+names with an ellipsis while retaining their complete accessible description.
+The floating identity shows service brands and marks, deduplicating a built-in
+recognition/translation provider. Independent services keep both identities.
+Tapping it opens Services in the existing main activity; model details stay
+with service configuration instead of occupying subtitle space.
+
+Initialize surface color and opacity from saved settings before the first native
+frame, using the same paint path as live updates. Font changes must preserve the
+surface and rendered background pixels, including a round-trip through 100%
+opacity. Check nondefault saved values rather than only the preview defaults.
+
 The floating quick-settings dialog contains controls only. Font, color, width,
 height, opacity, display mode and alignment update the existing caption window,
 including the listening placeholder. Temporarily fit that window above the

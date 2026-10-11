@@ -44,6 +44,10 @@ Rust subtitle/provider runtime as desktop through JNI.
   width (55–100 %), height (20–70 % of the safe viewport), background alpha
   (0–90 %), text color presets, font size and whole-window opacity.
   Quick settings changes update the actual captions visibly above the editor.
+  The centered provider entry shows service brands; tap it to open Services and
+  inspect model details. Narrow panels place it on a separate row above immersion
+  and resize actions. Saved background and opacity apply from the first frame;
+  changing font size preserves them.
   Before speech and
   during a silent gap, an active session shows the same localized listening
   message as desktop, using the selected typography and color. An optional

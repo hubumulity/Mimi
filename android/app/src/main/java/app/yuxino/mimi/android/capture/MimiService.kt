@@ -566,7 +566,6 @@ class MimiService : Service() {
 
         overlayPlacement.reset(SettingsStore.overlayYOffset(this), SettingsStore.immersiveSubtitles(this))
         overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
-        val bgAlpha = if (immersiveSession) 0 else SettingsStore.overlayBgAlpha(this)
         val compact = LinearLayout(this).apply {
             tag = "compact-subtitle"
             orientation = LinearLayout.VERTICAL
@@ -575,9 +574,7 @@ class MimiService : Service() {
             setPadding(dp(horizontalPadding), dp(9), dp(horizontalPadding), dp(10))
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
-                setColor(((bgAlpha / 100.0) * 255).toInt() shl 24 or 0x101010)
             }
-            alpha = if (immersiveSession) 1f else SettingsStore.overlayOpacity(this@MimiService) / 100f
         }
 
         val status = TextView(this).apply {
@@ -741,6 +738,7 @@ class MimiService : Service() {
             mainHandler.post { if (overlayView === root) updateOverlayGeometry() }
             insets
         }
+        applyOverlaySurface(compact, panel)
         wm.addView(root, params)
         overlayView = root
         overlayParams = params
@@ -842,17 +840,17 @@ class MimiService : Service() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = GradientDrawable().apply {
                 cornerRadius = dp(22).toFloat()
-                setColor(0xD91B1B1B.toInt())
             }
         }
         fun openHome() = startActivity(Intent(this, app.yuxino.mimi.android.MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        val header = LinearLayout(this).apply { tag = "overlay-toolbar"; gravity = Gravity.CENTER_VERTICAL }
+        val header = FrameLayout(this).apply { tag = "overlay-toolbar" }
         header.addView(FrameLayout(this).apply {
             tag = "overlay-drag"; isClickable = true; isFocusable = true
             contentDescription = interfaceString(R.string.overlay_drag)
             setOnClickListener { openHome() }
             addView(View(this@MimiService).apply {
+                tag = "overlay-drag-mark"
                 background = GradientDrawable().apply { cornerRadius = dp(2).toFloat(); setColor(0xFF858585.toInt()) }
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
@@ -863,22 +861,28 @@ class MimiService : Service() {
                 contentDescription = interfaceString(R.string.overlay_language_description)
                 textSize = 14f; setTextColor(0xFFDDDDDD.toInt()); maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER
-            }, FrameLayout.LayoutParams(-1, -1).apply { topMargin = dp(8) })
-        }, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }, FrameLayout.LayoutParams(-1, -1).apply {
+                topMargin = dp(8); marginStart = dp(48); marginEnd = dp(48)
+            })
+        }, FrameLayout.LayoutParams(-1, dp(48)))
         header.addView(panelIcon(R.drawable.ic_settings, R.string.caption_style_controls).apply {
             tag = "overlay-font"; setOnClickListener { showAppearanceControls() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        panel.addView(header)
+        }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END))
+        panel.addView(header, LinearLayout.LayoutParams(-1, dp(48)))
         val immersion = panelButton(interfaceString(R.string.overlay_enter_immersive)).apply {
             contentDescription = text; tooltipText = text
             tag = "enter-immersive"; setOnClickListener { setImmersiveMode(true) }
         }
         val provider = ServiceProvider.fromId(SettingsStore.provider(this))
         val providerRow = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL; tag = "overlay-providers"
+            gravity = Gravity.CENTER; tag = "overlay-providers"
             isClickable = true; isFocusable = true; minimumHeight = dp(48); minimumWidth = dp(48)
             contentDescription = overlayProviderLabel()
-            setOnClickListener { openHome() }
+            setOnClickListener {
+                startActivity(Intent(this@MimiService, app.yuxino.mimi.android.MainActivity::class.java)
+                    .putExtra("settings_section", "services")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            }
         }
         fun mark(resource: Int) = ImageView(this).apply {
             setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
@@ -894,35 +898,39 @@ class MimiService : Service() {
             textSize = 14f; setTextColor(0xFFBBBBBB.toInt()); maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        providerRow.addView(providerModel, LinearLayout.LayoutParams(0, -2, 1f))
-        val detailsRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        detailsRow.addView(providerRow, LinearLayout.LayoutParams(0, dp(48), 1f))
-        detailsRow.addView(panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
+        providerRow.addView(providerModel, LinearLayout.LayoutParams(-2, -2))
+        val resize = panelIcon(R.drawable.ic_overlay_resize, R.string.overlay_resize).apply {
             tag = "overlay-resize"; setOnClickListener { showAppearanceControls() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        val footer = object : LinearLayout(this) {
+        }
+        val footer = object : FrameLayout(this) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                // Give the common action its own row before a narrow panel
-                // turns a localized label into a stack of clipped syllables.
-                val markWidth = maxOf((providerRow.childCount - 1) * dp(22), dp(48))
-                val labelWidth = kotlin.math.ceil(immersion.paint.measureText(immersion.text.toString())).toInt() +
-                    immersion.compoundPaddingLeft + immersion.compoundPaddingRight
-                val singleRow = MeasureSpec.getSize(widthMeasureSpec) >= dp(48 + 8) + markWidth + maxOf(labelWidth, dp(48))
-                orientation = if (singleRow) HORIZONTAL else VERTICAL
+                val available = MeasureSpec.getSize(widthMeasureSpec)
+                immersion.measure(MeasureSpec.makeMeasureSpec((available - dp(56)).coerceAtLeast(dp(48)), MeasureSpec.AT_MOST),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+                val actionWidth = maxOf(immersion.measuredWidth, dp(48))
+                val actionHeight = maxOf(immersion.measuredHeight, dp(48))
+                val marksWidth = (providerRow.childCount - 1) * dp(22)
+                val nameWidth = kotlin.math.ceil(providerModel.paint.measureText(providerModel.text.toString())).toInt()
+                val centerWidth = available - 2 * (actionWidth + dp(8))
+                val singleRow = centerWidth >= maxOf(dp(48), marksWidth + nameWidth)
+                // Keep the provider group centered against the whole window.
+                // Long names get their own row instead of shifting off-center
+                // or squeezing the localized immersion action.
+                providerModel.maxWidth = ((if (singleRow) centerWidth else available) - marksWidth).coerceAtLeast(0)
+                (providerRow.layoutParams as LayoutParams).apply {
+                    gravity = if (singleRow) Gravity.CENTER else Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                }
                 (immersion.layoutParams as LayoutParams).apply {
-                    width = if (singleRow) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
-                    marginEnd = if (singleRow) dp(8) else 0
-                    weight = 0f
+                    width = actionWidth; height = actionHeight
                 }
-                (detailsRow.layoutParams as LayoutParams).apply {
-                    width = if (singleRow) 0 else LayoutParams.MATCH_PARENT
-                    weight = if (singleRow) 1f else 0f
-                }
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+                val desiredHeight = actionHeight + if (singleRow) 0 else dp(48)
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(
+                    resolveSize(desiredHeight, heightMeasureSpec), MeasureSpec.EXACTLY))
             }
-        }.apply { tag = "overlay-actions"; gravity = Gravity.CENTER_VERTICAL }
-        footer.addView(immersion, LinearLayout.LayoutParams(-2, -2))
-        footer.addView(detailsRow, LinearLayout.LayoutParams(0, -2, 1f))
+        }.apply { tag = "overlay-actions" }
+        footer.addView(providerRow, FrameLayout.LayoutParams(-2, dp(48), Gravity.CENTER))
+        footer.addView(immersion, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START))
+        footer.addView(resize, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM or Gravity.END))
         footer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateOverlayGeometry() }
 
         expandedStatusView = TextView(this).apply {
@@ -973,7 +981,7 @@ class MimiService : Service() {
         transcript.addView(expandedTranslationView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         scroll.addView(transcript)
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8) })
-        panel.addView(footer)
+        panel.addView(footer, LinearLayout.LayoutParams(-1, -2))
         return panel
     }
 
@@ -1130,21 +1138,26 @@ class MimiService : Service() {
             windowManager?.updateViewLayout(root, params)
         }
         updateOverlayFontSize()
-        compactView?.apply {
-            alpha = if (immersiveSession) 1f else SettingsStore.overlayOpacity(this@MimiService) / 100f
-            (background as? GradientDrawable)?.setColor(
-                (if (immersiveSession) 0 else ((SettingsStore.overlayBgAlpha(this@MimiService) / 100.0) * 255).toInt()) shl 24 or 0x101010)
-        }
+        val compact = compactView
+        val panel = expandedView
+        if (compact != null && panel != null) applyOverlaySurface(compact, panel)
         translationView?.setTextColor(SettingsStore.translationColor(this))
         expandedTranslationView?.setTextColor(SettingsStore.translationColor(this))
-        expandedView?.alpha = SettingsStore.overlayOpacity(this) / 100f
-        (expandedView?.background as? GradientDrawable)?.setColor(
-            ((SettingsStore.overlayBgAlpha(this) * 255 / 100) shl 24) or 0x101010)
         overlayPlacement.setPreferredOffsetDp(SettingsStore.overlayYOffset(this))
         overlayPlacement.setExpandedOffsetDp(SettingsStore.expandedYOffset(this))
         updateOverlayGeometry()
         expandedView?.requestLayout()
         renderBus()
+    }
+
+    /** First frame and preference refresh must use the same saved surface. */
+    private fun applyOverlaySurface(compact: View, panel: View) {
+        val opacity = SettingsStore.overlayOpacity(this) / 100f
+        val background = SettingsStore.overlayBgAlpha(this) * 255 / 100
+        compact.alpha = if (immersiveSession) 1f else opacity
+        (compact.background as? GradientDrawable)?.setColor(Color.argb(if (immersiveSession) 0 else background, 16, 16, 16))
+        panel.alpha = opacity
+        (panel.background as? GradientDrawable)?.setColor(Color.argb(background, 16, 16, 16))
     }
 
     private fun updateOverlayFontSize() {
@@ -1374,9 +1387,7 @@ class MimiService : Service() {
     private fun interfaceString(@androidx.annotation.StringRes id: Int): String =
         InterfaceLanguage.context(this).getString(id)
 
-    private fun overlayProviderLabel(): String = app.yuxino.mimi.android.modelNamesLabel(activeModelNames).ifBlank {
-        app.yuxino.mimi.android.providerTitle(InterfaceLanguage.context(this), ServiceProvider.fromId(SettingsStore.provider(this)))
-    }
+    private fun overlayProviderLabel(): String = app.yuxino.mimi.android.overlayServiceLabel(InterfaceLanguage.context(this))
 
     private fun interfaceString(@androidx.annotation.StringRes id: Int, value: Int): String =
         InterfaceLanguage.context(this).getString(id, value)

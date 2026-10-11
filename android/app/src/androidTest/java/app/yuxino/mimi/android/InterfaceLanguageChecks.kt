@@ -147,6 +147,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
             it.findViewWithTag<View>("expanded-subtitles")
         }
         check(panel.isShown && panel.width > 0 && panel.height > 0) { "Overlay must be laid out before checking controls" }
+        checkOverlayChromeAlignment(panel)
         val origin = IntArray(2)
         panel.getLocationOnScreen(origin)
         check(origin[0] >= 0 && origin[0] + panel.width <= settings!!.resources.displayMetrics.widthPixels)
@@ -154,9 +155,7 @@ internal class InterfaceLanguageChecks(private val instrumentation: Instrumentat
         check(panel.findViewWithTag<ScrollView>("subtitle-transcript-scroll").height >=
             (64 * panel.resources.displayMetrics.density).toInt()) { "Caption reading viewport is too short" }
         val providers = panel.findViewWithTag<LinearLayout>("overlay-providers")
-        val providerLabel = modelNamesLabel(MimiService.activeModelNames).ifBlank {
-            providerTitle(settings!!, app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(context)))
-        }
+        val providerLabel = overlayServiceLabel(settings!!)
         check(providers.contentDescription == providerLabel &&
             panel.findViewWithTag<TextView>("overlay-model").text.toString() == providerLabel) {
             "Provider label kept a stale interface language"

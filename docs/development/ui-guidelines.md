@@ -223,8 +223,9 @@ preview. Fit captions visibly above that editor without changing saved bounds.
 Direct color swatches
 wrap before their touch targets shrink below 48dp. Retain section scroll positions and
 selection through recreation. Keep status and Start/Stop visible in every
-section. Use one footer row only when actual localized labels fit; stack otherwise. Native fixtures must reuse the existing singleTask MainActivity when
-navigating; `startActivitySync` waits for a new instance and hangs on reuse.
+section. Use one footer row only when actual localized labels fit; stack otherwise.
+Distinguish a new activity from explicit CLEAR_TOP/SINGLE_TOP navigation to an
+existing instance: `startActivitySync` waits for a new instance and hangs on reuse.
 
 Android immersive mode has a Captions entry/restore action backed by the same
 preference as the floating panel. Preview and overlay use `CaptionTypography`
@@ -297,3 +298,16 @@ dimensions. Keep complete action targets and at least 64dp of reading space,
 clamping only displayed bounds at large fonts or small screens. History must
 not enlarge the user's chosen frame. Waiting copy uses the chosen font, color
 and alignment so live edits are visible even before speech.
+
+Center Android's drag mark, language route and provider group against the whole
+caption window, not the remaining space beside an asymmetric action. Keep
+immersion left and resizing right; use a separate centered provider row when
+names cannot fit between symmetric action margins. Native geometry checks
+compare window-relative centers and action separation after resizing and locale
+changes, including both single and independent provider badges.
+Keep mobile floating service identities compact: show brands and marks, with
+model details available in Services. A tap opens that section in the existing
+main activity. Initialize background/opacity before adding the native window
+using the same paint path as preference updates; a font-only change must not
+apply a previously hidden background default. Native checks use nondefault
+saved paint values and compare compositor pixels across font and opacity edits.

@@ -48,7 +48,11 @@ internal fun providerTitle(context: android.content.Context, provider: ServicePr
                 if (translation == TextTranslationProvider.OPENAI_COMPATIBLE) R.string.translation_service_custom else translationProviderLabel(translation)))
         }
     }
-    return context.getString(when (provider) {
+    return speechProviderName(context, provider)
+}
+
+internal fun speechProviderName(context: android.content.Context, provider: ServiceProvider): String =
+    context.getString(when (provider) {
     ServiceProvider.DASHSCOPE -> R.string.guide_name_dashscope
     ServiceProvider.OPENAI -> R.string.guide_name_openai
     ServiceProvider.GEMINI -> R.string.guide_name_gemini
@@ -58,6 +62,15 @@ internal fun providerTitle(context: android.content.Context, provider: ServicePr
     ServiceProvider.BAIDU -> R.string.guide_name_baidu
     ServiceProvider.XAI -> R.string.guide_name_xai
 })
+
+/** Compact mobile identity; model details remain in service settings. */
+internal fun overlayServiceLabel(context: android.content.Context): String {
+    val provider = ServiceProvider.fromId(SettingsStore.provider(context))
+    val speech = speechProviderName(context, provider)
+    val translation = SettingsStore.textTranslationProvider(context)
+    return if (provider == ServiceProvider.DASHSCOPE && translation != TextTranslationProvider.BUILTIN &&
+        translation != TextTranslationProvider.NONE) "$speech · ${context.getString(translationProviderLabel(translation))}"
+    else speech
 }
 
 internal fun providerDescription(context: android.content.Context, provider: ServiceProvider): String = context.getString(when (provider) {

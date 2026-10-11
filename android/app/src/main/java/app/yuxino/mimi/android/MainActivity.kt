@@ -102,6 +102,15 @@ class MainActivity : AppCompatActivity() {
         stopObservingAppearance = SettingsStore.observeAppearance(this) { runOnUiThread { refreshUi() } }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        when (intent.getStringExtra("settings_section")) {
+            "services" -> openSettings()
+            "appearance" -> showSubtitleStyles()
+        }
+    }
+
     override fun onStop() {
         MimiService.removeStateListener(stateListener)
         app.yuxino.mimi.android.provider.SubtitleBus.removeListener(subtitleListener)
