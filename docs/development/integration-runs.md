@@ -2263,3 +2263,40 @@
   At the extreme narrow/font-scale-2 blank setup, labels wrap and long content
   uses its scroll viewport; this run does not claim simultaneous visibility of
   every subtitle line. Exact-head CI and merge are recorded separately.
+
+### 2026-10-11 Android overlay centers and appearance initialization
+
+- Tested behavioral source `21379f1c8578c59f4c4d03217c98ac4be596b993`
+  in the signed Debug development app on the official Android 15 / API 35
+  ARM64 emulator. The previous development certificate and private configuration
+  were preserved. No shared provider/capture behavior changed.
+- Traced the first font edit's background change to the normal panel's hardcoded
+  initial surface. Initialization and live preference updates now share the
+  saved background/opacity path. Native checks start with nondefault background
+  37% and window opacity 60%, compare compositor pixels across font 12/24/17,
+  repeat at opacity 100%, then restore 60% and require the original pixels.
+- Window-relative geometry confirms the drag mark, language route and service
+  group are centered against the entire panel, with no overlap with settings,
+  immersion or resizing. Mobile service identity uses brands/icons and opens
+  Services in the existing activity. Single and independent provider identities
+  passed actual navigation; narrow panels give providers their own centered row.
+- The first narrow large-font locale sweep exposed immersion-label clipping
+  after switching to English. Measuring at its final exact width fixed the
+  extra wrapped line. Screenshot review then removed the redundant icon when
+  it squeezed the visible label. The same cases passed after both repairs.
+- Five final native cases passed: direct controls at 720 x 1600, 560 x 1240 and
+  1400 x 700; all eight interface languages plus System in narrow dark and wide
+  light layouts. Narrow/wide used 280 dpi and font scale 2. Checks include actual
+  resize/drag, fixed-height history, alignment/display modes, immersion restore,
+  live quick styles, 48dp actions and a bounded reading viewport. Native overlay
+  screenshots were reviewed across every locale and both provider badge cases.
+- Final `scripts/check.sh` passed, including shared Rust/JNI, desktop and 2,093
+  frontend tests. Android Debug/Release each passed 184 JVM tests, both lint
+  variants, application/instrumentation assembly and both four-ABI APK checks.
+  Fixtures made no provider requests or capture. Private preferences restored
+  byte-for-byte after every case; font/display overrides restored and no
+  MediaProjection remained active. Evidence and package/source receipts stay
+  outside Git. Physical devices, API 29, audio performance and live provider
+  acceptance were not rerun. Extremely narrow panels with large system fonts
+  still wrap action labels and use a scrolling caption viewport. Exact-head
+  CI and merge are verified separately before delivery.
