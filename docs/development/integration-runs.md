@@ -2858,3 +2858,37 @@
   draft boundaries are unchanged. Native long-text/dual-input growth, Android
   glyph acceptance, Windows/Linux native rendering, real semantic improvement
   and user comfort remain open. Keep this trial unmerged until that acceptance.
+
+### Follow-up: bounded current reading area and visible activity
+
+- The ordinary `9cd3e965` candidate's native user trial exposed excessive blank
+  space: the reserved current pair occupied nearly the full viewport and its
+  timestamp sat far above short text. This invalidates general reading-comfort
+  acceptance from the earlier short native glyph check. No private screenshot
+  or subtitle words are included here.
+- Corrected product source `c4c41850` caps each current bilingual lane at three
+  complete lines, leaving tall-window space for confirmed history. Live,
+  confirmation and Stop share that budget; deliberate reading retains full text.
+  The existing language capsule now keeps recognition/listening visible too,
+  with stable localized activity width and actual MT-pending feedback.
+- Canonical checks passed on the frozen content committed as `c4c41850`:
+  2,073 frontend tests, 570 desktop tests and shared Rust/actual JNI coverage.
+  Android Debug/Release each passed 205 JVM/JNI tests (44 JNI/projection each),
+  both lint variants and fresh four-ABI/16 KB packaged-library validation.
+  The native fixture now contains 122 cases, all still unexecuted.
+- Actual component replay passed the original 45 frames, three added tall-window
+  and consecutive-history cases, and single-mode checks. Current slots stayed
+  within three lines/two blank lines and at least one older confirmed pair
+  remained fully visible in the short-history cases. Eight-language activity
+  geometry passed 48 cases, including constant width across active states.
+  These are synthetic browser observations, not native or provider acceptance.
+- The corrected clean signed local-dev bundle was built but never launched or
+  installed; the current ordinary Dev remains `9cd3e965`. Its existing real
+  session was preserved. Retain one prepared candidate and the latest Android
+  Dev APK, with private hashes/build receipts; obsolete Android/task artifacts
+  were cleaned without touching shared caches, settings or credentials.
+- Further investigation stopped at the user's request. Draft PR #265 carries
+  the remaining native switch/layout/status checks, Android glyph validation,
+  comparable authorized Alibaba/Tencent live runs, long-text/history comfort,
+  Windows/Linux native checks and deferred Alibaba/DeepL investigation. No merge,
+  release, new agent capture or paid provider session was performed.
