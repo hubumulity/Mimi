@@ -35,6 +35,7 @@ import {
   emptyStateIsError,
   emptyStateText,
   hasSubtitleContent,
+  isSameLanguageMode,
   usesAtomicSubtitlePreview,
   usesStreamingSubtitlePreview,
 } from "./overlayModel";
@@ -177,6 +178,9 @@ export function OverlayWindow() {
     : buildSubtitleBlocks(session.subtitles.history, settings.subtitleDisplayMode, primaryTail)
       .map(block => ({ ...block, audioSource: block.audioSource ?? primaryAudioSource })),
   [dual, session.subtitles.history, settings.subtitleDisplayMode, primarySubtitles.history, primaryTail, primaryAudioSource, microphoneSubtitles.history, microphoneTail]);
+  const reserveBilingualSpace = settings.subtitleDisplayMode === "bilingual" && (dual
+    ? [systemTrack, microphoneTrack].some(track => track && !isSameLanguageMode(settings, track.detectedLanguage))
+    : !isSameLanguageMode(settings, session.detectedLanguage));
   const hasContent = hasSubtitleContent(session.subtitles);
   const phaseLabel = session.status.kind === "stopping" ? I18N.overlay.stopping : OVERLAY_ACTIVITY_PHASES[phase].accessibilityLabel;
   const pauseLabel = session.isPaused
@@ -333,6 +337,7 @@ export function OverlayWindow() {
               <Timeline
                 preserveLiveLineBreaks={streamingProvider}
                 blocks={blocks}
+                reserveBilingualSpace={reserveBilingualSpace}
                 fontSize={settings.fontSize}
               fontFamily={settings.subtitleFontFamily}
                 color={settings.subtitleColor}
@@ -544,6 +549,7 @@ export function OverlayWindow() {
             <Timeline
               preserveLiveLineBreaks={streamingProvider}
               blocks={blocks}
+              reserveBilingualSpace={reserveBilingualSpace}
               fontSize={settings.fontSize}
               fontFamily={settings.subtitleFontFamily}
               color={settings.subtitleColor}

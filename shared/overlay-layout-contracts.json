@@ -20,5 +20,10 @@
   {"audioInput": "system", "displayMode": "original", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 180, "showSubtitleTimestamps": true},
   {"audioInput": "microphone", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 180, "showSubtitleTimestamps": true},
   {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 264, "showSubtitleTimestamps": true},
-  {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "original", "fontSize": 20, "minimumHeight": 216, "showSubtitleTimestamps": true}
+  {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "original", "fontSize": 20, "minimumHeight": 216, "showSubtitleTimestamps": true},
+  {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 276, "showSubtitleTimestamps": true, "showSubtitleDividers": true},
+  {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 276, "showSubtitleTimestamps": false, "showSubtitleDividers": true},
+  {"audioInput": "both", "displayMode": "translation", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 228, "showSubtitleTimestamps": true, "showSubtitleDividers": true},
+  {"audioInput": "both", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 264, "showSubtitleTimestamps": true, "showSubtitleDividers": true, "subtitleBlendsWithBackground": true},
+  {"audioInput": "system", "displayMode": "bilingual", "targetLanguage": "zh", "fontSize": 20, "minimumHeight": 180, "showSubtitleTimestamps": true, "showSubtitleDividers": true}
 ]

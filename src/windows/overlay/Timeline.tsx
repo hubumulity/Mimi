@@ -40,6 +40,8 @@ interface TimelineProps {
    * original as a neutral reference lane, single-language modes read in the
    * user's subtitle color. */
   displayMode: SettingsSnapshot["subtitleDisplayMode"];
+  /** Internal route intent, not a persisted preference. */
+  reserveBilingualSpace?: boolean;
   /** Optional metadata; hidden by default so sentence boundaries lead. */
   showTimestamps?: boolean;
   /** Source icons follow the selected inputs; old mic identity stays inline when time is off. */
@@ -69,6 +71,7 @@ export const Timeline = memo(function Timeline({
   alignment,
   color,
   displayMode,
+  reserveBilingualSpace = false,
   blendsWithBackground = false,
   motionEnabled = true,
   showTimestamps = false,
@@ -232,6 +235,9 @@ export const Timeline = memo(function Timeline({
         // as the live sentence. Deliberate reading opens either kind of row;
         // it does not confirm or retain a replaceable live draft.
         const compact = !readingHistory;
+        const reserveSlots = compact && reserveBilingualSpace && displayMode === "bilingual"
+          && !block.singleLane && block.presentation !== "history";
+        const reserveTimestamp = reserveSlots && showTimestamps;
         // Only a sentence that appears for the first time animates in. A
         // committed utterance replaces the live row it was already visible as,
         // so animating it again would blink the text the user is reading.
@@ -249,10 +255,10 @@ export const Timeline = memo(function Timeline({
         // Source icons follow the input selection; confirmation times follow
         // their own preference. Retained microphone rows keep their identity.
         const showSource = block.audioSource != null && (microphoneEnabled || block.audioSource === "microphone");
-        const inlineSource = showSource && timestamp === null
+        const inlineSource = showSource && timestamp === null && !reserveTimestamp
           && (!microphoneEnabled || blockViewportHeight !== null && blockViewportHeight < 80);
         const tintReference = mixedSources && (microphoneEnabled || block.audioSource === "microphone");
-        const hasMetadata = (showSource && !inlineSource) || timestamp !== null;
+        const hasMetadata = (showSource && !inlineSource) || timestamp !== null || reserveTimestamp;
         const metadataColor = blendsWithBackground ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.6)";
         const sourceIndicator = showSource && <span className="subtitle-audio-source" role="img"
           aria-label={block.audioSource === "system" ? I18N.settings.audioInputSystem : I18N.settings.audioInputMicrophone}
@@ -264,16 +270,16 @@ export const Timeline = memo(function Timeline({
         </span>;
         const metadataHeight = hasMetadata ? METADATA_HEIGHT : 0;
         const availableLaneHeight = blockViewportHeight === null ? null
-          : blockViewportHeight - paddingTop - paddingBottom - metadataHeight - (block.source !== null && block.translation !== null ? laneGap : 0);
+          : blockViewportHeight - paddingTop - paddingBottom - metadataHeight - (reserveSlots || block.source !== null && block.translation !== null ? laneGap : 0);
         // A bilingual original keeps its reference font while waiting for MT.
-        // Only its line budget changes when the translation takes its space.
+        // Current translated pairs also keep their two reserved line budgets.
         const sourceScale = subtitleSourceScale(blockViewportHeight === null ? null
           : blockViewportHeight - paddingTop - paddingBottom - metadataHeight - (displayMode === "bilingual" ? laneGap : 0));
-        // When the original has not arrived, the translation owns the full
-        // viewport rather than reserving height for an absent reference lane.
-        const budgetMode = displayMode === "bilingual" && block.source === null ? "translation" : displayMode;
+        // Single-lane and history views can borrow the absent original
+        // lane; current translated bilingual slots keep both reading edges.
+        const budgetMode = displayMode === "bilingual" && block.source === null && !reserveSlots ? "translation" : displayMode;
         const budget = subtitleLaneBudget(budgetMode, block.translation !== null, availableLaneHeight, fontSize,
-          isLast && laneMeasurements.blockId === block.id ? laneMeasurements : null, sourceScale);
+          isLast && laneMeasurements.blockId === block.id ? laneMeasurements : null, sourceScale, reserveSlots);
         const measureLane = (kind: "source" | "translation", height: number) => {
           if (!isLast) return;
           setLaneMeasurements(previous => {
@@ -321,10 +327,13 @@ export const Timeline = memo(function Timeline({
             <div style={{ display: "flex", alignItems: "flex-start", gap: inlineSource ? 6 : 0 }}>
             {inlineSource && <span style={{ paddingTop: 4, display: "inline-flex" }}>{sourceIndicator}</span>}
             <div style={{ display: "flex", flexDirection: "column", gap: laneGap, minWidth: 0, flex: 1 }}>
+              {reserveSlots && block.source === null && <div aria-hidden="true"
+                data-subtitle-slot="source" style={{ height: budget.source * Math.ceil(Math.max(12, fontSize * sourceScale) * SUBTITLE_LINE_HEIGHT) }} />}
               {block.source !== null && displayMode !== "translation" ? (
                 <Lane
                   text={block.source}
                   kind="source"
+                  reserveSpace={reserveSlots}
                   lines={compact && budget.source > 0 ? budget.source : null}
                   fontFamily={subtitleFontFamily(fontFamily)}
                   fontSize={fontSize}
@@ -341,10 +350,13 @@ export const Timeline = memo(function Timeline({
                   onMeasure={height => measureLane("source", height)}
                 />
               ) : null}
+              {reserveSlots && block.translation === null && <div aria-hidden="true"
+                data-subtitle-slot="translation" style={{ height: budget.translation * Math.ceil(fontSize * SUBTITLE_LINE_HEIGHT) }} />}
               {block.translation !== null && displayMode !== "original" ? (
                 <Lane
                   text={block.translation}
                   kind="translation"
+                  reserveSpace={reserveSlots}
                   lines={compact && budget.translation > 0 ? budget.translation : null}
                   fontFamily={subtitleFontFamily(fontFamily)}
                   fontSize={fontSize}
@@ -383,6 +395,7 @@ export const Timeline = memo(function Timeline({
 });
 
 interface LaneProps {
+  reserveSpace?: boolean;
   text: string;
   kind: "source" | "translation";
   /** Visual lines to keep, newest text first in view; `null` renders the whole
@@ -406,6 +419,7 @@ interface LaneProps {
 }
 
 function Lane({
+  reserveSpace = false,
   text,
   kind,
   lines,
@@ -457,6 +471,7 @@ function Lane({
 
   return (
     <CompactLane
+      reserveSpace={reserveSpace}
       text={text}
       kind={kind}
       lines={lines}
@@ -472,6 +487,7 @@ function Lane({
 }
 
 interface CompactLaneProps {
+  reserveSpace: boolean;
   text: string;
   kind: "source" | "translation";
   lines: number;
@@ -501,6 +517,7 @@ interface CompactLaneProps {
  * actually overflows, and the accessible name stays the full sentence.
  */
 function CompactLane({
+  reserveSpace,
   text,
   kind,
   lines,
@@ -525,6 +542,7 @@ function CompactLane({
     <div
       ref={viewportRef}
       {...(__MIMI_DEVELOPMENT_BUILD__ ? { "data-debug-lane": kind } : {})}
+      data-subtitle-slot={reserveSpace ? kind : undefined}
       aria-label={text}
       aria-hidden={hidden || undefined}
       hidden={hidden}
@@ -533,7 +551,7 @@ function CompactLane({
         position: "relative",
         // Reserve the limit only until the browser supplies its first layout;
         // short sentences then take exactly the space their actual lines need.
-        height: innerHeight > 0 ? Math.min(innerHeight, maximumHeight) : maximumHeight,
+        height: reserveSpace ? maximumHeight : innerHeight > 0 ? Math.min(innerHeight, maximumHeight) : maximumHeight,
         overflow: "hidden",
       }}
     >
@@ -548,7 +566,9 @@ function CompactLane({
           // Text starts on the first line while it fits; once it fills the
           // budget the same element stays pinned to the bottom so new content
           // grows upward and the old content rolls off the top.
-          ...(overflowed ? { bottom: 0 } : { top: 0 }),
+          // Reserved short translations begin beside the original, not
+          // at the far bottom of a tall empty slot. Overflow still follows its tail.
+          ...(overflowed || reserveSpace && kind === "source" ? { bottom: 0 } : { top: 0 }),
           textAlign: alignment,
           ...textStyle,
         }}

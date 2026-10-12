@@ -13,7 +13,7 @@ import { useStore } from "../../lib/store";
 import type { AudioSource, SessionStateEvent, SettingsSnapshot } from "../../lib/types";
 import { SettingsHelp } from "./SettingsHelp";
 import { useSettingsToast } from "./useSettingsToast";
-import { buildMultiSourceSubtitleBlocks, buildSubtitleBlocks, usesAtomicSubtitlePreview, visibleLiveSubtitles } from "../overlay/overlayModel";
+import { buildMultiSourceSubtitleBlocks, buildSubtitleBlocks, isSameLanguageMode, usesSingleBilingualLane, usesAtomicSubtitlePreview, visibleLiveSubtitles } from "../overlay/overlayModel";
 import { Timeline } from "../overlay/Timeline";
 import "./development-debugger.css";
 
@@ -112,11 +112,13 @@ function ReplayTimeline({ session, settings, route: initialRoute, projectionSett
   const atomic = session.atomicPreview ?? usesAtomicSubtitlePreview(route.provider);
   const tail = (subtitles: typeof session.subtitles, signals: Pick<SessionStateEvent, "detectedLanguage" | "isTranslationPending" | "isTranslationTimedOut">) => {
     const selected = visibleLiveSubtitles(subtitles, replaySettings, signals.detectedLanguage, signals.isTranslationPending, signals.isTranslationTimedOut, atomic && subtitles.previewPair !== undefined);
-    return { source: selected.find(p => p.kind === "source")?.text ?? null, translation: selected.find(p => p.kind === "translation")?.text ?? null, utteranceId: selected[0]?.utteranceId, isStreaming: false };
+    const singleLane = usesSingleBilingualLane(replaySettings, signals.detectedLanguage, selected);
+    return { ...(singleLane ? { singleLane: true as const } : {}), source: selected.find(p => p.kind === "source")?.text ?? null, translation: selected.find(p => p.kind === "translation")?.text ?? null, utteranceId: selected[0]?.utteranceId, isStreaming: false };
   };
   const dual = new Set([...tracks.map(track => track.audioSource), ...session.subtitles.history.map(pair => pair.audioSource ?? "system")]).size > 1;
   const blocks = dual ? buildMultiSourceSubtitleBlocks(session.subtitles.history, mode, tracks.map(track => ({ audioSource: track.audioSource, history: track.history, tail: tail(track, track) }))) : buildSubtitleBlocks(session.subtitles.history, mode, tail(session.subtitles, session)).map(block => ({ ...block, audioSource: block.audioSource ?? primaryAudioSource }));
-  return <div className="development-debugger__replay"><Timeline blocks={blocks} fontSize={Number(route.fontSize) || settings.fontSize} fontFamily={settings.subtitleFontFamily} alignment={(route.subtitleAlignment ?? settings.subtitleAlignment) as SettingsSnapshot["subtitleAlignment"]} color={(route.subtitleColor ?? settings.subtitleColor) as SettingsSnapshot["subtitleColor"]} microphoneColor={(route.microphoneSubtitleColor ?? settings.microphoneSubtitleColor) as SettingsSnapshot["microphoneSubtitleColor"]} displayMode={mode} showTimestamps={showTimestamps} audioInput={audioInput} blendsWithBackground={blendsWithBackground} motionEnabled={false} keepTextOpaque /></div>;
+  const reserveBilingualSpace = mode === "bilingual" && tracks.some(track => !isSameLanguageMode(replaySettings, track.detectedLanguage));
+  return <div className="development-debugger__replay"><Timeline reserveBilingualSpace={reserveBilingualSpace} blocks={blocks} fontSize={Number(route.fontSize) || settings.fontSize} fontFamily={settings.subtitleFontFamily} alignment={(route.subtitleAlignment ?? settings.subtitleAlignment) as SettingsSnapshot["subtitleAlignment"]} color={(route.subtitleColor ?? settings.subtitleColor) as SettingsSnapshot["subtitleColor"]} microphoneColor={(route.microphoneSubtitleColor ?? settings.microphoneSubtitleColor) as SettingsSnapshot["microphoneSubtitleColor"]} displayMode={mode} showTimestamps={showTimestamps} audioInput={audioInput} blendsWithBackground={blendsWithBackground} motionEnabled={false} keepTextOpaque /></div>;
 }
 
 export function DevelopmentDebugger({ visible }: { visible: boolean }) {

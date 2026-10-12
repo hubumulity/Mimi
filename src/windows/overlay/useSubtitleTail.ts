@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { SessionStateEvent, SettingsSnapshot, SubtitleSnapshot } from "../../lib/types";
 import { subtitleStreamKey, useStableText } from "./animation";
-import { visibleLiveSubtitles, type LiveTail } from "./overlayModel";
+import { visibleLiveSubtitles, usesSingleBilingualLane, type LiveTail } from "./overlayModel";
 import { formatGeminiTranscriptForDisplay } from "./geminiTranscriptDisplay";
 
 type TranslationSignals = Pick<SessionStateEvent, "detectedLanguage" | "isTranslationPending" | "isTranslationTimedOut">;
@@ -16,6 +16,7 @@ export function useSubtitleTail(subtitles: SubtitleSnapshot, settings: SettingsS
   [subtitles, settings, signals.detectedLanguage, signals.isTranslationPending, signals.isTranslationTimedOut, atomicProvider]);
   const source = previews.find(preview => preview.kind === "source");
   const translation = previews.find(preview => preview.kind === "translation");
+  const singleLane = usesSingleBilingualLane(settings, signals.detectedLanguage, previews);
   const latestCommittedAt = subtitles.history.at(-1)?.createdAt ?? null;
   const streamIdentity = `${sourceIdentity}:${streamingProvider}`;
   const displaySource = streamingProvider ? formatGeminiTranscriptForDisplay(source?.text ?? "") : source?.text ?? "";
@@ -31,6 +32,7 @@ export function useSubtitleTail(subtitles: SubtitleSnapshot, settings: SettingsS
   const isStreaming = running && ((source !== undefined && !source.isFinal && !source.isStable) ||
     (translation !== undefined && !translation.isFinal && !translation.isStable));
   return useMemo(() => ({ source: sourceText || null, translation: translationText || null,
-    utteranceId: source?.utteranceId ?? translation?.utteranceId, isStreaming }),
-  [sourceText, translationText, source?.utteranceId, translation?.utteranceId, isStreaming]);
+    utteranceId: source?.utteranceId ?? translation?.utteranceId, isStreaming,
+    ...(singleLane ? { singleLane: true as const } : {}) }),
+  [sourceText, translationText, source?.utteranceId, translation?.utteranceId, isStreaming, singleLane]);
 }

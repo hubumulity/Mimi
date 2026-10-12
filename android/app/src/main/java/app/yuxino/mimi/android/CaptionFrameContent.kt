@@ -16,17 +16,37 @@ internal data class CaptionFrameContent(
     val historyLimit: Int = 0,
     val confirmed: Boolean = false,
     val timestamp: String = "",
+    val timestampsEnabled: Boolean = false,
+    val reserveBilingualLanes: Boolean = true,
 ) {
-    fun applyRows(source: TextView, translation: TextView, statusView: TextView, mode: CaptionDisplayMode) {
+    fun applyRows(source: TextView, translation: TextView, statusView: TextView, mode: CaptionDisplayMode,
+                  reserveEmptyLanes: Boolean = false) {
         source.setCaptionText(original); translation.setCaptionText(translated); statusView.setCaptionText(status)
-        source.visibility = if (!hidden && mode.sourceVisible && original.isNotBlank()) View.VISIBLE else View.GONE
-        translation.visibility = if (!hidden && mode.translationVisible && translated.isNotBlank()) View.VISIBLE else View.GONE
+        fun visibility(enabled: Boolean, text: String): Int = when {
+            !enabled -> View.GONE
+            !hidden && text.isNotBlank() -> View.VISIBLE
+            reserveEmptyLanes -> View.INVISIBLE
+            else -> View.GONE
+        }
+        source.visibility = visibility(mode.sourceVisible, original)
+        translation.visibility = visibility(mode.translationVisible, translated)
         statusView.visibility = if (status.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    fun applyTimestamp(view: TextView, reserveEmpty: Boolean) {
+        view.setCaptionText(timestamp)
+        view.visibility = when {
+            timestamp.isNotBlank() && !hidden -> View.VISIBLE
+            reserveEmpty && (timestampsEnabled || timestamp.isNotBlank()) -> View.INVISIBLE
+            else -> View.GONE
+        }
     }
 
     companion object {
         fun live(context: Context, mode: CaptionDisplayMode, historyLimit: Int,
-                 captureState: CaptureHealth.State?, running: Boolean, stopping: Boolean): CaptionFrameContent {
+                 captureState: CaptureHealth.State?, running: Boolean, stopping: Boolean,
+                 sourceLanguage: String = SettingsStore.sourceLang(context),
+                 targetLanguage: String = SettingsStore.targetLang(context)): CaptionFrameContent {
             val state = SubtitleBus.displaySnapshot().forReading(mode)
             val visible = !state.hidden && (mode.sourceVisible && state.source.isNotBlank() ||
                 mode.translationVisible && state.translation.isNotBlank())
@@ -47,7 +67,8 @@ internal data class CaptionFrameContent(
                     pair.translation.takeIf { mode.translationVisible && it.isNotBlank() }).joinToString("\n")
             } else ""
             return CaptionFrameContent(state.source, state.translation, state.hidden, status, history, historyLimit, state.confirmed,
-                if (showTime) captionTime(currentTime) else "")
+                if (showTime) captionTime(currentTime) else "", showTime,
+                captionReservesBilingualLanes(sourceLanguage, targetLanguage, SubtitleBus.detectedSourceLanguage))
         }
     }
 }
@@ -76,4 +97,12 @@ internal fun SubtitleBus.DisplaySnapshot.forReading(mode: CaptionDisplayMode): S
 /** Unchanged runtime/health publications must not reset a TextView's native viewport. */
 internal fun TextView.setCaptionText(value: String) {
     if (text.toString() != value) text = value
+}
+
+/** Route intent only; identical words never imply a shared sentence owner. */
+internal fun captionReservesBilingualLanes(source: String, target: String, detected: String?): Boolean {
+    if (target == "original") return false
+    if (target == "zh_en") return true
+    val knownSource = detected ?: source.takeUnless { it == "auto" }
+    return knownSource == null || knownSource != target
 }

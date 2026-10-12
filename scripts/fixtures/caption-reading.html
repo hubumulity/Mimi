@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mimi 字幕试读</title></head>
+<body><main id="root"></main><script type="module">
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { Timeline } from "/src/windows/overlay/Timeline.tsx";
+import "/src/index.css";
+const source = "We keep reading the same sentence while the translation arrives later, and then the speaker continues explaining the next part without a long pause.";
+const translation = "我们正在读同一句话，译文稍后才到。说话者随后继续解释下一部分，中间没有很长的停顿。";
+const extended = `${source} The next section describes a longer example with several details, so both languages eventually need more than one line.`;
+const extendedTranslation = `${translation} 下一节介绍一个有更多细节的长例子，因此两种语言最终都需要多行。`;
+const continued = `${extended} We can finish this step today.`;
+const continuedTranslation = `${extendedTranslation} 我们今天可以完成这一步。`;
+const revised = `${extended} We cannot finish this step today.`;
+const revisedTranslation = `${extendedTranslation} 我们今天无法完成这一步。`;
+const current = (original, translated, presentation = "live", extra = {}) => [{ id: "sample-owner", createdAt: presentation === "live" ? null : 1000, presentation, source: original, translation: translated, ...extra }];
+const scenes = [
+  { id: "before", label: "原文先到", blocks: current(source, null) },
+  { id: "after", label: "译文迟到", blocks: current(source, translation) },
+  { id: "short", label: "短译文", blocks: current(source, "我们正在读同一句话。") },
+  { id: "long", label: "长句增长", blocks: current(extended, extendedTranslation) },
+  { id: "continuation", label: "短暂停顿后续接", blocks: current(continued, continuedTranslation) },
+  { id: "revision", label: "文字修订", blocks: current(revised, revisedTranslation) },
+  { id: "confirmed", label: "同句定稿", blocks: current(revised, revisedTranslation, "latestCommitted") },
+  { id: "next", label: "下一句", blocks: [ ...current(revised, revisedTranslation, "history"), { id: "next-owner", createdAt: null, presentation: "live", source: "Now we move to the next sentence.", translation: "现在进入下一句话。" } ] },
+  { id: "clear", label: "清空", blocks: [] },
+];
+const params = new URLSearchParams(location.search);
+let state = { scene: 0, mode: "bilingual", fontSize: Number(params.get("font")) || 20, height: Number(params.get("height")) || 144,
+  width: Number(params.get("width")) || 700, timestamps: params.get("time") === "1", motion: false, playing: false };
+let timer;
+const root = createRoot(document.getElementById("root"));
+const style = document.createElement("style");
+style.textContent = `body { background: #fff; color: #111; margin: 0; font: 15px -apple-system, sans-serif; } html, body { overflow: auto; height: auto; } body #root { max-width: 960px; margin: 32px auto; padding: 0 20px; height: auto; overflow: visible; } h1 { font-size: 24px; margin: 0 0 12px; } p { color: #555; line-height: 1.6; } .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; } button, select, input { border: 1px solid #aaa; border-radius: 5px; background: #fff; padding: 6px 10px; color: #111; } button, select { cursor: pointer; } button[aria-pressed=true] { border: 2px solid #111; padding: 5px 9px; } label { display: flex; align-items: center; gap: 5px; } input[type=number] { width: 75px; } .stage { background: #444; border-radius: 16px; overflow: hidden; position: relative; max-width: 100%; } .overlay-timeline { height: 100%; min-height: 0; overflow: auto; } .empty { display:flex; height:100%; align-items:center; justify-content:center; color:#ddd; } output { display:block; margin:12px 0; }`;
+document.head.append(style);
+function update(patch) { state = { ...state, ...patch }; render(); }
+function stop() { clearInterval(timer); update({ playing: false }); }
+function play() { stop(); update({ scene: 0, playing: true }); timer = setInterval(() => {
+  if (state.scene === scenes.length - 1) { stop(); return; }
+  update({ scene: state.scene + 1 });
+}, 2200); }
+function render() {
+  const scene = scenes[state.scene];
+  const blocks = scene.blocks.map(block => ({ ...block,
+    source: state.mode === "translation" ? null : block.source,
+    translation: state.mode === "original" ? null : block.translation }));
+  root.render(React.createElement(React.Fragment, null,
+    React.createElement("h1", null, "Mimi 字幕试读"),
+    React.createElement("p", null, "离线人工样例，使用实际字幕组件；无音频、服务请求或配置写入。文字修订会如实显示，此页面用于观察阅读位置，不代表服务准确度或语音延迟。"),
+    React.createElement("div", { className: "controls" },
+      React.createElement("button", { onClick: state.playing ? stop : play }, state.playing ? "暂停回放" : "连续回放"),
+      ...scenes.map((item, index) => React.createElement("button", { key: item.id, "aria-pressed": state.scene === index,
+        onClick: () => { stop(); update({ scene: index }); } }, item.label))),
+    React.createElement("div", { className: "controls" },
+      React.createElement("label", null, "显示", React.createElement("select", { value: state.mode,
+        onChange: event => update({ mode: event.target.value }) },
+        ...[["bilingual","双语"],["translation","译文"],["original","原文"]].map(([value, label]) => React.createElement("option", { value, key:value }, label)))),
+      ...[["width","宽度"],["height","正文高度"],["fontSize","字号"]].map(([key,label]) => React.createElement("label", {key}, label,
+        React.createElement("input", {type:"number", value:state[key], min:key==="fontSize"?12:60,
+          onChange:event=>update({[key]:Number(event.target.value)||state[key]})}))),
+      React.createElement("label", null, React.createElement("input", {type:"checkbox", checked:state.timestamps,
+        onChange:event=>update({timestamps:event.target.checked})}), "确认时间")),
+    React.createElement("div", { className: "stage", id:"caption-stage", style:{width:state.width,height:state.height} },
+      blocks.length ? React.createElement(Timeline, { blocks, fontSize: state.fontSize, alignment:"center", color:"white", audioInput:"system",
+        displayMode:state.mode, showTimestamps:state.timestamps, motionEnabled:state.motion, keepTextOpaque:true, reserveBilingualSpace:true })
+        : React.createElement("div", {className:"empty"}, "字幕已清空")),
+    React.createElement("output", {id:"scene-label"}, `当前：${scene.label}`)));
+}
+window.readingFixture = {
+  scenes: scenes.map(({id,label})=>({id,label})),
+  render: (id, options = {}) => { stop(); const scene = scenes.findIndex(item => item.id === id); if(scene<0)throw new Error("unknown_scene"); update({...options,scene}); },
+  state: () => ({ ...state, sceneId: scenes[state.scene].id }), play, stop,
+};
+render(); window.readingReady = true;
+</script></body></html>

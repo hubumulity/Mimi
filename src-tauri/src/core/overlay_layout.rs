@@ -14,6 +14,8 @@ const LINE_HEIGHT: f64 = 1.32;
 const COMPACT_SOURCE_SCALE: f64 = 0.82;
 /// One source/timestamp metadata line (18px) plus the gap to its subtitle (4px).
 const METADATA_ROW_HEIGHT: f64 = 22.0;
+/// The separator between two concurrent source blocks (7 + 1 + 7px).
+const SENTENCE_DIVIDER_HEIGHT: f64 = 15.0;
 
 pub fn minimum_overlay_height(
     audio_input: AudioInput,
@@ -21,6 +23,7 @@ pub fn minimum_overlay_height(
     target_language: TargetLanguage,
     font_size: f64,
     show_subtitle_timestamps: bool,
+    show_subtitle_dividers: bool,
 ) -> f64 {
     let font_size = if font_size.is_finite() {
         font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
@@ -51,8 +54,14 @@ pub fn minimum_overlay_height(
     } else {
         translation_line + 5.0
     };
+    let divider = if show_subtitle_dividers {
+        SENTENCE_DIVIDER_HEIGHT
+    } else {
+        0.0
+    };
     let required = MAXIMUM_CHROME_HEIGHT
-        + audio_input.sources().len() as f64 * (row_height + METADATA_ROW_HEIGHT);
+        + audio_input.sources().len() as f64 * (row_height + METADATA_ROW_HEIGHT)
+        + divider;
     minimum_height.max((required / 4.0).ceil() * 4.0)
 }
 
@@ -69,6 +78,10 @@ mod tests {
         target_language: TargetLanguage,
         font_size: f64,
         show_subtitle_timestamps: bool,
+        #[serde(default)]
+        show_subtitle_dividers: bool,
+        #[serde(default)]
+        subtitle_blends_with_background: bool,
         minimum_height: f64,
     }
 
@@ -86,6 +99,7 @@ mod tests {
                     case.target_language,
                     case.font_size,
                     case.show_subtitle_timestamps,
+                    case.show_subtitle_dividers && !case.subtitle_blends_with_background,
                 ),
                 case.minimum_height
             );
@@ -108,6 +122,7 @@ mod tests {
                             TargetLanguage::English,
                             font as f64,
                             false,
+                            false,
                         ),
                         156.0
                     );
@@ -118,6 +133,7 @@ mod tests {
                             TargetLanguage::English,
                             font as f64,
                             true,
+                            false,
                         ),
                         180.0
                     );
@@ -134,6 +150,7 @@ mod tests {
             TargetLanguage::English,
             20.0,
             false,
+            false,
         );
         assert_eq!(minimum, 264.0);
         assert!(
@@ -148,6 +165,7 @@ mod tests {
                 TargetLanguage::English,
                 20.0,
                 true,
+                false,
             )
         );
         let former_minimum = minimum_overlay_height(
@@ -155,6 +173,7 @@ mod tests {
             SubtitleDisplayMode::Bilingual,
             TargetLanguage::English,
             18.0,
+            false,
             false,
         );
         assert!(former_minimum - MAXIMUM_CHROME_HEIGHT < 2.0 * (20.0 + 24.0 + 1.0 + 1.0));
@@ -168,6 +187,7 @@ mod tests {
                 SubtitleDisplayMode::Bilingual,
                 TargetLanguage::English,
                 font,
+                false,
                 false,
             )
         };

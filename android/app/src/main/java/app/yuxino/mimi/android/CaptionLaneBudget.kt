@@ -1,19 +1,32 @@
 package app.yuxino.mimi.android
 
-/** Native visual-line allocation, using measured glyph heights rather than character counts. */
+/** Fixed native slots depend on the viewport and typography, never the current words. */
+internal fun captionLaneSlots(height: Int, sourceLine: Int, translationLine: Int): Pair<Int, Int> {
+    val available = height.coerceAtLeast(0)
+    val original = sourceLine.coerceAtLeast(1)
+    val translated = translationLine.coerceAtLeast(1)
+    if (available < original + translated) {
+        val source = minOf(original, available / 2)
+        return source to available - source
+    }
+    val minimumTranslation = if (original + translated * 2 <= available) translated * 2 else translated
+    val source = (available / 2).coerceIn(original, available - minimumTranslation)
+    return source to available - source
+}
+
+/** Fit complete native tail lines within one lane without borrowing its neighbour's slot. */
+internal fun captionLineBudget(height: Int, tailHeights: List<Int>): Int = if (tailHeights.isEmpty()) 0 else
+    tailHeights.indexOfLast { it <= height }.let { if (it < 0) 1 else it + 1 }
+
+/** Content-sized allocation retained for single-language and manual reading paths. */
 internal fun captionLaneBudget(height: Int, source: List<Int>, translation: List<Int>): Pair<Int, Int> {
-    fun fit(heights: List<Int>, space: Int): Int = if (heights.isEmpty()) 0 else
-        heights.indexOfLast { it <= space }.let { if (it < 0) 1 else it + 1 }
-    if (source.isEmpty()) return 0 to fit(translation, height)
-    if (translation.isEmpty()) return fit(source, height) to 0
-    // Reserve two translated lines where one original line still fits. Equal
-    // splitting can otherwise give the smaller reference font several lines
-    // while leaving only a fragment of the actual reading target.
+    if (source.isEmpty()) return 0 to captionLineBudget(height, translation)
+    if (translation.isEmpty()) return captionLineBudget(height, source) to 0
     val minimumTranslation = if (translation.size >= 2 && source[0] + translation[1] <= height) 2 else 1
     val originalSpace = height - translation[minimumTranslation - 1]
-    var original = fit(source, minOf(height / 2, originalSpace))
-    var translated = fit(translation, height - source[original - 1])
-    original = fit(source, minOf(height - translation[translated - 1], originalSpace))
-    translated = fit(translation, height - source[original - 1])
+    var original = captionLineBudget(minOf(height / 2, originalSpace), source)
+    var translated = captionLineBudget(height - source[original - 1], translation)
+    original = captionLineBudget(minOf(height - translation[translated - 1], originalSpace), source)
+    translated = captionLineBudget(height - source[original - 1], translation)
     return original to translated
 }

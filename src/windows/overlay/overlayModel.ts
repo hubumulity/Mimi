@@ -52,6 +52,8 @@ export interface SubtitleBlock {
   translation: string | null;
   /** Set on the live block while its lane may still change. */
   streaming?: true;
+  /** Projection already collapsed a same-language/identical complete pair. */
+  singleLane?: true;
 }
 
 /** The live tail the overlay should render below the committed blocks. */
@@ -60,11 +62,13 @@ export interface LiveTail {
   translation: string | null;
   /** True while a lane is still streaming and may change again. */
   isStreaming: boolean;
+  /** Distinguishes a projected single lane from a missing translation. */
+  singleLane?: true;
   /** Actual preview owner when supplied; never guessed from matching text. */
   utteranceId?: string | null;
 }
 
-function isSameLanguageMode(
+export function isSameLanguageMode(
   settings: Pick<SettingsSnapshot, "sourceLanguage" | "targetLanguage">,
   detectedLanguage: string | null,
 ): boolean {
@@ -78,6 +82,16 @@ function isSameLanguageMode(
     settings.sourceLanguage !== "auto" &&
     settings.sourceLanguage === settings.targetLanguage
   );
+}
+
+/** Follow the selected pair projection; never infer a shared owner from raw text equality. */
+export function usesSingleBilingualLane(
+  settings: Pick<SettingsSnapshot, "sourceLanguage" | "targetLanguage">,
+  detectedLanguage: string | null,
+  previews: LiveSubtitlePreview[],
+): boolean {
+  return isSameLanguageMode(settings, detectedLanguage)
+    || (previews.length === 1 && previews[0].kind === "source" && previews[0].isStable === true);
 }
 
 export function isWaitingForFinalTranslation(
@@ -228,6 +242,7 @@ export function subtitleLaneBudget(
   fontSize = 18,
   measured: { source: number; translation: number } | null = null,
   sourceScale = subtitleSourceScale(availableLaneHeight),
+  reserveBilingualSpace = false,
 ): { source: number; translation: number } {
   const sourceLine = Math.ceil((displayMode === "bilingual"
     ? Math.max(12, fontSize * sourceScale) : fontSize) * SUBTITLE_LINE_HEIGHT);
@@ -240,16 +255,16 @@ export function subtitleLaneBudget(
     case "original":
       return { source: linesThatFit(sourceLine), translation: 0 };
     default: {
-      if (!hasTranslation) return { source: linesThatFit(sourceLine), translation: 0 };
+      if (!hasTranslation && !reserveBilingualSpace) return { source: linesThatFit(sourceLine), translation: 0 };
       if (availableLaneHeight === null) return { source: 1, translation: 2 };
       // Long bilingual lanes start with equal height rather than exposing
       // much less original text. Measured short text still yields its space.
       let source = linesThatFit(sourceLine, availableLaneHeight * 0.5);
-      if (measured && measured.source > 0) {
+      if (!reserveBilingualSpace && measured && measured.source > 0) {
         source = Math.min(source, Math.max(1, Math.ceil(measured.source / sourceLine)));
       }
       let translation = linesThatFit(translationLine, availableLaneHeight - source * sourceLine);
-      if (measured && measured.translation > 0) {
+      if (!reserveBilingualSpace && measured && measured.translation > 0) {
         translation = Math.min(translation, Math.max(1, Math.ceil(measured.translation / translationLine)));
         source = linesThatFit(sourceLine, availableLaneHeight - translation * translationLine);
         if (measured.source > 0) source = Math.min(source, Math.max(1, Math.ceil(measured.source / sourceLine)));
@@ -292,6 +307,7 @@ export function buildSubtitleBlocks(
       ...(pair.audioSource ? { audioSource: pair.audioSource } : {}),
       createdAt: pair.createdAt,
       presentation: "history",
+      ...(displayMode === "bilingual" && source !== null && sameText ? { singleLane: true as const } : {}),
       source,
       translation,
     });
@@ -316,6 +332,7 @@ export function buildSubtitleBlocks(
     presentation: "live",
     source: liveTail.source,
     translation: liveTail.translation,
+    ...(liveTail.singleLane ? { singleLane: true as const } : {}),
     ...(liveTail.isStreaming ? { streaming: true as const } : {}),
   });
   return blocks;

@@ -10,6 +10,7 @@ import {
   hasSubtitleContent,
   pendingSourceTranslation,
   usesAtomicSubtitlePreview,
+  usesSingleBilingualLane,
   visibleLiveSubtitle,
   visibleLiveSubtitles,
 } from "./overlayModel";
@@ -57,6 +58,7 @@ describe("same-text committed subtitles", () => {
         presentation: "latestCommitted",
         source: "Mimi",
         translation: null,
+        ...(mode === "bilingual" ? { singleLane: true } : {}),
       },
     ]);
   });
@@ -904,4 +906,39 @@ describe("shared realtime projection", () => {
         .map(row => row.text)).toEqual(["Synthetic A.", "Old A."]);
     }
   });
+});
+
+
+describe("reserved bilingual reading slots", () => {
+  it("keeps each lane budget through missing, short and long translation", () => {
+    const waiting = subtitleLaneBudget("bilingual", false, 143, 17, { source: 660, translation: 0 }, 0.88, true);
+    for (const translation of [0, 23, 460, 690]) {
+      expect(subtitleLaneBudget("bilingual", translation > 0, 143, 17,
+        { source: 20, translation }, 0.88, true)).toEqual(waiting);
+    }
+    expect(waiting).toEqual({ source: 3, translation: 3 });
+    expect(subtitleLaneBudget("original", false, 143, 17, null, 0.88, true))
+      .toEqual(subtitleLaneBudget("original", false, 143, 17));
+    expect(subtitleLaneBudget("translation", true, 143, 17, null, 0.88, true))
+      .toEqual(subtitleLaneBudget("translation", true, 143, 17));
+  });
+
+  it("distinguishes a waiting translation from a projected single lane", () => {
+    const tail = { source: "One source", translation: null, isStreaming: false };
+    expect(buildSubtitleBlocks([], "bilingual", tail)[0].singleLane).toBeUndefined();
+    expect(buildSubtitleBlocks([], "bilingual", { ...tail, singleLane: true })[0].singleLane).toBe(true);
+    expect(buildSubtitleBlocks([{ source: "Mimi", translation: "Mimi", createdAt: 1 }], "bilingual")[0].singleLane).toBe(true);
+  });
+});
+
+
+it("reserves pending source-only work but recognizes a collapsed complete pair without matching raw lanes", () => {
+  const settings = { sourceLanguage: "en" as const, targetLanguage: "zh" as const, subtitleDisplayMode: "bilingual" as const };
+  const snapshot: SubtitleSnapshot = { source: { text: "Mimi", isFinal: false, utteranceId: "A" },
+    translation: { text: "Mimi", isFinal: false, utteranceId: "B" }, history: [], previewPair: null };
+  expect(usesSingleBilingualLane(settings, "en", visibleLiveSubtitles(snapshot, settings, "en", true, false, true))).toBe(false);
+  const pair = { ...snapshot, previewPair: { source: "Mimi", translation: "Mimi", utteranceId: "C" } };
+  expect(usesSingleBilingualLane(settings, "en", visibleLiveSubtitles(pair, settings, "en", false, false, true))).toBe(true);
+  expect(usesSingleBilingualLane({ ...settings, targetLanguage: "original" }, "en", [])).toBe(true);
+  expect(usesSingleBilingualLane(settings, "zh", [])).toBe(true);
 });

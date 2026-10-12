@@ -532,3 +532,138 @@ it.each([264, 265, 270, 280])("fits dual bilingual live rows with dividers at na
   expect(rows.reduce((sum, row) => sum + renderedBlockHeight(row), 0)).toBeLessThanOrEqual(viewportHeight);
   expect(rows[0].querySelector(".subtitle-separator")).not.toBeNull();
 });
+
+
+async function renderReserved(blocks: SubtitleBlock[], showTimestamps = false) {
+  await act(async () => root.render(<Timeline blocks={blocks} fontSize={20} alignment="center" color="white"
+    displayMode="bilingual" reserveBilingualSpace audioInput="system" showTimestamps={showTimestamps} motionEnabled={false} />));
+  return host.firstElementChild as HTMLDivElement;
+}
+
+it("reserves the missing translation and keeps the source slot through late short and long replies", async () => {
+  viewportHeight = 144;
+  measuredHeight = 48;
+  const timeline = await renderReserved([{ ...live, translation: null }]);
+  const source = timeline.querySelector<HTMLElement>('[data-subtitle-slot="source"]')!;
+  const originalText = source.firstElementChild;
+  const sourceHeight = source.style.height;
+  const translationHeight = timeline.querySelector<HTMLElement>('[data-subtitle-slot="translation"]')!.style.height;
+  expect(timeline.querySelector('[data-subtitle-slot="translation"]')?.getAttribute("aria-hidden")).toBe("true");
+  for (const translation of ["短句", confirmed.translation, null]) {
+    measuredHeight = translation === confirmed.translation ? 240 : 27;
+    await renderReserved([{ ...live, translation }]);
+    expect(timeline.querySelector('[data-subtitle-slot="source"]')).toBe(source);
+    expect(source.firstElementChild).toBe(originalText);
+    expect(source.style.height).toBe(sourceHeight);
+    expect((source.firstElementChild as HTMLElement).style.bottom).toBe("0px");
+    expect(source.textContent).toBe(live.source);
+    expect(timeline.querySelector<HTMLElement>('[data-subtitle-slot="translation"]')!.style.height).toBe(translationHeight);
+  }
+});
+
+it("keeps timestamp and lane slots through live confirmation while older short history contracts", async () => {
+  viewportHeight = 144;
+  measuredHeight = 24;
+  const pending = { ...live, audioSource: "microphone" as const, translation: null };
+  let timeline = await renderReserved([pending], true);
+  const before = [...timeline.querySelectorAll<HTMLElement>('[data-subtitle-slot]')].map(lane => lane.style.height);
+  expect(timeline.querySelector(".subtitle-metadata")).not.toBeNull();
+  expect(timeline.querySelector(".subtitle-timestamp")).toBeNull();
+  const final = { ...pending, id: "final", createdAt: 1, presentation: "latestCommitted" as const, translation: "已确认译文" };
+  timeline = await renderReserved([final], true);
+  expect([...timeline.querySelectorAll<HTMLElement>('[data-subtitle-slot]')].map(lane => lane.style.height)).toEqual(before);
+  expect(timeline.querySelector(".subtitle-timestamp")).not.toBeNull();
+  timeline = await renderReserved([{ ...final, presentation: "history" }, live], true);
+  const previous = timeline.querySelector<HTMLElement>('[data-utterance-id="final"]')!;
+  expect(previous.querySelector('[data-subtitle-slot]')).toBeNull();
+  expect(previous.querySelector<HTMLElement>('[aria-label]:not([role])')?.style.height).toBe("24px");
+  expect(timeline.querySelectorAll('[data-utterance-id="live"] [data-subtitle-slot]')).toHaveLength(2);
+});
+
+it("opens full text on upward reading intent and restores fixed slots with End", async () => {
+  viewportHeight = 144;
+  measuredHeight = 240;
+  const timeline = await renderReserved([confirmed]);
+  expect(timeline.querySelectorAll('[data-subtitle-slot]')).toHaveLength(2);
+  await act(async () => timeline.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -30 })));
+  expect(timeline.querySelector('[data-subtitle-slot]')).toBeNull();
+  expect(timeline.textContent).toContain(confirmed.source);
+  expect(timeline.textContent).toContain(confirmed.translation);
+  await act(async () => timeline.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "End" })));
+  expect(timeline.querySelectorAll('[data-subtitle-slot]')).toHaveLength(2);
+});
+
+it("keeps a known collapsed pair in one lane and reserves an absent source for translation-first work", async () => {
+  measuredHeight = 24;
+  let timeline = await renderReserved([{ ...live, source: "Mimi", translation: null, singleLane: true }]);
+  expect(timeline.querySelector('[data-subtitle-slot]')).toBeNull();
+  expect(timeline.querySelectorAll('[aria-label]:not([role])')).toHaveLength(1);
+  timeline = await renderReserved([{ ...live, source: null }]);
+  expect(timeline.querySelector('[data-subtitle-slot="source"]')?.getAttribute("aria-hidden")).toBe("true");
+  expect(timeline.querySelectorAll('[aria-label]:not([role])')).toHaveLength(1);
+});
+
+
+it.each([17, 20, 25, 30])("bounds both reserved bilingual live sources at their %ipx-font minimum", async fontSize => {
+  viewportHeight = minimumOverlayHeight({ audioInput: "both", subtitleDisplayMode: "bilingual", targetLanguage: "zh", fontSize })
+    - OVERLAY_MAXIMUM_CHROME_HEIGHT;
+  measuredHeight = 240;
+  await act(async () => root.render(<Timeline blocks={dualLive.map(block => ({ ...block, translation: null }))}
+    fontSize={fontSize} alignment="center" color="white" displayMode="bilingual" reserveBilingualSpace
+    audioInput="both" motionEnabled={false} />));
+  const rows = [...host.querySelectorAll<HTMLElement>('[data-utterance-id]')];
+  const heights = rows.map(row => {
+    const slots = [...row.querySelectorAll<HTMLElement>('[data-subtitle-slot]')];
+    const metadata = row.querySelector<HTMLElement>('.subtitle-metadata');
+    return slots.reduce((sum, slot) => sum + Number.parseFloat(slot.style.height), 0)
+      + Number.parseFloat(slots[0].parentElement!.style.gap)
+      + Number.parseFloat(row.style.paddingTop) + Number.parseFloat(row.style.paddingBottom)
+      + (metadata ? 22 : 0);
+  });
+  expect(heights.reduce((sum, height) => sum + height, 0)).toBeLessThanOrEqual(viewportHeight);
+  expect(rows.every(row => row.querySelectorAll('[data-subtitle-slot]').length === 2)).toBe(true);
+});
+
+
+it("fits both reserved timestamp rows and the selected sentence divider at the native minimum", async () => {
+  const settings = { audioInput: "both" as const, subtitleDisplayMode: "bilingual" as const,
+    targetLanguage: "zh" as const, fontSize: 20, showSubtitleTimestamps: true, showSubtitleDividers: true };
+  viewportHeight = minimumOverlayHeight(settings) - OVERLAY_MAXIMUM_CHROME_HEIGHT;
+  measuredHeight = 240;
+  await act(async () => root.render(<Timeline blocks={dualLive} fontSize={20} alignment="center" color="white"
+    displayMode="bilingual" reserveBilingualSpace audioInput="both" showTimestamps showSubtitleDividers motionEnabled={false} />));
+  const rows = [...host.querySelectorAll<HTMLElement>('[data-utterance-id]')];
+  expect(rows.every(row => row.querySelector('.subtitle-metadata') !== null)).toBe(true);
+  expect(host.querySelectorAll('.subtitle-separator')).toHaveLength(1);
+  expect(rows.reduce((sum, row) => sum + renderedBlockHeight(row), 0)).toBeLessThanOrEqual(viewportHeight);
+});
+
+
+it("keeps short translations beside the original in a tall body then follows overflowing text", async () => {
+  viewportHeight = 400;
+  measuredHeight = 22;
+  const draw = async (translation: string) => {
+    await act(async () => root.render(<Timeline blocks={[{ ...live, translation }]} fontSize={16}
+      alignment="center" color="white" displayMode="bilingual" reserveBilingualSpace audioInput="system" motionEnabled={false} />));
+    await act(async () => { resize.forEach(callback => callback()); });
+  };
+  await draw("短译文");
+  const source = host.querySelector<HTMLElement>('[data-subtitle-slot="source"]')!;
+  const translated = host.querySelector<HTMLElement>('[data-subtitle-slot="translation"]')!;
+  const inner = translated.firstElementChild as HTMLElement;
+  const originalHeight = source.style.height;
+  expect((source.firstElementChild as HTMLElement).style.bottom).toBe("0px");
+  expect(inner.style.top).toBe("0px");
+  expect(inner.style.bottom).toBe("");
+  measuredHeight = 44;
+  await draw("短译文继续增加");
+  expect(inner.style.top).toBe("0px");
+  expect(source.style.height).toBe(originalHeight);
+  measuredHeight = Number.parseFloat(translated.style.height) + 22;
+  await draw(confirmed.translation!);
+  expect(inner.style.top).toBe("");
+  expect(inner.style.bottom).toBe("0px");
+  expect(source.style.height).toBe(originalHeight);
+  expect(source.textContent).toBe(live.source);
+  expect(translated.getAttribute("aria-label")).toBe(confirmed.translation);
+});

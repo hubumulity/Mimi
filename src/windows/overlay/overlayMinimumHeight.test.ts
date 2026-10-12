@@ -8,7 +8,8 @@ describe("browser and native minimum-height contract", () => {
     expect(minimumOverlayHeight({ audioInput: fixture.audioInput as AudioInput,
       subtitleDisplayMode: fixture.displayMode as SubtitleDisplayMode,
       targetLanguage: fixture.targetLanguage as TargetLanguage, fontSize: fixture.fontSize,
-      showSubtitleTimestamps: fixture.showSubtitleTimestamps }))
+      showSubtitleTimestamps: fixture.showSubtitleTimestamps, showSubtitleDividers: fixture.showSubtitleDividers,
+      subtitleBlendsWithBackground: fixture.subtitleBlendsWithBackground }))
       .toBe(fixture.minimumHeight);
   });
 

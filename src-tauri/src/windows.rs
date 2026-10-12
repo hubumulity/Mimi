@@ -565,6 +565,7 @@ fn minimum_height_for_preferences(preferences: &Preferences) -> f64 {
         preferences.target_language,
         preferences.font_size,
         preferences.show_subtitle_timestamps,
+        preferences.show_subtitle_dividers && !preferences.subtitle_blends_with_background,
     )
 }
 

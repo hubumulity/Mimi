@@ -43,11 +43,13 @@ internal class CaptionPanelView(
     private var touchY = 0f
     private var towardsLive = false
     private var displayMode = CaptionDisplayMode.BILINGUAL
+    private var reserveBilingualLanes = true
     private var showDividers = false
     private var interactive = actions.home != null
     private var minimumSourceLine = 0
     private var minimumTranslationLine = 0
     private var minimumTimeLine = 0
+    private var reserveTimestamp = false
 
     init {
         tag = "expanded-subtitles"
@@ -213,6 +215,7 @@ internal class CaptionPanelView(
         }
         translation = LatestCaptionTextView(context).apply {
             tag = "expanded-translation"
+            fixedAnchorAtTop = true
             setTextColor(Color.WHITE)
             textSize = 16f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -242,6 +245,8 @@ internal class CaptionPanelView(
     }
 
     fun applyStyle(style: CaptionFrameStyle) {
+        (source as LatestCaptionTextView).setFixedLaneHeight(null)
+        (translation as LatestCaptionTextView).setFixedLaneHeight(null)
         displayMode = style.mode; showDividers = style.dividers
         (history as CaptionHistoryTextView).dividers = style.dividers
         CaptionTypography.apply(source, translation, style.fontSize, false, style.mode == CaptionDisplayMode.ORIGINAL)
@@ -276,6 +281,15 @@ internal class CaptionPanelView(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val fixedLanes = followingLive && reserveBilingualLanes && displayMode == CaptionDisplayMode.BILINGUAL
+        if (!fixedLanes) {
+            (source as LatestCaptionTextView).setFixedLaneHeight(null)
+            (translation as LatestCaptionTextView).setFixedLaneHeight(null)
+            listOf(source, translation, timestamp).forEach { if (it.visibility == View.INVISIBLE) it.visibility = View.GONE }
+        } else {
+            listOf(source, translation).forEach { if (it.visibility == View.GONE) it.visibility = View.INVISIBLE }
+            if (reserveTimestamp && timestamp.visibility == View.GONE) timestamp.visibility = View.INVISIBLE
+        }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) return
         fun heights(view: TextView): List<Int> {
@@ -286,32 +300,45 @@ internal class CaptionPanelView(
                 bottom - layout.getLineTop(layout.lineCount - count) + view.compoundPaddingTop + view.compoundPaddingBottom
             }
         }
-        val both = source.visibility == View.VISIBLE && translation.visibility == View.VISIBLE
+        val both = fixedLanes || source.visibility == View.VISIBLE && translation.visibility == View.VISIBLE
         val translationParams = translation.layoutParams as LayoutParams
         val margin = if (both) dp(6) else 0
         val marginChanged = translationParams.topMargin != margin
         translationParams.topMargin = margin
         val available = transcriptScroll.measuredHeight - (if (both) dp(6) else 0) -
-            (if (timestamp.visibility == View.VISIBLE) timestamp.measuredHeight else 0)
-        val budget = if (followingLive) captionLaneBudget(available, heights(source), heights(translation))
-            else Int.MAX_VALUE to Int.MAX_VALUE
-        var changed = false
-        for ((view, count) in listOf(source to budget.first, translation to budget.second)) {
-            (view as LatestCaptionTextView).followsLatest = followingLive
-            val limit = count.coerceAtLeast(1)
-            if (view.maxLines != limit) { view.maxLines = limit; changed = true }
+            (if (timestamp.visibility != View.GONE) timestamp.measuredHeight else 0) -
+            (if (status.visibility == View.VISIBLE) status.measuredHeight else 0)
+        if (fixedLanes) {
+            val slots = captionLaneSlots(available, minimumSourceLine, minimumTranslationLine)
+            (source as LatestCaptionTextView).setFixedLaneHeight(slots.first)
+            (translation as LatestCaptionTextView).setFixedLaneHeight(slots.second)
+            (source as LatestCaptionTextView).followsLatest = true
+            (translation as LatestCaptionTextView).followsLatest = true
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        } else {
+            val budget = if (followingLive) captionLaneBudget(available, heights(source), heights(translation))
+                else Int.MAX_VALUE to Int.MAX_VALUE
+            var changed = false
+            for ((view, count) in listOf(source to budget.first, translation to budget.second)) {
+                (view as LatestCaptionTextView).followsLatest = followingLive
+                val limit = count.coerceAtLeast(1)
+                if (view.maxLines != limit) { view.maxLines = limit; changed = true }
+            }
+            if (changed || marginChanged) super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         }
-        if (changed || marginChanged) super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (followingLive) followCurrentOnLayout = true
     }
 
     fun showContent(content: CaptionFrameContent, mode: CaptionDisplayMode, active: Boolean = true) {
+        displayMode = mode
+        reserveBilingualLanes = content.reserveBilingualLanes
+        reserveTimestamp = content.timestampsEnabled || content.timestamp.isNotBlank()
         val pairChanged = source.text.toString() != content.original || translation.text.toString() != content.translated
         val historyChanged = history.text.toString() != content.history
         if (active && (historyChanged || pairChanged) && followingLive) followCurrentOnLayout = true
-        content.applyRows(source, translation, status, mode)
-        timestamp.setCaptionText(content.timestamp)
-        timestamp.visibility = if (content.timestamp.isBlank() || content.hidden) View.GONE else View.VISIBLE
+        val fixedLanes = followingLive && reserveBilingualLanes && mode == CaptionDisplayMode.BILINGUAL
+        content.applyRows(source, translation, status, mode, fixedLanes)
+        content.applyTimestamp(timestamp, fixedLanes)
         history.setCaptionText(content.history)
         // The shared state already bounds retained pairs; a second visual cap
         // would discard later history rows when a sentence wraps.
@@ -322,10 +349,11 @@ internal class CaptionPanelView(
 
     fun minimumReadingHeight(): Int {
         val mode = displayMode
-        return maxOf(dp(64), (if (mode.sourceVisible) minimumSourceLine else 0) +
+        return (if (status.visibility == View.VISIBLE) status.measuredHeight else 0) +
+            maxOf(dp(64), (if (mode.sourceVisible) minimumSourceLine else 0) +
             (if (mode.translationVisible) minimumTranslationLine * if (mode == CaptionDisplayMode.BILINGUAL) 2 else 1 else 0) +
             (if (mode == CaptionDisplayMode.BILINGUAL) dp(6) else 0) +
-            (if (SettingsStore.subtitleTimestamps(context)) minimumTimeLine else 0))
+            (if (reserveTimestamp || SettingsStore.subtitleTimestamps(context)) minimumTimeLine else 0))
     }
 
     fun chromeHeight(): Int = paddingTop + paddingBottom + dp(8) +

@@ -3,6 +3,9 @@ package app.yuxino.mimi.android
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
@@ -57,8 +60,151 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
             }
         }
     }
+    /** Offscreen native Views only: no activity, service, provider, preferences or permission changes. */
+    private fun runIsolatedViews() {
+        var failure: Throwable? = null
+        var cases = 0
+        try {
+            ui {
+                var width = (360 * context.resources.displayMetrics.density).toInt()
+                var panelHeight = (520 * context.resources.displayMetrics.density).toInt()
+                val original = "Synthetic unchanged source."
+                val translated = "合成译文保持独立的固定阅读空间。"
+                for (font in listOf(12, 16, 24)) for (immersive in listOf(false, true)) for (mode in CaptionDisplayMode.entries) {
+                    stage = "isolated/$font/$immersive/$mode"
+                    val style = CaptionFrameStyle(font, Color.WHITE, 100, 80, mode, CaptionAlignment.LEFT)
+                    val frame: View
+                    val source: TextView
+                    val translation: TextView
+                    val time: TextView
+                    if (immersive) {
+                        val compact = CompactCaptionView(context)
+                        compact.applyStyle(style, true)
+                        frame = compact; source = compact.source; translation = compact.translation; time = compact.timestamp
+                    } else {
+                        val panel = CaptionPanelView(context, "en → zh", "Synthetic", emptyList())
+                        panel.applyStyle(style)
+                        frame = panel; source = panel.source; translation = panel.translation; time = panel.timestamp
+                    }
+                    fun render(content: CaptionFrameContent) {
+                        when (frame) {
+                            is CompactCaptionView -> frame.showContent(content, mode)
+                            is CaptionPanelView -> frame.showContent(content, mode)
+                        }
+                        repeat(3) {
+                            frame.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                                View.MeasureSpec.makeMeasureSpec(if (immersive) 0 else panelHeight,
+                                    if (immersive) View.MeasureSpec.UNSPECIFIED else View.MeasureSpec.EXACTLY))
+                            frame.layout(0, 0, frame.measuredWidth, frame.measuredHeight)
+                            listOf(source, translation).forEach { it.onPreDraw() }
+                        }
+                        val bitmap = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
+                        try { frame.draw(Canvas(bitmap)) } finally { bitmap.recycle() }
+                    }
+                    fun glyphBottom(row: TextView): Int {
+                        val layout = checkNotNull(row.layout)
+                        return row.top + row.compoundPaddingTop - row.scrollY + layout.getLineBottom(layout.lineCount - 1)
+                    }
+                    var sourceSlot: Pair<Int, Int>? = null
+                    var sourceBottom: Int? = null
+                    var height: Int? = null
+                    var translatedTop: Int? = null
+                    for (text in listOf("", translated, translated.repeat(2), translated.repeat(24), "")) {
+                        render(CaptionFrameContent(original, text, timestampsEnabled = true))
+                        if (mode == CaptionDisplayMode.BILINGUAL) {
+                            val slot = source.top to source.height
+                            if (sourceSlot == null) { sourceSlot = slot; sourceBottom = glyphBottom(source); height = frame.height }
+                            check(slot == sourceSlot && glyphBottom(source) == sourceBottom && frame.height == height) {
+                                "Translation changed the original lane at $stage"
+                            }
+                            check(translation.visibility == if (text.isEmpty()) View.INVISIBLE else View.VISIBLE)
+                            check(time.visibility == View.INVISIBLE)
+                            for (row in listOf(source, translation).filter { it.visibility == View.VISIBLE }) {
+                                assertTail(row)
+                                val layout = checkNotNull(row.layout)
+                                if (row === source || layout.lineCount > row.maxLines) {
+                                    check(glyphBottom(row) == row.bottom - row.compoundPaddingBottom) { "Lane lost its complete bottom glyph at $stage" }
+                                } else {
+                                    val top = row.top + row.compoundPaddingTop - row.scrollY + layout.getLineTop(0)
+                                    if (translatedTop == null) translatedTop = top
+                                    check(top == translatedTop) { "Growing fitted translation moved its first glyph at $stage" }
+                                }
+                                val first = (layout.lineCount - row.maxLines).coerceAtLeast(0)
+                                check(row.compoundPaddingTop - row.scrollY + layout.getLineTop(first) >= 0) { "Lane clips its first complete glyph line at $stage" }
+                            }
+                        } else {
+                            check((if (mode == CaptionDisplayMode.ORIGINAL) translation else source).visibility == View.GONE)
+                        }
+                        cases++
+                    }
+                    if (mode == CaptionDisplayMode.BILINGUAL) {
+                        render(CaptionFrameContent(original, translated, confirmed = true, timestamp = "13:08:42", timestampsEnabled = true))
+                        check((source.top to source.height) == sourceSlot && glyphBottom(source) == sourceBottom && frame.height == height) {
+                            "Final timestamp moved the reading lanes at $stage"
+                        }
+                        render(CaptionFrameContent(original, original, confirmed = true, timestampsEnabled = true))
+                        check(source.text.toString() == original && translation.text.toString() == original)
+                        render(CaptionFrameContent("", "", hidden = true, timestampsEnabled = true))
+                        check(source.visibility == View.INVISIBLE && translation.visibility == View.INVISIBLE && frame.height == height)
+                        render(CaptionFrameContent(original, "", reserveBilingualLanes = false))
+                        check(source.visibility == View.VISIBLE && translation.visibility == View.GONE)
+                        check(source.layoutParams.height == android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+                        cases += 4
+                        if (frame is CaptionPanelView) {
+                            if (font == 24) {
+                                stage = "isolated/minimum-status/$font"
+                                val oldWidth = width; val oldHeight = panelHeight
+                                width = oldWidth / 2
+                                for (label in listOf(R.string.runtime_unavailable_wait, R.string.runtime_rate_retry)) {
+                                    val content = CaptionFrameContent(original, translated.repeat(4),
+                                        status = context.getString(label), timestampsEnabled = true)
+                                    render(content)
+                                    panelHeight = frame.chromeHeight() + frame.minimumReadingHeight()
+                                    render(content)
+                                    for (row in listOf(source, translation)) {
+                                        val layout = checkNotNull(row.layout)
+                                        val first = (layout.lineCount - row.maxLines).coerceAtLeast(0)
+                                        check(row.compoundPaddingTop - row.scrollY + layout.getLineTop(first) >= 0 &&
+                                            glyphBottom(row) <= row.bottom - row.compoundPaddingBottom) {
+                                            "Minimum status panel clips a complete glyph at $stage"
+                                        }
+                                    }
+                                    cases++
+                                }
+                                width = oldWidth; panelHeight = oldHeight
+                            }
+                            stage = "isolated/manual-history/$font"
+                            render(CaptionFrameContent(original.repeat(12), translated.repeat(12), history = original.repeat(12)))
+                            val now = SystemClock.uptimeMillis()
+                            for ((action, y) in listOf(android.view.MotionEvent.ACTION_DOWN to 10f,
+                                android.view.MotionEvent.ACTION_MOVE to 30f, android.view.MotionEvent.ACTION_CANCEL to 30f)) {
+                                val event = android.view.MotionEvent.obtain(now, now, action, 10f, y * context.resources.displayMetrics.density, 0)
+                                try { frame.transcriptScroll.dispatchTouchEvent(event) } finally { event.recycle() }
+                            }
+                            render(CaptionFrameContent(original.repeat(14), translated.repeat(14), history = original.repeat(12)))
+                            check(source.maxLines == Int.MAX_VALUE && translation.maxLines == Int.MAX_VALUE &&
+                                source.scrollY == 0 && translation.scrollY == 0 &&
+                                source.layoutParams.height == android.view.ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                "Manual history kept fixed live clipping at $stage"
+                            }
+                            cases++
+                        }
+                    }
+                }
+            }
+        } catch (error: Throwable) { failure = error }
+        test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
+            putString("stream", if (failure == null) "Isolated native caption lanes passed: $cases cases; no activity/service/capture/providers or preference changes.\n"
+                else "Isolated native caption lanes failed at $stage: ${failure!!.stackTraceToString()}\n")
+        })
+    }
+
     fun run(arguments: Bundle?) {
         check(!MimiService.isRunning)
+        if (arguments?.getString("isolated_views") == "true") {
+            runIsolatedViews()
+            return
+        }
         check(!SettingsStore.isConfigured(context)) { "Streaming fixtures require blank private configuration" }
         var home: MainActivity? = null
         var failure: Throwable? = null
@@ -67,6 +213,16 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
         var cases = 0
         var drawFailure: Throwable? = null
         var observer: ViewTreeObserver? = null
+        val restore = listOf(
+            SettingsStore.fontSize(context).let { { SettingsStore.setFontSize(context, it) } },
+            SettingsStore.historyLines(context).let { { SettingsStore.setHistoryLines(context, it) } },
+            SettingsStore.overlayHeightPercent(context).let { { SettingsStore.setOverlayHeightPercent(context, it) } },
+            SettingsStore.overlayWidthPercent(context).let { { SettingsStore.setOverlayWidthPercent(context, it) } },
+            SettingsStore.immersiveSubtitles(context).let { { SettingsStore.setImmersiveSubtitles(context, it) } },
+            SettingsStore.displayMode(context).let { { SettingsStore.setDisplayMode(context, it) } },
+        )
+        val seenPrefs = context.getSharedPreferences("first_run", 0)
+        val hadSeen = seenPrefs.contains("seen"); val seen = seenPrefs.getBoolean("seen", false)
         val drawListener = ViewTreeObserver.OnDrawListener {
             draws++
             try {
@@ -106,23 +262,28 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                 context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_APPLY_APPEARANCE))
                 SystemClock.sleep(180)
                 var readingBottom = 0
-                fun lastRowBottom(): Int {
+                fun readingEdge(): Int {
                     val panel = root()!!.findViewWithTag<CaptionPanelView>("expanded-subtitles")
                     val row = if (mode.translationVisible) panel.translation else panel.source
                     val layout = row.layout!!
-                    return row.top - panel.transcriptScroll.scrollY + row.compoundPaddingTop - row.scrollY +
-                        layout.getLineBottom(layout.lineCount - 1)
+                    val lineEdge = if (mode == CaptionDisplayMode.BILINGUAL && layout.lineCount <= row.maxLines)
+                        layout.getLineTop(0) else layout.getLineBottom(layout.lineCount - 1)
+                    return row.top - panel.transcriptScroll.scrollY + row.compoundPaddingTop - row.scrollY + lineEdge
                 }
                 ui {
                     val panel = root()!!.findViewWithTag<CaptionPanelView>("expanded-subtitles")
-                    readingBottom = lastRowBottom()
-                    check(readingBottom == panel.transcriptScroll.height) { "Short captions left an unused bottom reading edge at $stage" }
+                    readingBottom = readingEdge()
+                    if (mode == CaptionDisplayMode.BILINGUAL) {
+                        check(readingBottom == panel.translation.top + panel.translation.compoundPaddingTop - panel.transcriptScroll.scrollY) {
+                            "Fitted translation left its fixed top reading edge at $stage"
+                        }
+                    } else check(readingBottom == panel.transcriptScroll.height) { "Short captions left an unused bottom reading edge at $stage" }
                 }
                 for (length in listOf(2, 4, 8, 1)) {
                     ui { SubtitleBus.onFinalPair(samples[0].repeat(length), "固定的译文。", "en") }
                     SystemClock.sleep(90)
                     ui {
-                        check(lastRowBottom() == readingBottom) { "Reference growth moved the reading baseline at $stage" }
+                        check(readingEdge() == readingBottom) { "Reference growth moved the reading baseline at $stage" }
                         assertVisibleLines()
                     }
                 }
@@ -273,7 +434,12 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
             ui { observer?.takeIf { it.isAlive }?.removeOnDrawListener(drawListener) }
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_STOP))
             SystemClock.sleep(150)
-            ui { SubtitleBus.clear(); home?.finish() }
+            ui {
+                SubtitleBus.clear(); home?.finish()
+                restore.forEach { it() }
+                check(seenPrefs.edit().apply { if (hadSeen) putBoolean("seen", seen) else remove("seen") }.commit())
+            }
+            check(SettingsStore.flushPendingWritesForTests(context))
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
             putString("stream", if (failure == null) "Caption streaming passed: $cases cases, $updates updates, $draws native draws; 8 languages, 3 modes, normal/immersive; no capture/providers.\n"

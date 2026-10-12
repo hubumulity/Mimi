@@ -1125,7 +1125,7 @@ class MimiService : Service() {
             else SettingsStore.historyLines(this)
         val mode = if (sessionOriginalOnly) CaptionDisplayMode.ORIGINAL else SettingsStore.displayMode(this)
         val content = app.yuxino.mimi.android.CaptionFrameContent.live(this, mode, maxHistory,
-            captureObservation?.state, isRunning, isStopping)
+            captureObservation?.state, isRunning, isStopping, sessionSourceLanguage, sessionTargetLanguage)
         val statusLine = content.status
         (compactView as? app.yuxino.mimi.android.CompactCaptionView)?.let {
             it.showContent(content, mode)
