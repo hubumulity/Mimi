@@ -22,14 +22,16 @@ internal data class CaptionFrameContent(
     fun applyRows(source: TextView, translation: TextView, statusView: TextView, mode: CaptionDisplayMode,
                   reserveEmptyLanes: Boolean = false) {
         source.setCaptionText(original); translation.setCaptionText(translated); statusView.setCaptionText(status)
-        fun visibility(enabled: Boolean, text: String): Int = when {
-            !enabled -> View.GONE
-            !hidden && text.isNotBlank() -> View.VISIBLE
-            reserveEmptyLanes -> View.INVISIBLE
-            else -> View.GONE
+        fun applyVisibility(view: TextView, enabled: Boolean, text: String) {
+            view.visibility = when {
+                !enabled -> View.GONE
+                !hidden && text.isNotBlank() -> View.VISIBLE
+                reserveEmptyLanes -> View.INVISIBLE
+                else -> View.GONE
+            }
         }
-        source.visibility = visibility(mode.sourceVisible, original)
-        translation.visibility = visibility(mode.translationVisible, translated)
+        applyVisibility(source, mode.sourceVisible, original)
+        applyVisibility(translation, mode.translationVisible, translated)
         statusView.visibility = if (status.isBlank()) View.GONE else View.VISIBLE
     }
 
