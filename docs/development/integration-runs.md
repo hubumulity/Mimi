@@ -29,6 +29,18 @@
   APK 的 AGP 元数据没有嵌入 Git revision，回执使用封存输入与编译证据，
   不声明干净提交构建。没有安装该 APK 或新跑 Android 火山服务；已有
   Android Audio3＋Qwen-MT 三模式影片仍对应 `ed345c26`。
+- 远端 `c032fdb9` 的 Rust 1.99 严格 Clippy 在同一 JNI hex iterator
+  写法上拒绝 Android 与桌面检查。等价修正 `6c7193cdfb321b5e2641544038dfdef3442e5879`
+  使用固定二字节数组分组，没有降低检查；Rust 1.88 实际 JNI 编译、完整
+  canonical、actual JNI 31 项、Debug／Release 各 205 项重跑、四 ABI
+  optimized／lint 均再次通过。新 APK SHA-256 为
+  `fb76b67735cf1a27ba115d3bbb3683ea77f11ba3a7fbbfba6ef2f74d839be836`；
+  327 输入指纹为
+  `07025392766ffd8a964467ddb6e96d44c2a8020be13034519f624928690eba08`，
+  逐字节匹配该修正。输入快照 `c032fdb9` dirty 与实际 native invocation
+  `6c7193cd` dirty 分别保留，仍不虚构 APK 内嵌 Git revision。旧 APK
+  在新证明完成后移除，原回执保留。桌面／共享 runtime/core 无新改动，
+  以下 native 视频继续准确对应 `1ae919cf`，未为 lint 改动再调用服务。
 - macOS canonical 签名候选元数据为 `1ae919cf` dirty。普通原生 Ego 标签
   实播公开 Stanford 片段 180.422658→226.137593 秒，实际源 45.714935
   秒。有效捕获峰值 −1.527 dBFS，原文／译文草稿各 64、source boundary

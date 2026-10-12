@@ -151,3 +151,11 @@ observable in this evidence schema, so omitted/explicit-zero equivalence is
 proved by deterministic wire and actual JNI regressions, not inferred from the
 native owner's suffix. Android's service clip remains the independent-MT run;
 no new Android Volcano service, native frequency or comfort acceptance is claimed.
+
+
+The equivalent JNI hex iterator correction `6c7193cd` addresses the newer
+Rust 1.99 Clippy rule without allowing or weakening a check. It passed actual
+Rust 1.88 JNI compilation, the full canonical pipeline, focused actual JNI 31
+and rerun Debug/Release JVM 205 each, optimized four-ABI release and lint.
+The new 327-input manifest matches that correction. Desktop runtime/core and
+rendering files are unchanged, so the native clip retains its `1ae919cf` label.
