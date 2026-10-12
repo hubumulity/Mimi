@@ -69,20 +69,23 @@ prompt, wire protocol, VAD, recording default, version, tag or release change.
 3. Shared fixtures run in direct Rust and actual host JNI; Android projection
    covers original, translation and bilingual modes. Run architecture checks,
    canonical checks and Debug/Release JVM tests.
-4. The current authorization was used for bounded native attempts and a
-   24.0267-second PC caption-only video of the official Stanford clip from
-   180 seconds. Actual frames show source, translation and confirmed captions.
-   Three Ego baseline attempts had silent sent PCM; Android reached
-   MediaProjection but timed out before any scored playback phase. PC used
-   Qwen-MT Lite with English recognition; Android used Flash with automatic
-   recognition. These attempts do not establish a controlled or cross-device
-   comparison. Microphone, session history and audio recording stayed off;
-   evidence remains outside Git. Both development apps and preferences were
-   restored, Mac output remained muted and formal/release bundles were preserved.
-5. Keep PR #261 as a draft. The six-second tradeoff, continuous reading comfort,
-   controlled baseline comparison and Android live video remain pending. The PC
-   sample ended through a process watchdog, so graceful native Stop-tail
-   acceptance also remains separate from the local HTTP regression. Further
-   service/capture work uses the remaining current authorization or a new
-   explicitly granted scope; confirm valid input and obtain comparable continuous
-   reading feedback before accepting the default or merging.
+4. The first bounded native attempts produced a 24.0267-second PC caption-only
+   clip; silent Ego baselines and an Android input timeout were invalid comparison
+   cases. The follow-up Android retry used the exact `ed345c26` APK with Audio3 +
+   Qwen-MT Lite, en→zh, and captured actual original, translation and bilingual
+   drawing. Its 89.0225-second video demonstrates these paths; native Stop drained
+   in 207 ms with two confirmed updates. This is geometry/function evidence, not
+   semantic accuracy or reading-comfort acceptance. APK and encrypted preferences
+   were restored after the run.
+5. Further PC follow-up recorded Gemini, Tencent, Baidu and Apple from the same
+   source interval, with normal Stop and sealed private cases. Integrated provider
+   revision behavior remains unchanged; a separate
+   [Volcano ownership fix](2026-10-12-volcano-subtitle-ownership.md) addresses an
+   accepted-wire late-final counterexample. Keep exact build metadata, source
+   duration and input evidence in the run ledger. Microphone, session history and
+   app audio recording remain off, Mac output muted, formal bundles preserved.
+6. Keep PR #261 as a draft. Six-second rescue previews may still revise; controlled
+   baseline comparison, continuous reading comfort and user feedback remain open.
+   Native Stop completion and sealed evidence do not alone prove every tail word
+   arrived or was visible. Obtain comparable continuous reading feedback before
+   accepting the default or merging.

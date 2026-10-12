@@ -15,8 +15,8 @@ shared subtitle reducer and actual JNI projection contracts.
 
 The official [simultaneous interpretation API documentation](https://docs.volcengine.com/docs/DoubaoVoice/SimultaneousInterpretation20APIAccessDocumentation?lang=zh)
 provides `start_time` on source/translation START and the same start plus
-`end_time` on END. The decoder currently discards START timing. Correctly matched
-END intervals then become an unidentified final pair, which can overwrite a
+`end_time` on END. Before this change, the decoder discarded START timing. Correctly matched
+END intervals became an unidentified final pair, which could overwrite a
 newer source draft. The focused accepted-wire probe demonstrates this state;
 native frequency and visible reading impact remain separate verification.
 
@@ -89,11 +89,19 @@ prefix heuristic to Volcano.
   formatting and diff checks. Coordinate actual JNI checks with the Android
   agent. Root owns canonical/native verification, commit and publication.
 
-No live frequency, accuracy or reading-comfort acceptance follows from these
-offline cases. Native before/after verification remains pending until recorded
-against a comparable authorized session.
+Verification completed for product commit `f9201391`: 52 focused Volcano tests;
+shared runtime 746 passed/1 ignored; core 85 unit and 4 contract tests; complete
+canonical checks including 2,043 frontend tests. Android actual JNI focused
+12/12 and Debug/Release JVM 203/203 each passed. Four optimized Android ABI
+release builds, package alignment/license checks and lint completed (0 errors,
+54 warnings). Frozen inputs were checked against the commit; original build
+metadata remains `57ef8921` dirty rather than being relabeled a clean build.
 
-Offline implementation checks on this candidate passed: 52 focused Volcano
-tests; shared runtime 746 passed/1 ignored; core 85 unit and 4 contract tests;
-strict clippy, formatting, architecture and diff checks. Actual JNI and the
-canonical/native candidate checks remain the platform handoff.
+A bounded same-source native Volcano follow-up admitted 30 source boundaries and
+14 identified final pairs, displayed captions, completed normal Stop and sealed
+1,607 trace entries with no recorded loss or write failure. This demonstrates
+the actual adapter path. The earlier native excerpt did not prove the late-final
+counterexample occurred; neither run establishes frequency, semantic accuracy,
+controlled quality comparison or reading-comfort acceptance. Android's live
+three-mode video validates the independent-MT candidate at `ed345c26`; the new
+Volcano rule has JNI/build coverage without a new Android provider session.
