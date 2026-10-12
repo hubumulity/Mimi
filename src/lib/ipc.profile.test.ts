@@ -34,3 +34,9 @@ it.each([null, { sourceLanguage: "ja", targetLanguage: "zh" }] as const)("sends 
   await profileUpdate("p", undefined, { languagePreset: preset });
   expect(invoke).toHaveBeenCalledExactlyOnceWith("profile_update", { profileId: "p", name: undefined, languagePresetPatch: { preset } });
 });
+
+
+it("saves experimental Alibaba mode and non-secret workspace as metadata", async () => {
+  await profileUpdate("p", undefined, { alibabaRealtimeMode: "omni", alibabaWorkspaceId: "test-workspace" });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("profile_update", { profileId: "p", name: undefined, alibabaRealtimeMode: "omni", alibabaWorkspaceId: "test-workspace" });
+});

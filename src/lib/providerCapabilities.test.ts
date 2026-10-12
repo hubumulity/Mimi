@@ -501,3 +501,11 @@ it("keeps Volcano’s hub-language pairs and bilingual reversal separate from au
   expect(targetLanguageAfterSourceSwitch(settings, "zh_en")).toBe("zh_en");
   expect(targetLanguageAfterSourceSwitch({ ...settings, targetLanguage: "zh_en" }, "ja")).toBe("zh");
 });
+
+
+it("limits opt-in Alibaba realtime routes without changing old profiles", () => {
+  const legacy = { id: "legacy", name: "Alibaba", provider: "alibabaCloud" as const, credentialState: "present" as const };
+  expect(capabilitiesForProfile(legacy).sourceLanguages).toContain("en");
+  const realtime = { ...legacy, alibabaRealtimeMode: "liveTranslate" as const, textTranslation: "deepLX" as const };
+  expect(capabilitiesForProfile(realtime)).toEqual({ sourceLanguages: ["auto"], targetLanguages: ["original", "zh", "en"], translationModes: ["turbo"] });
+});

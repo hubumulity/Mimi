@@ -54,6 +54,8 @@ pub struct ServiceProfilePayload {
     pub name: String,
     pub provider: ProviderKind,
     pub qwen_mt_model: crate::core::protocols::qwen_mt::QwenMTModel,
+    pub alibaba_realtime_mode: crate::core::provider::AlibabaRealtimeMode,
+    pub alibaba_workspace_id: String,
     pub language_preset: Option<crate::core::provider::ProfileLanguagePreset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speech_recognition_name: Option<String>,
@@ -87,6 +89,8 @@ impl ServiceProfilePayload {
             name: profile.name,
             provider: profile.provider,
             qwen_mt_model: profile.qwen_mt_model,
+            alibaba_realtime_mode: profile.alibaba_realtime_mode,
+            alibaba_workspace_id: profile.alibaba_workspace_id,
             language_preset: profile.language_preset,
             speech_recognition_name: profile.speech_recognition_name,
             credential_state,
@@ -108,6 +112,8 @@ impl ServiceProfilePayload {
             name: profile.name,
             provider: profile.provider,
             qwen_mt_model: profile.qwen_mt_model,
+            alibaba_realtime_mode: profile.alibaba_realtime_mode,
+            alibaba_workspace_id: profile.alibaba_workspace_id,
             language_preset: profile.language_preset,
             speech_recognition_name: profile.speech_recognition_name,
             credential_state: CredentialState::Unavailable,
@@ -952,6 +958,8 @@ mod tests {
             credential_storage: "keychain",
             profiles: vec![ServiceProfilePayload {
                 qwen_mt_model: Default::default(),
+                alibaba_realtime_mode: Default::default(),
+                alibaba_workspace_id: String::new(),
                 language_preset: None,
                 speech_network_proxy: None,
                 text_network_proxy: None,
@@ -2105,16 +2113,23 @@ pub async fn profile_update(
     custom_speech_languages_patch: Option<CustomSpeechLanguagesPatch>,
     language_preset_patch: Option<crate::core::provider::ProfileLanguagePresetPatch>,
     qwen_mt_model: Option<crate::core::protocols::qwen_mt::QwenMTModel>,
+    alibaba_realtime_mode: Option<crate::core::provider::AlibabaRealtimeMode>,
+    alibaba_workspace_id: Option<String>,
 ) -> Result<SettingsSnapshotPayload, String> {
     let _lifecycle = state.session.settings_mutation_guard(true).await?;
     ensure_profile_mutation_allowed(state.session.has_active_session())?;
     let previous_profile = state.settings.active_profile()?;
     let changes_active_speech_route = previous_profile.id == profile_id
-        && speech_network_proxy
+        && (speech_network_proxy
             .as_ref()
-            .is_some_and(|proxy| previous_profile.speech_network_proxy.as_ref() != Some(proxy));
+            .is_some_and(|proxy| previous_profile.speech_network_proxy.as_ref() != Some(proxy))
+            || alibaba_realtime_mode
+                .is_some_and(|mode| previous_profile.alibaba_realtime_mode != mode)
+            || alibaba_workspace_id.as_ref().is_some_and(|workspace| {
+                previous_profile.alibaba_workspace_id != workspace.trim()
+            }));
     let configuration_failure = state.session.configuration_failure_snapshot();
-    state.settings.update_profile_options_with_model(
+    state.settings.update_profile_options_with_realtime(
         &profile_id,
         name.as_deref(),
         speech_network_proxy,
@@ -2124,6 +2139,8 @@ pub async fn profile_update(
         custom_speech_languages_patch,
         language_preset_patch,
         qwen_mt_model,
+        alibaba_realtime_mode,
+        alibaba_workspace_id.as_deref(),
     )?;
     state
         .session

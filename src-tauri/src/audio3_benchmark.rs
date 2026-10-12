@@ -23,6 +23,8 @@ use tokio_tungstenite::tungstenite::Message;
 mod denoising;
 mod private_evidence;
 mod realtime;
+#[cfg(all(feature = "development-debugger", target_os = "macos"))]
+mod translation_comparison;
 
 const FRAME_BYTES: usize = 640; // 20 ms, mono signed little-endian PCM16, 16 kHz.
 const BYTES_PER_SECOND: usize = 32_000;
