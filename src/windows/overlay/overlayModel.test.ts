@@ -942,3 +942,10 @@ it("reserves pending source-only work but recognizes a collapsed complete pair w
   expect(usesSingleBilingualLane({ ...settings, targetLanguage: "original" }, "en", [])).toBe(true);
   expect(usesSingleBilingualLane(settings, "zh", [])).toBe(true);
 });
+
+
+it("caps current bilingual slots without taking the tall-window space away from single-language reading", () => {
+  expect(subtitleLaneBudget("bilingual", true, 660, 16, null, 0.9, true)).toEqual({ source: 3, translation: 3 });
+  expect(subtitleLaneBudget("original", false, 660, 16).source).toBeGreaterThan(3);
+  expect(subtitleLaneBudget("translation", true, 660, 16).translation).toBeGreaterThan(3);
+});

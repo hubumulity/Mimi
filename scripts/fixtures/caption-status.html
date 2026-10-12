@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mimi 运行状态试读</title></head>
+<body><main id="root"></main><script type="module">
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { LanguageStatusCapsule } from "/src/windows/overlay-control/LanguageStatusCapsule.tsx";
+import { useStore } from "/src/lib/store.ts";
+import { setStoredUiLanguage } from "/src/lib/i18n.ts";
+import "/src/index.css";
+import "/src/windows/overlay-control/overlay-control.css";
+let state={phase:"recognizing",language:"zh",expanded:false};
+const root=createRoot(document.getElementById("root"));
+const style=document.createElement("style");
+style.textContent="html,body{height:auto;overflow:auto;background:#fff;color:#111}body{margin:32px;font:15px -apple-system,sans-serif}#root{height:auto;overflow:visible}h1{font-size:24px}p{color:#555}label{display:inline-flex;gap:6px;margin-right:16px}select{font:inherit;padding:4px;cursor:pointer}.stage{background:#333;padding:16px;width:320px;margin-top:24px;border-radius:16px}.overlay-control-header{width:280px}";
+document.head.append(style);
+function render(patch={}){
+  state={...state,...patch};setStoredUiLanguage(state.language);
+  const settings={...useStore.getState().settings,sourceLanguage:"ja",targetLanguage:"zh",pulseAnimation:false};
+  root.render(React.createElement(React.Fragment,null,
+    React.createElement("h1",null,"Mimi 运行状态试读"),
+    React.createElement("p",null,"实际控制胶囊的离线状态样例；无音频、服务请求或配置写入。"),
+    ...[["language","界面语言",["zh","en","ja","zh-TW","ko","de","fr","th"]],["phase","状态",["listening","recognizing","translating","paused","connecting","idle","error"]]].map(([key,label,options])=>React.createElement("label",{key},label,
+      React.createElement("select",{value:state[key],onChange:event=>render({[key]:event.target.value})},...options.map(value=>React.createElement("option",{key:value,value},value))))),
+    React.createElement("div",{className:"stage"},React.createElement(LanguageStatusCapsule,{phase:state.phase,
+      status:{source:"Japanese",separator:"→",target:"Chinese"},settings,isPaused:state.phase==="paused",
+      isWaitingForFinalTranslation:state.phase==="translating",expanded:state.expanded,onToggle:()=>render({expanded:!state.expanded})}))));
+}
+window.statusFixture={render,state:()=>({...state})};render();
+</script></body></html>

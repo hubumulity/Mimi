@@ -667,3 +667,46 @@ it("keeps short translations beside the original in a tall body then follows ove
   expect(source.textContent).toBe(live.source);
   expect(translated.getAttribute("aria-label")).toBe(confirmed.translation);
 });
+
+
+it("does not turn a tall short current pair into a full-screen timestamp card", async () => {
+  viewportHeight = 660;
+  measuredHeight = 22;
+  await act(async () => root.render(<Timeline blocks={[{ ...live, source: "短原文", translation: "短译文" }]}
+    fontSize={16} alignment="center" color="white" displayMode="bilingual" reserveBilingualSpace
+    audioInput="system" showTimestamps motionEnabled={false} />));
+  const row = host.querySelector<HTMLElement>('[data-utterance-id]')!;
+  const source = row.querySelector<HTMLElement>('[data-subtitle-slot="source"]')!;
+  const translation = row.querySelector<HTMLElement>('[data-subtitle-slot="translation"]')!;
+  const sourceLine = Number.parseFloat((source.firstElementChild as HTMLElement).style.lineHeight);
+  const translationLine = Number.parseFloat((translation.firstElementChild as HTMLElement).style.lineHeight);
+  expect(Number.parseFloat(source.style.height) - measuredHeight).toBeLessThanOrEqual(2 * sourceLine);
+  expect(Number.parseFloat(translation.style.height) - measuredHeight).toBeLessThanOrEqual(2 * translationLine);
+  expect(renderedBlockHeight(row)).toBeLessThan(180);
+});
+
+it.each([3, 4])("leaves room for compact history beside the current pair with %i prior confirmations", async count => {
+  viewportHeight = 255;
+  measuredHeight = 22;
+  host.style.width = "600px";
+  const history: SubtitleBlock[] = Array.from({ length: count }, (_, index) => ({
+    id: `prior-${index}`, createdAt: index + 1, presentation: "history", source: `此前原文${index}`, translation: `此前译文${index}`,
+  }));
+  const current = { ...confirmed, source: "当前原文", translation: "当前译文" };
+  await act(async () => root.render(<Timeline blocks={[...history, current]} fontSize={16}
+    alignment="center" color="white" displayMode="bilingual" reserveBilingualSpace audioInput="system"
+    showTimestamps motionEnabled={false} />));
+  const rows = [...host.querySelectorAll<HTMLElement>('[data-utterance-id]')];
+  expect(rows.slice(0, -1).every(row => row.querySelector('[data-subtitle-slot]') === null)).toBe(true);
+  expect(renderedBlockHeight(rows.at(-1)!) + renderedBlockHeight(rows.at(-2)!)).toBeLessThan(viewportHeight);
+  for (const pair of [...history, current]) {
+    expect(host.textContent).toContain(pair.source);
+    expect(host.textContent).toContain(pair.translation);
+  }
+  await act(async () => host.firstElementChild!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -30 })));
+  expect(host.querySelector('[data-subtitle-slot]')).toBeNull();
+  for (const pair of [...history, current]) {
+    expect(host.textContent).toContain(pair.source);
+    expect(host.textContent).toContain(pair.translation);
+  }
+});

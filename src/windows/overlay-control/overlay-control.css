@@ -123,8 +123,21 @@
 
 .overlay-control-island__phase {
   flex: 0 0 auto;
+  display: inline-grid;
   color: var(--control-text-muted);
   font-weight: 600;
+}
+
+.overlay-control-island__phase > span {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+/* Keep the active status readable without moving the language summary each
+   time a short translation request starts or finishes. */
+.overlay-control-island__phase-size {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .overlay-control-island__summary {

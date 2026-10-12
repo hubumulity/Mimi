@@ -23,6 +23,13 @@ class CaptionLaneBudgetTest {
         assertEquals(20 to 50, captionLaneSlots(70, 20, 50))
         assertEquals(0 to 0, captionLaneSlots(0, 20, 50))
     }
+    @Test fun tallPanelsStopAtThreeMeasuredLinesForEachLane() {
+        for (height in listOf(132, 400, 1000)) {
+            assertEquals(60 to 72, captionLaneSlots(height, 20, 24))
+        }
+        assertEquals(150 to 60, captionLaneSlots(1000, 50, 20))
+        assertEquals(60 to 150, captionLaneSlots(1000, 20, 50))
+    }
     @Test fun fallbackFontTailCannotBorrowTheOtherLanesSpace() {
         val slot = captionLaneSlots(160, 36, 60).second
         assertEquals(0, captionLineBudget(slot, emptyList()))

@@ -151,6 +151,23 @@ internal class CaptionStreamingChecks(private val test: Instrumentation) {
                         check(source.layoutParams.height == android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
                         cases += 4
                         if (frame is CaptionPanelView) {
+                            stage = "isolated/tall-viewport/$font"
+                            render(CaptionFrameContent(original, translated.repeat(24), timestampsEnabled = true))
+                            val sourceHeight = source.height; val translationHeight = translation.height
+                            check(source.maxLines <= CAPTION_PANEL_MAX_LANE_LINES &&
+                                translation.maxLines <= CAPTION_PANEL_MAX_LANE_LINES)
+                            check(sourceHeight + translationHeight + time.measuredHeight < frame.transcriptScroll.height) {
+                                "Current sentence consumed the tall history viewport at $stage"
+                            }
+                            val normalHeight = panelHeight; panelHeight = normalHeight * 2
+                            render(CaptionFrameContent(original, translated.repeat(24), confirmed = true,
+                                timestamp = "13:08:42", timestampsEnabled = true))
+                            check(source.height == sourceHeight && translation.height == translationHeight &&
+                                source.maxLines <= CAPTION_PANEL_MAX_LANE_LINES && translation.maxLines <= CAPTION_PANEL_MAX_LANE_LINES) {
+                                "Tall viewport expanded the capped confirmed sentence at $stage"
+                            }
+                            panelHeight = normalHeight
+                            cases++
                             if (font == 24) {
                                 stage = "isolated/minimum-status/$font"
                                 val oldWidth = width; val oldHeight = panelHeight

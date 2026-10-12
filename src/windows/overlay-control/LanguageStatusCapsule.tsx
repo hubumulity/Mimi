@@ -48,6 +48,9 @@ export function LanguageStatusCapsule({
   const compact = capsuleLabels(settings, transientPhase);
   const sources = audioInputLabel(settings.audioInput, settings.systemAudioTarget);
   const phaseLabel = isStopping ? I18N.overlay.stopping : OVERLAY_ACTIVITY_PHASES[phase].accessibilityLabel;
+  const visiblePhase = compact.phase ?? phaseLabel;
+  const activePhase = !isStopping && !isPaused &&
+    (phase === "listening" || phase === "recognizing" || phase === "translating");
   const sourceLabel = compact.source === I18N.settings.recognitionServiceDefault ? compact.source : status.source;
   const fullLabel = `${sources} · ${phaseLabel} · ${sourceLabel} ${status.separator} ${status.target}`;
 
@@ -83,9 +86,12 @@ export function LanguageStatusCapsule({
     >
       <PulseRing phase={phase} compact motionEnabled={pulseOn} pulseStyle={settings.pulseStyle} />
       <AudioInputIndicator input={settings.audioInput} target={settings.systemAudioTarget} />
-      {transientPhase && (
-        <span className="overlay-control-island__phase">{compact.phase}</span>
-      )}
+      <span className="overlay-control-island__phase">
+        {activePhase && [I18N.overlay.phaseListening, I18N.overlay.phaseRecognizing,
+          I18N.overlay.phaseTranslating].map(label => <span key={label}
+          className="overlay-control-island__phase-size" aria-hidden="true">{label}</span>)}
+        <span className="overlay-control-island__phase-value">{visiblePhase}</span>
+      </span>
       <span className="overlay-control-island__summary">
         <strong>{compact.source}</strong>
         <span aria-hidden="true">{status.separator}</span>

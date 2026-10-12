@@ -310,8 +310,8 @@ internal class CaptionPanelView(
             (if (status.visibility == View.VISIBLE) status.measuredHeight else 0)
         if (fixedLanes) {
             val slots = captionLaneSlots(available, minimumSourceLine, minimumTranslationLine)
-            (source as LatestCaptionTextView).setFixedLaneHeight(slots.first)
-            (translation as LatestCaptionTextView).setFixedLaneHeight(slots.second)
+            (source as LatestCaptionTextView).setFixedLaneHeight(slots.first, CAPTION_PANEL_MAX_LANE_LINES)
+            (translation as LatestCaptionTextView).setFixedLaneHeight(slots.second, CAPTION_PANEL_MAX_LANE_LINES)
             (source as LatestCaptionTextView).followsLatest = true
             (translation as LatestCaptionTextView).followsLatest = true
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)

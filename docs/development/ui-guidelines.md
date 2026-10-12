@@ -30,6 +30,10 @@ These project rules apply to implementation and review.
   themes. Interactive controls, including help and toast dismissal, keep pointer
   cursors; preserve disabled, text-input, slider and resize cursors.
 - Live subtitle geometry needs a stable reading edge as well as unclipped text.
+  A reserved current bilingual area must also have a bounded line budget: a
+  short current pair must not consume a tall viewport, separate its timestamp
+  from its words or displace all confirmed history. Check tall short-text and
+  consecutive-history cases in addition to delayed translation and overflow.
   In normal Android mode, bottom-align the current measured lanes, matching the
   desktop reading edge. Growing reference text must not push an unchanged
   translation down; preserve complete glyph lines and deliberate history reading.

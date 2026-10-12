@@ -230,6 +230,7 @@ export function timelineClassName(blendsWithBackground: boolean): string {
  */
 export const SUBTITLE_LINE_HEIGHT = 1.32;
 export const SUBTITLE_SOURCE_SCALE = 0.9;
+const CURRENT_BILINGUAL_LINE_LIMIT = 3;
 
 export function subtitleSourceScale(availableLaneHeight: number | null): number {
   return availableLaneHeight !== null && availableLaneHeight < 78 ? 0.82 : SUBTITLE_SOURCE_SCALE;
@@ -269,7 +270,11 @@ export function subtitleLaneBudget(
         source = linesThatFit(sourceLine, availableLaneHeight - translation * translationLine);
         if (measured.source > 0) source = Math.min(source, Math.max(1, Math.ceil(measured.source / sourceLine)));
       }
-      return { source, translation };
+      // Reserve a small current reading area, not half of an arbitrarily tall
+      // window. Extra height remains available to actual confirmed history.
+      return reserveBilingualSpace
+        ? { source: Math.min(source, CURRENT_BILINGUAL_LINE_LIMIT), translation: Math.min(translation, CURRENT_BILINGUAL_LINE_LIMIT) }
+        : { source, translation };
     }
   }
 }

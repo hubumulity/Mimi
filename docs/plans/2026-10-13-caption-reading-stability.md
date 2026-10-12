@@ -15,6 +15,8 @@ final barriers and Original mode, so it is outside this display trial.
 
 For cross-language bilingual live reading, reserve fixed source and translation
 slots from the selected viewport and typography before the second lane arrives.
+Cap each current slot at three complete lines; small viewports still reduce this
+budget. The reservation must leave a tall window available for actual history.
 A short or absent lane does not lend its slot to the other. Anchor the original to
 its slot bottom. A translation that fits starts at its fixed top edge, keeping
 already-read lines in place as it grows; overflow follows complete tail lines
@@ -24,6 +26,21 @@ through the current confirmation and Stop. Reserve selected metadata before
 confirmation, including the selected divider space in the desktop/native
 minimum-height contract. Preserve current order, font sizes, colors, source identities and
 full accessible text. A known identical-language pair may use one lane.
+
+The first native user trial exposed an excessive-space failure even though the
+short synthetic glyph bounds passed: uncapped current slots consumed nearly the
+whole viewport, placed the confirmation time far above the original and pushed
+older history out. Preserve that failed trial in the evidence boundary. The
+three-line cap applies through live/confirmation/Stop; it is a compact current
+reading area rather than an entire-window reservation. Long current text follows
+its last three complete lines, with full text available in deliberate reading.
+
+Keep normal activity visible in the existing language capsule, including
+listening and recognition before a translation request starts. Reuse actual
+request-pending translation feedback; do not label complete-prefix waiting as an
+HTTP request in progress. Reserve the maximum localized width of the three
+active labels so their changes do not move the language summary. Reuse existing
+copy and styling, including when motion is disabled.
 
 Single-language modes and deliberate history reading retain their existing
 full-text behavior. New utterances, resize and explicit display changes remain

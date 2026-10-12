@@ -1,17 +1,23 @@
 package app.yuxino.mimi.android
 
+internal const val CAPTION_PANEL_MAX_LANE_LINES = 3
+
 /** Fixed native slots depend on the viewport and typography, never the current words. */
 internal fun captionLaneSlots(height: Int, sourceLine: Int, translationLine: Int): Pair<Int, Int> {
-    val available = height.coerceAtLeast(0)
     val original = sourceLine.coerceAtLeast(1)
     val translated = translationLine.coerceAtLeast(1)
+    val maximumSource = original * CAPTION_PANEL_MAX_LANE_LINES
+    val maximumTranslation = translated * CAPTION_PANEL_MAX_LANE_LINES
+    val available = height.coerceIn(0, maximumSource + maximumTranslation)
     if (available < original + translated) {
         val source = minOf(original, available / 2)
         return source to available - source
     }
     val minimumTranslation = if (original + translated * 2 <= available) translated * 2 else translated
-    val source = (available / 2).coerceIn(original, available - minimumTranslation)
-    return source to available - source
+    var source = (available / 2).coerceIn(original, available - minimumTranslation).coerceAtMost(maximumSource)
+    val translation = (available - source).coerceAtMost(maximumTranslation)
+    source = (available - translation).coerceAtMost(maximumSource)
+    return source to translation
 }
 
 /** Fit complete native tail lines within one lane without borrowing its neighbour's slot. */

@@ -2,10 +2,43 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { setStoredUiLanguage } from "../../lib/i18n";
+import { I18N, setStoredUiLanguage } from "../../lib/i18n";
 import { useStore } from "../../lib/store";
 import { LanguageStatusCapsule } from "./LanguageStatusCapsule";
 import { audioInputLabel } from "../../lib/audioInput";
+
+it.each(["zh", "en", "ja", "zh-TW", "ko", "de", "fr", "th"] as const)(
+  "keeps normal session activity visibly labeled with motion disabled in %s", async language => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    setStoredUiLanguage(language);
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    try {
+      for (const expanded of [false, true]) {
+        for (const phase of ["listening", "recognizing", "translating"] as const) {
+          await act(async () => root.render(<LanguageStatusCapsule phase={phase}
+            status={{ source: "Japanese", separator: "→", target: "Chinese" }}
+            settings={{ ...useStore.getState().settings, pulseAnimation: false }}
+            isPaused={false} isWaitingForFinalTranslation={false} expanded={expanded} onToggle={() => {}} />));
+          const expected = phase === "listening" ? I18N.overlay.phaseListening
+            : phase === "recognizing" ? I18N.overlay.phaseRecognizing
+            : { zh: "翻译中", en: "Translating", ja: "翻訳中", "zh-TW": "翻譯中",
+              ko: "번역 중", de: "Wird übersetzt", fr: "Traduction", th: "กำลังแปล" }[language];
+          const value = host.querySelector(".overlay-control-island__phase-value")!;
+          expect(value.textContent).toBe(expected);
+          expect(value.hasAttribute("aria-hidden")).toBe(false);
+          const sizes = [...host.querySelectorAll(".overlay-control-island__phase-size")];
+          expect(sizes.map(element => element.textContent)).toEqual([
+            I18N.overlay.phaseListening, I18N.overlay.phaseRecognizing, I18N.overlay.phaseTranslating]);
+          expect(sizes.every(element => element.getAttribute("aria-hidden") === "true")).toBe(true);
+        }
+      }
+    } finally {
+      await act(async () => root.unmount()); host.remove();
+      setStoredUiLanguage("system"); vi.unstubAllGlobals();
+    }
+  });
 
 it.each([
   { label: "explicit off", reduced: false, pulseAnimation: false },
@@ -67,13 +100,13 @@ it.each(["zh", "en", "ja"] as const)("identifies selected inputs and prioritizes
       expect(host.querySelector("button")!.getAttribute("aria-label")).toContain(audioInputLabel(audioInput));
 
       await act(async () => root.render(<LanguageStatusCapsule {...props} phase="connecting" isPaused isWaitingForFinalTranslation />));
-      const connecting = host.querySelector('.overlay-control-island__phase')!.textContent;
+      const connecting = host.querySelector('.overlay-control-island__phase-value')!.textContent;
       expect(connecting).toBe({ en: "Connecting", zh: "连接中", ja: "接続中" }[language]);
       await act(async () => root.render(<LanguageStatusCapsule {...props} phase="connecting" isStopping />));
-      expect(host.querySelector('.overlay-control-island__phase')!.textContent)
+      expect(host.querySelector('.overlay-control-island__phase-value')!.textContent)
         .toBe({ en: "Stopping", zh: "停止中", ja: "終了中" }[language]);
       await act(async () => root.render(<LanguageStatusCapsule {...props} isPaused />));
-      expect(host.querySelector('.overlay-control-island__phase')!.textContent)
+      expect(host.querySelector('.overlay-control-island__phase-value')!.textContent)
         .toBe({ en: "Paused", zh: "暂停", ja: "一時停止" }[language]);
     }
   } finally {

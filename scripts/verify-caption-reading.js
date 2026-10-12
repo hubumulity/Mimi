@@ -61,6 +61,33 @@ export async function verifyCaptionReading(page) {
     }
     observations.push({ options, rows });
   }
+  for (const id of ["short", "history-3", "history-4"]) {
+    const options = { width: 600, height: id === "short" ? 660 : 255, fontSize: 16, timestamps: true, mode: "bilingual" };
+    await page.evaluate(({ id, options }) => window.readingFixture.render(id, options), { id, options });
+    await page.waitForFunction(id => window.readingFixture.state().sceneId === id, id);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const geometry = await page.evaluate(() => {
+      const stage = document.getElementById("caption-stage").getBoundingClientRect();
+      const row = document.querySelector('[data-utterance-id="sample-owner"]');
+      const lanes = [...row.querySelectorAll('[data-debug-lane]')].map(lane => {
+        const text = lane.querySelector("span");
+        const height = lane.getBoundingClientRect().height;
+        const textHeight = text.getBoundingClientRect().height;
+        const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
+        return { kind: lane.dataset.debugLane, height, lineHeight, blankLines: Math.max(0, height - textHeight) / lineHeight };
+      });
+      const previous = [...document.querySelectorAll('[data-utterance-id^="prior-"]')];
+      return { currentHeight: row.getBoundingClientRect().height, lanes,
+        previousCount: previous.length, previousReserved: previous.filter(block => block.querySelector('[data-subtitle-slot]')).length,
+        previousFullyVisible: previous.filter(block => { const rect = block.getBoundingClientRect(); return rect.top >= stage.top - 0.5 && rect.bottom <= stage.bottom + 0.5; }).length };
+    });
+    for (const lane of geometry.lanes) {
+      if (lane.height > 3 * lane.lineHeight + 0.5 || lane.blankLines > 2.05) failures.push({ options, id, lane: lane.kind, reason: "current_slot_wastes_tall_viewport" });
+    }
+    if (geometry.currentHeight >= 180) failures.push({ options, id, reason: "current_pair_full_screen_card" });
+    if (id.startsWith("history-") && (geometry.previousReserved !== 0 || geometry.previousFullyVisible < 1)) failures.push({ options, id, reason: "current_pair_pushes_all_history_out" });
+    observations.push({ options, scene: id, geometry });
+  }
   for (const mode of ["original", "translation"]) {
     await page.evaluate(mode => window.readingFixture.render("long", { mode, width: 700, height: 144, fontSize: 20, timestamps: false }), mode);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

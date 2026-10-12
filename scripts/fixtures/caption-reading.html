@@ -23,6 +23,11 @@ const scenes = [
   { id: "revision", label: "文字修订", blocks: current(revised, revisedTranslation) },
   { id: "confirmed", label: "同句定稿", blocks: current(revised, revisedTranslation, "latestCommitted") },
   { id: "next", label: "下一句", blocks: [ ...current(revised, revisedTranslation, "history"), { id: "next-owner", createdAt: null, presentation: "live", source: "Now we move to the next sentence.", translation: "现在进入下一句话。" } ] },
+  ...[3, 4].map(count => ({ id: `history-${count}`, label: `${count} 条确认后的当前句`, blocks: [
+    ...Array.from({ length: count }, (_, index) => ({ id: `prior-${index}`, createdAt: 1000 + index,
+      presentation: "history", source: `前の説明${index + 1}です。`, translation: `这是前面的说明${index + 1}。` })),
+    ...current("この説明を続けます。", "我们继续说明。", "latestCommitted"),
+  ] })),
   { id: "clear", label: "清空", blocks: [] },
 ];
 const params = new URLSearchParams(location.search);
