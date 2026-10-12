@@ -8,6 +8,9 @@ TEST_APP="/synthetic app directory/mimi-dev.app"
 TEST_UI_TEST=1
 TEST_AUTO_START=1
 TEST_COMPACT_SETTINGS=1
+TEST_STANDARD_OVERLAY=1
+TEST_DUAL_SUBTITLES=1
+TEST_DUAL_LIVE_SUBTITLES=1
 TEST_WORKSPACE=previous-batch
 TEST_OPEN_COUNT=0
 
@@ -21,6 +24,9 @@ open() {
       MIMI_UI_TEST=*) TEST_UI_TEST="${2#*=}" ;;
       MIMI_AUTO_START=*) TEST_AUTO_START="${2#*=}" ;;
       MIMI_UI_TEST_COMPACT_SETTINGS=*) TEST_COMPACT_SETTINGS="${2#*=}" ;;
+      MIMI_UI_TEST_STANDARD_OVERLAY=*) TEST_STANDARD_OVERLAY="${2#*=}" ;;
+      MIMI_UI_TEST_DUAL_SUBTITLES=*) TEST_DUAL_SUBTITLES="${2#*=}" ;;
+      MIMI_UI_TEST_DUAL_LIVE_SUBTITLES=*) TEST_DUAL_LIVE_SUBTITLES="${2#*=}" ;;
       MIMI_DEVELOPMENT_EVIDENCE_WORKSPACE=*) TEST_WORKSPACE="${2#*=}" ;;
       *) echo "Unexpected launch environment." >&2; return 1 ;;
     esac
@@ -56,5 +62,11 @@ if open_mimi_development_app invalid "" "$TEST_APP" >/dev/null 2>&1; then
   echo "Invalid launch mode was accepted." >&2
   exit 1
 fi
-[[ "$TEST_OPEN_COUNT" == "6" ]]
+MIMI_UI_TEST_STANDARD_OVERLAY=1 MIMI_UI_TEST_DUAL_SUBTITLES=1 MIMI_UI_TEST_DUAL_LIVE_SUBTITLES=1 open_mimi_development_app ui-only "" "$TEST_APP"
+[[ "$TEST_STANDARD_OVERLAY" == "1" && "$TEST_DUAL_SUBTITLES" == "1" && "$TEST_DUAL_LIVE_SUBTITLES" == "1" ]]
+open_mimi_development_app ui-only "" "$TEST_APP"
+[[ "$TEST_STANDARD_OVERLAY" == "0" && "$TEST_DUAL_SUBTITLES" == "0" && "$TEST_DUAL_LIVE_SUBTITLES" == "0" ]]
+MIMI_UI_TEST_STANDARD_OVERLAY=1 MIMI_UI_TEST_DUAL_SUBTITLES=1 MIMI_UI_TEST_DUAL_LIVE_SUBTITLES=1 open_mimi_development_app live "" "$TEST_APP"
+[[ "$TEST_STANDARD_OVERLAY" == "0" && "$TEST_DUAL_SUBTITLES" == "0" && "$TEST_DUAL_LIVE_SUBTITLES" == "0" ]]
+[[ "$TEST_OPEN_COUNT" == "9" ]]
 echo "Development launch mode tests passed."

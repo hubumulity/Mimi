@@ -471,6 +471,10 @@ artifacts, and signing material.
   the shared expansion action and verify a dirty draft by real mouse activation;
   a DOM test that focuses the button first does not reproduce this path.
 - Set UI-test and automatic-start flags explicitly on every canonical dev launch.
+  Forward native fixture flags through the launch helper only for `--ui-only`,
+  and explicitly clear them for ordinary startup. An inherited shell value alone
+  does not prove LaunchServices received it. The launch mock covers synthetic
+  overlay/live-pair flags and their reset before native QA.
   A normal launch was observed with a residual UI-test flag despite omitting
   `--ui-only`; its relaunch source was not proven. Verify the exact running bundle
   and runtime/window mode, not only the script's success message. After UI-only

@@ -2822,3 +2822,39 @@
 - Read back all 17 public assets, matching GitHub digests and `SHA256SUMS.txt`; independently verified five updater signatures, exact Latest manifest routing and bilingual notes. Both macOS architectures retained the installed formal app's complete signing requirement and their four public files match the locally source-verified packages. GitHub's native Contributors avatar for `@yuxino` was visible.
 - Public Android APK is non-debuggable `1.5.24` / `10524`, uses the same release certificate as v1.5.23, and passed four-ABI shared JNI and 16 KB alignment checks. Website PR #40 deployed successfully; all eight live locales show the concise recommendation and eight v1.5.24 download links.
 - This run verifies distribution, not additional speech quality or installed-updater acceptance. Earlier physical-device, API 29, split-screen, native Intel and manual Windows/Linux speech limits remain. The user's further report of frequent Ali draft meaning changes is pending a separate shared PC/Android investigation; this release does not establish that interim semantic revisions are eliminated.
+
+## 2026-10-13 — Caption reading stability candidate
+
+- Main `b04e394b` plus complete-prefix candidate `7a0d98af`, fixed-lane UI
+  `cbd21c1f` and Android lint correction `7aad43ad`; the native launch additionally
+  used the reviewed fixture-forwarding change. No unrelated Volcano or release
+  preparation was imported. Alibaba and Tencent are the requested first trial
+  routes; the reported Alibaba/DeepL behavior remains unmeasured and deferred.
+- Same synthetic component case, 700 px wide / 20 px font / 144 px body:
+  translation arrival moved the unchanged original's last glyph upward 56 px
+  on main and 0 px on the candidate. Final replay passed 45 frames across five
+  viewport/font/time cases, plus single-mode checks. The fitting translation
+  retains its first reading edge; overflow follows its complete tail. These
+  actual React/browser measurements establish layout behavior, not provider
+  meaning, recognition accuracy or continuous reading comfort.
+- Canonical checks passed with 2,061 frontend tests, 570 desktop tests and shared
+  Rust/actual-JNI coverage. Android Debug/Release each passed 204 JVM/JNI tests,
+  both lint variants had no errors, and optimized four-ABI Release assembly,
+  packaged-library matching and 16 KB validation passed. The isolated native
+  View fixture compiled but its 119 cases were not executed: a new task-only
+  API 35 AVD never reached ready ADB. No APK was installed; its temporary host,
+  ADB and emulator data were stopped and removed, preserving the existing AVD.
+- After explicit user approval, the active Dev was stopped normally. Canonical
+  signed UI-only Dev displayed a synthetic English/Chinese pair, retained it
+  while paused, and kept both glyph bounds inside their reserved slots at
+  660×328 and minimum 360×180 with time/divider options selected. Chinese and
+  Japanese controls were observed. LaunchServices initially omitted the existing
+  native fixture flags; forwarding and ordinary-launch reset now pass mock
+  regression coverage. Real configuration hashes and the complete Dev signing
+  requirement are checked separately when restoring the ordinary idle candidate.
+- Private receipts and synthetic images remain outside Git. No new provider
+  request, capture, audio recording or private-caption retention was performed.
+  Alibaba's six-second rescue remains a revisable preview; Tencent's integrated
+  draft boundaries are unchanged. Native long-text/dual-input growth, Android
+  glyph acceptance, Windows/Linux native rendering, real semantic improvement
+  and user comfort remain open. Keep this trial unmerged until that acceptance.
