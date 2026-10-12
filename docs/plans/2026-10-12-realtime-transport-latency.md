@@ -73,5 +73,7 @@ The transport contract must hold for direct and configured-proxy routes on the
 shared source used by both platforms. Packet boundaries and security behavior
 must pass regression tests. More small TCP packets are an intentional tradeoff.
 Local checks establish policy and correctness, not a provider speed claim. The
-authorized idle-Ping comparison showed no stable improvement. Continuous-audio
-receive/send timing and native caption latency remain unverified.
+authorized idle-Ping comparison showed no stable improvement. A subsequent native
+Mac candidate run verified meaningful speech, bilingual overlay commits and
+43–44 ms badge observations. Its near-silent old run is not a valid speech
+baseline, so a speed gain and the reported 200 ms cause remain unverified.
