@@ -4,12 +4,26 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.DataInputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.nio.file.Files
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
+import kotlin.concurrent.thread
 
-/** Actual JNI configuration/lifecycle checks. Never start, connect, capture or submit audio. */
+/** Actual JNI checks use synthetic credentials; live transport fixtures stay on loopback. */
 class NativeRuntimeJniTest {
     @Test fun stopWatchdogIncludesNativeDrainDisconnectAndSnapshotPublication() {
         val policy = NativeRuntimeConfiguration.policy
@@ -136,5 +150,190 @@ class NativeRuntimeJniTest {
         assertEquals("https://synthetic.example.invalid/v1/chat/completions", endpoints.getString("textEndpoint"))
         assertFalse(endpoints.has("speechEndpoint"))
         assertFalse(endpoints.toString().contains("apiKey"))
+    }
+
+    @Test fun baiduFinalAndFollowingDraftKeepSeparateOwnersAcrossActualJni() {
+        SubtitleBus.clear()
+        SubtitleBus.setHistoryLimit(2)
+        val observed = mutableListOf<SubtitleBus.DisplaySnapshot>()
+        val listener = object : SubtitleBus.Listener {
+            override fun onSubtitleChanged() { observed += SubtitleBus.displaySnapshot() }
+        }
+        SubtitleBus.addListener(listener)
+        try {
+            BaiduLoopback().use { fixture ->
+                val handle = NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "create")
+                    .put("configuration", configuration(ServiceProvider.BAIDU).put("sourceLanguage", "en")).put("network", fixture.network)).getLong("handle")
+                fun awaitState(predicate: (JSONObject) -> Boolean): JSONObject {
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                    while (System.nanoTime() < deadline) {
+                        fixture.checkFailure()
+                        val state = NativeRuntimeConfiguration.command("poll", handle)
+                        if (predicate(state)) {
+                            SubtitleBus.onRuntimeSnapshot(state, false)
+                            return state
+                        }
+                        assertTrue("Loopback runtime failed: ${state.optString("errorCode")}", state.isNull("errorCode"))
+                        Thread.sleep(10)
+                    }
+                    error("Baidu loopback state did not arrive")
+                }
+                try {
+                    NativeRuntimeConfiguration.command("start", handle)
+                    val first = awaitState { state ->
+                        val snapshot = state.getJSONObject("snapshot")
+                        snapshot.getJSONArray("history").length() == 1 && snapshot.getJSONObject("source").getString("text") == "Synthetic next draft" &&
+                            snapshot.getJSONObject("translation").getString("text") == "合成下一句草稿"
+                    }.getJSONObject("snapshot")
+                    assertEquals("Synthetic first sentence.", first.getJSONArray("history").getJSONObject(0).getString("source"))
+                    assertEquals("合成第一句。", first.getJSONArray("history").getJSONObject(0).getString("translation"))
+                    assertEquals("合成下一句草稿", first.getJSONObject("translation").getString("text"))
+                    assertFalse(first.getJSONObject("source").getBoolean("isFinal"))
+                    assertFalse(first.getJSONObject("translation").getBoolean("isFinal"))
+                    assertEquals("Synthetic next draft", first.getJSONObject("realtimePreview").getJSONObject("source").getString("text"))
+                    assertEquals("合成下一句草稿", first.getJSONObject("realtimePreview").getJSONObject("translation").getString("text"))
+                    assertFalse(observed.last().confirmed)
+                    assertFalse(observed.last().currentSource.confirmed)
+                    assertEquals("Synthetic first sentence.", observed.last().retainedConfirmed!!.pair.source)
+                    fixture.nextMid.countDown()
+                    val mid = awaitState {
+                        val snapshot = it.getJSONObject("snapshot")
+                        snapshot.getJSONObject("source").getString("text") == "Synthetic second sentence." &&
+                            snapshot.getJSONObject("translation").getString("text") == "合成第二句预览。"
+                    }.getJSONObject("snapshot")
+                    assertEquals(1, mid.getJSONArray("history").length())
+                    assertEquals("Synthetic first sentence.", mid.getJSONObject("displayPair").getString("source"))
+                    assertFalse(observed.last().confirmed)
+                    fixture.nextFinal.countDown()
+                    val final = awaitState { it.getJSONObject("snapshot").getJSONArray("history").length() == 2 }.getJSONObject("snapshot")
+                    val history = final.getJSONArray("history")
+                    assertEquals("Synthetic first sentence.", history.getJSONObject(0).getString("source"))
+                    assertEquals("合成第一句。", history.getJSONObject(0).getString("translation"))
+                    assertEquals("Synthetic second sentence.", history.getJSONObject(1).getString("source"))
+                    assertEquals("合成第二句定稿。", history.getJSONObject(1).getString("translation"))
+                    assertEquals("system", history.getJSONObject(1).getString("audioSource"))
+                    assertTrue(final.getJSONObject("source").getBoolean("isFinal"))
+                    assertTrue(final.getJSONObject("translation").getBoolean("isFinal"))
+                    assertTrue(final.getBoolean("displayPairFinal"))
+                    assertTrue(observed.last().confirmed)
+                    assertEquals("合成第二句定稿。", observed.last().translation)
+                    NativeRuntimeConfiguration.command("finish", handle)
+                    awaitState { it.getBoolean("finished") }
+                    fixture.checkFailure()
+                } finally { NativeRuntimeConfiguration.command("stop", handle) }
+            }
+        } finally {
+            SubtitleBus.removeListener(listener)
+            SubtitleBus.clear()
+            SubtitleBus.setHistoryLimit(0)
+        }
+    }
+
+    /** A CONNECT/TLS/WebSocket server for the unchanged production Baidu endpoint. */
+    private class BaiduLoopback : AutoCloseable {
+        private val frames = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
+            .bufferedReader().use { it.readText() }).getJSONObject("baiduRealtimeTranslation").getJSONArray("streams").let { streams ->
+            (0 until streams.length()).map(streams::getJSONObject).single { it.getString("id") == "final-with-following-draft" }.getJSONArray("frames")
+        }
+        private val directory = Files.createTempDirectory("mimi-baidu-jni-").toFile()
+        private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        private val failure = AtomicReference<Throwable?>()
+        private var socket: Socket? = null
+        val nextMid = CountDownLatch(1)
+        val nextFinal = CountDownLatch(1)
+        val network: JSONObject
+        private val worker: Thread
+
+        init {
+            // Generate a short-lived, synthetic server identity with the JDK used by Gradle.
+            val keytool = java.io.File(System.getProperty("java.home"), "bin/keytool${if (System.getProperty("os.name").orEmpty().startsWith("Windows")) ".exe" else ""}")
+            val storeFile = java.io.File(directory, "fixture.p12")
+            val process = ProcessBuilder(keytool.absolutePath, "-genkeypair", "-alias", "fixture", "-keyalg", "EC", "-groupname", "secp256r1",
+                "-dname", "CN=aip.baidubce.com", "-ext", "SAN=dns:aip.baidubce.com", "-ext", "EKU=serverAuth", "-validity", "2",
+                "-storetype", "PKCS12", "-keystore", storeFile.absolutePath, "-storepass", "mimi-fixture", "-keypass", "mimi-fixture", "-noprompt")
+                .redirectErrorStream(true).redirectOutput(java.io.File(directory, "keytool.log")).start()
+            check(process.waitFor(20, TimeUnit.SECONDS)) { process.destroyForcibly(); "Synthetic TLS identity timed out" }
+            check(process.exitValue() == 0) { "Synthetic TLS identity failed" }
+            val password = "mimi-fixture".toCharArray()
+            val store = KeyStore.getInstance("PKCS12").apply { storeFile.inputStream().use { load(it, password) } }
+            val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, password) }
+            val tls = SSLContext.getInstance("TLS").apply { init(managers.keyManagers, null, null) }
+            network = JSONObject().put("speechProxy", JSONObject().put("mode", "custom").put("url", "http://127.0.0.1:${server.localPort}"))
+                .put("textProxy", JSONObject().put("mode", "direct").put("url", JSONObject.NULL))
+                .put("trustRoots", JSONArray(listOf(Base64.getEncoder().encodeToString(store.getCertificate("fixture").encoded))))
+            worker = thread(name = "mimi-baidu-loopback", isDaemon = true) {
+                try {
+                    server.soTimeout = 5_000
+                    val tcp = server.accept().also { socket = it; it.soTimeout = 5_000 }
+                    check(headers(DataInputStream(tcp.getInputStream())).startsWith("CONNECT aip.baidubce.com:443 HTTP/1.1\r\n"))
+                    tcp.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                    val secure = (tls.socketFactory.createSocket(tcp, "aip.baidubce.com", 443, true) as SSLSocket).apply { useClientMode = false; startHandshake() }
+                    socket = secure
+                    val input = DataInputStream(secure.inputStream)
+                    val output = secure.outputStream
+                    val request = headers(input)
+                    check(request.startsWith("GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
+                    val key = request.lineSequence().first { it.startsWith("sec-websocket-key:", true) }.substringAfter(':').trim()
+                    val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII)))
+                    output.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                    val start = JSONObject(readText(input, output))
+                    check(start.getString("type") == "START" && start.getString("app_key") == "synthetic-appKey")
+                    check(start.getString("from") == "en" && start.getString("to") == "zh")
+                    send(output, """{"code":0,"data":{"status":"STA"}}""")
+                    send(output, frames.getString(0))
+                    check(nextMid.await(10, TimeUnit.SECONDS))
+                    send(output, frames.getString(1))
+                    check(nextFinal.await(10, TimeUnit.SECONDS))
+                    send(output, frames.getString(2))
+                    check(JSONObject(readText(input, output)).getString("type") == "FINISH")
+                    send(output, """{"code":0,"data":{"status":"END"}}""")
+                } catch (error: Throwable) { failure.set(error) }
+            }
+        }
+
+        fun checkFailure() { failure.get()?.let { throw AssertionError("Baidu loopback server failed", it) } }
+        private fun headers(input: DataInputStream): String {
+            val bytes = java.io.ByteArrayOutputStream()
+            var tail = 0
+            while (bytes.size() < 16_384) {
+                val byte = input.readUnsignedByte()
+                bytes.write(byte)
+                tail = (tail shl 8) or byte
+                if (tail == 0x0d0a0d0a) return bytes.toString("US-ASCII")
+            }
+            error("Oversized loopback HTTP header")
+        }
+        private fun send(output: OutputStream, text: String) = frame(output, 1, text.toByteArray(Charsets.UTF_8))
+        private fun frame(output: OutputStream, opcode: Int, bytes: ByteArray) {
+            require(bytes.size < 65_536)
+            output.write(0x80 or opcode)
+            if (bytes.size < 126) output.write(bytes.size) else {
+                output.write(126); output.write(bytes.size shr 8); output.write(bytes.size and 255)
+            }
+            output.write(bytes)
+            output.flush()
+        }
+        private fun readText(input: DataInputStream, output: OutputStream): String {
+            while (true) {
+                val opcode = input.readUnsignedByte() and 15
+                val flags = input.readUnsignedByte()
+                check(flags and 128 != 0)
+                val size = when (val short = flags and 127) { 126 -> input.readUnsignedShort(); 127 -> error("Oversized loopback frame"); else -> short }
+                check(size <= 4_096)
+                val mask = ByteArray(4).also(input::readFully)
+                val payload = ByteArray(size).also(input::readFully)
+                for (index in payload.indices) payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
+                if (opcode == 9) frame(output, 10, payload) else {
+                    check(opcode == 1) { "Unexpected loopback client frame" }
+                    return payload.toString(Charsets.UTF_8)
+                }
+            }
+        }
+        override fun close() {
+            nextMid.countDown(); nextFinal.countDown()
+            socket?.close(); server.close()
+            worker.join(2_000)
+            directory.deleteRecursively()
+        }
     }
 }

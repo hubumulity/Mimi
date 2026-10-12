@@ -15,6 +15,119 @@
     "providerFinishTimeoutMs": 6000
   },
   "description": "Shared text translation and provider wire semantics. Synthetic fixtures only. Platform-specific UI, transport limits and scheduling are tested separately.",
+  "baiduRealtimeTranslation": {
+    "source": "https://ai.baidu.com/ai-doc/MT/Sl9p2h5k9",
+    "events": [
+      {
+        "id": "session-ready",
+        "frame": "{\"code\":0,\"msg\":\"Success\",\"data\":{\"status\":\"STA\"}}",
+        "expected": { "type": "ready" }
+      },
+      {
+        "id": "mid-draft",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"MID\",\"asr\":\"Synthetic source\",\"asr_trans\":\"合成译文\",\"sentence\":\"\",\"sentence_trans\":\"\"}}}",
+        "expected": { "type": "draft", "source": "Synthetic source", "translation": "合成译文" }
+      },
+      {
+        "id": "official-fin-next-source",
+        "frame": "{\"code\":0,\"msg\":\"Success\",\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr\":\"明天\",\"asr_trans\":\"\",\"sentence\":\"今天天气不错，\",\"sentence_trans\":\"It's a nice day today,\"}}}",
+        "expected": { "type": "final", "source": "今天天气不错，", "translation": "It's a nice day today,", "nextSource": "明天", "nextTranslation": "" }
+      },
+      {
+        "id": "fin-next-paired-draft",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr\":\"Synthetic next draft\",\"asr_trans\":\"合成下一句草稿\",\"sentence\":\"Synthetic first sentence.\",\"sentence_trans\":\"合成第一句。\"}}}",
+        "expected": { "type": "final", "source": "Synthetic first sentence.", "translation": "合成第一句。", "nextSource": "Synthetic next draft", "nextTranslation": "合成下一句草稿" }
+      },
+      {
+        "id": "final-no-next-draft",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr\":\"\",\"asr_trans\":\"\",\"sentence\":\"Synthetic second sentence.\",\"sentence_trans\":\"合成第二句定稿。\"}}}",
+        "expected": { "type": "final", "source": "Synthetic second sentence.", "translation": "合成第二句定稿。", "nextSource": "", "nextTranslation": "" }
+      },
+      {
+        "id": "session-finished",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"END\"}}",
+        "expected": { "type": "finished" }
+      },
+      {
+        "id": "asr-sentence-error",
+        "frame": "{\"code\":20311,\"msg\":\"PRIVATE_ASR_DETAILS\"}",
+        "expected": { "type": "error", "code": 20311, "isRecoverable": true }
+      },
+      {
+        "id": "translation-sentence-error",
+        "frame": "{\"code\":20312,\"msg\":\"PRIVATE_TRANSLATION_DETAILS\"}",
+        "expected": { "type": "error", "code": 20312, "isRecoverable": true }
+      },
+      {
+        "id": "tts-sentence-error",
+        "frame": "{\"code\":20313,\"msg\":\"PRIVATE_TTS_DETAILS\"}",
+        "expected": { "type": "error", "code": 20313, "isRecoverable": true }
+      },
+      {
+        "id": "empty-translation-sentence-error",
+        "frame": "{\"code\":20315,\"msg\":\"PRIVATE_TRANSLATION_DETAILS\"}",
+        "expected": { "type": "error", "code": 20315, "isRecoverable": true }
+      },
+      {
+        "id": "idle-timeout",
+        "frame": "{\"code\":20314,\"msg\":\"PRIVATE_TIMEOUT_DETAILS\"}",
+        "expected": { "type": "error", "code": 20314, "isRecoverable": false }
+      },
+      {
+        "id": "invalid-audio",
+        "frame": "{\"code\":20316,\"msg\":\"PRIVATE_AUDIO_DETAILS\"}",
+        "expected": { "type": "error", "code": 20316, "isRecoverable": false }
+      },
+      {
+        "id": "authentication-error",
+        "frame": "{\"code\":31003,\"msg\":\"PRIVATE_CREDENTIAL_DETAILS\"}",
+        "expected": { "type": "error", "code": 31003, "isRecoverable": false }
+      },
+      {
+        "id": "unknown-status-does-not-expose-content",
+        "frame": "{\"code\":0,\"msg\":\"PRIVATE_MESSAGE_DETAILS\",\"data\":{\"status\":\"PRIVATE_PROVIDER_STATUS_CONTENT\",\"result\":{\"asr\":\"PRIVATE_TRANSCRIPT_DETAILS\"}}}",
+        "expected": { "type": "ignored", "kind": "provider_event" }
+      },
+      {
+        "id": "unknown-result-type-does-not-expose-content",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"PRIVATE_TRANSCRIPT_DETAILS\",\"asr\":\"PRIVATE_SOURCE_DETAILS\",\"asr_trans\":\"PRIVATE_TRANSLATION_DETAILS\"}}}",
+        "expected": { "type": "ignored", "kind": "translation_result" }
+      },
+      {
+        "id": "non-integer-code-rejected",
+        "frame": "{\"code\":\"PRIVATE_STATUS_DETAILS\"}",
+        "expected": null
+      },
+      {
+        "id": "missing-next-source-rejected",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr_trans\":\"\",\"sentence\":\"Synthetic source.\",\"sentence_trans\":\"合成译文。\"}}}",
+        "expected": null
+      },
+      {
+        "id": "non-string-draft-rejected",
+        "frame": "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"MID\",\"asr\":123,\"asr_trans\":\"PRIVATE_TRANSLATION_DETAILS\"}}}",
+        "expected": null
+      }
+    ],
+    "streams": [
+      {
+        "id": "final-with-following-draft",
+        "source": "en",
+        "target": "zh",
+        "frames": [
+          "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr\":\"Synthetic next draft\",\"asr_trans\":\"合成下一句草稿\",\"sentence\":\"Synthetic first sentence.\",\"sentence_trans\":\"合成第一句。\"}}}",
+          "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"MID\",\"asr\":\"Synthetic second sentence.\",\"asr_trans\":\"合成第二句预览。\",\"sentence\":\"\",\"sentence_trans\":\"\"}}}",
+          "{\"code\":0,\"data\":{\"status\":\"TRN\",\"result\":{\"type\":\"FIN\",\"asr\":\"\",\"asr_trans\":\"\",\"sentence\":\"Synthetic second sentence.\",\"sentence_trans\":\"合成第二句定稿。\"}}}"
+        ],
+        "expected": {
+          "sourceDrafts": ["Synthetic next draft", "Synthetic second sentence."],
+          "translationDrafts": ["合成下一句草稿", "合成第二句预览。"],
+          "sourceFinals": ["Synthetic first sentence.", "Synthetic second sentence."],
+          "translationFinals": ["合成第一句。", "合成第二句定稿。"]
+        }
+      }
+    ]
+  },
   "tencentSpeechTranslation": {
     "signing": [
       {

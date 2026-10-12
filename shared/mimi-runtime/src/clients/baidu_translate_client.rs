@@ -88,7 +88,7 @@ struct Inner {
     content_lock: Mutex<SentenceContentState>,
     sink: Mutex<Option<Sink>>,
     receive_task: Mutex<Option<JoinHandle<()>>>,
-    audio_send_lock: Mutex<()>,
+    audio_send_lock: Mutex<Option<tokio::time::Instant>>,
     pending_audio: Mutex<Vec<u8>>,
     ready: AtomicBool,
     is_closing: AtomicBool,
@@ -172,7 +172,7 @@ impl BaiduTranslateClient {
                 content_lock: Mutex::new(SentenceContentState::default()),
                 sink: Mutex::new(None),
                 receive_task: Mutex::new(None),
-                audio_send_lock: Mutex::new(()),
+                audio_send_lock: Mutex::new(None),
                 pending_audio: Mutex::new(Vec::new()),
                 ready: AtomicBool::new(false),
                 is_closing: AtomicBool::new(false),
@@ -244,6 +244,7 @@ impl BaiduTranslateClient {
             .received_session_finished
             .store(false, Ordering::SeqCst);
         self.inner.pending_audio.lock().await.clear();
+        *self.inner.audio_send_lock.lock().await = None;
 
         let (setup_tx, mut setup_rx) = watch::channel(SetupState::Awaiting);
         let task = tokio::spawn(receive_loop(ReceiveContext {
@@ -264,7 +265,7 @@ impl BaiduTranslateClient {
         )
         .map_err(map_protocol_configuration_error)?;
         let wait_for_ready = async {
-            self.send_text(start.to_string()).await?;
+            self.send_text(start.to_string(), generation).await?;
             loop {
                 match *setup_rx.borrow() {
                     SetupState::Ready => return Ok(()),
@@ -312,18 +313,22 @@ impl BaiduTranslateClient {
     }
 
     async fn send_audio_operation(&self, pcm_data: &[u8]) -> Result<(), BaiduTranslateClientError> {
-        if !self.inner.ready.load(Ordering::SeqCst) || self.inner.is_closing.load(Ordering::SeqCst)
+        let generation = self.inner.generation.load(Ordering::SeqCst);
+        let mut next_send_at = self.inner.audio_send_lock.lock().await;
+        if !self.inner.ready.load(Ordering::SeqCst)
+            || self.inner.is_closing.load(Ordering::SeqCst)
+            || self.inner.generation.load(Ordering::SeqCst) != generation
         {
             return Err(BaiduTranslateClientError::NotConnected);
         }
-        let _send_guard = self.inner.audio_send_lock.lock().await;
         let frames = {
             let mut pending = self.inner.pending_audio.lock().await;
             pending.extend_from_slice(pcm_data);
             take_complete_frames(&mut pending)
         };
         for frame in frames {
-            self.send_binary(frame).await?;
+            self.send_paced_binary(frame, &mut next_send_at, generation)
+                .await?;
         }
         Ok(())
     }
@@ -363,16 +368,20 @@ impl BaiduTranslateClient {
         }
         let generation = self.inner.generation.load(Ordering::SeqCst);
         let operation = async {
-            let _send_guard = self.inner.audio_send_lock.lock().await;
+            let mut next_send_at = self.inner.audio_send_lock.lock().await;
             let final_frame = {
                 let mut pending = self.inner.pending_audio.lock().await;
                 take_padded_frame(&mut pending)
             };
             if let Some(frame) = final_frame {
-                self.send_binary(frame).await?;
+                self.send_paced_binary(frame, &mut next_send_at, generation)
+                    .await?;
             }
-            self.send_text(BaiduTranslateRequestEncoder::finish().to_string())
-                .await?;
+            self.send_text(
+                BaiduTranslateRequestEncoder::finish().to_string(),
+                generation,
+            )
+            .await?;
             let finished = self.inner.finish_notify.notified();
             tokio::pin!(finished);
             finished.as_mut().enable();
@@ -412,10 +421,21 @@ impl BaiduTranslateClient {
         self.inner.finish_notify.notify_waiters();
     }
 
-    async fn send_binary(&self, frame: Vec<u8>) -> Result<(), BaiduTranslateClientError> {
+    async fn send_paced_binary(
+        &self,
+        frame: Vec<u8>,
+        next_send_at: &mut Option<tokio::time::Instant>,
+        generation: u64,
+    ) -> Result<(), BaiduTranslateClientError> {
         BaiduTranslateRequestEncoder::validate_audio_frame(&frame)
             .map_err(|_| BaiduTranslateClientError::TransportFailure)?;
+        if let Some(deadline) = *next_send_at {
+            tokio::time::sleep_until(deadline).await;
+        }
         let mut sink = self.inner.sink.lock().await;
+        if self.inner.generation.load(Ordering::SeqCst) != generation {
+            return Err(BaiduTranslateClientError::NotConnected);
+        }
         let Some(sink) = sink.as_mut() else {
             return Err(BaiduTranslateClientError::NotConnected);
         };
@@ -427,11 +447,23 @@ impl BaiduTranslateClient {
         )
         .await
         .map_err(|_| BaiduTranslateClientError::TransportFailure)?
-        .map_err(|_| BaiduTranslateClientError::TransportFailure)
+        .map_err(|_| BaiduTranslateClientError::TransportFailure)?;
+        *next_send_at = Some(
+            tokio::time::Instant::now()
+                + Duration::from_millis(BaiduTranslateEndpoint::FRAME_DURATION_MS.into()),
+        );
+        Ok(())
     }
 
-    async fn send_text(&self, text: String) -> Result<(), BaiduTranslateClientError> {
+    async fn send_text(
+        &self,
+        text: String,
+        generation: u64,
+    ) -> Result<(), BaiduTranslateClientError> {
         let mut sink = self.inner.sink.lock().await;
+        if self.inner.generation.load(Ordering::SeqCst) != generation {
+            return Err(BaiduTranslateClientError::NotConnected);
+        }
         let Some(sink) = sink.as_mut() else {
             return Err(BaiduTranslateClientError::NotConnected);
         };
@@ -555,37 +587,52 @@ async fn handle_server_event(context: &ReceiveContext, event: BaiduTranslateServ
                 emit_if_current(context, LiveTranslateServerEvent::SessionUpdated);
             }
         }
-        BaiduTranslateServerEvent::Transcript {
+        BaiduTranslateServerEvent::TranscriptDraft {
             source_text,
             target_text,
-            sentence_end,
         } => {
-            if !turn.accepts_content(revision, context.events.content_revision(), sentence_end) {
+            let in_progress = turn.in_progress;
+            if !turn.accepts_content(revision, context.events.content_revision(), false) {
                 return false;
             }
-            if sentence_end {
-                if !source_text.trim().is_empty() && !target_text.trim().is_empty() {
-                    emit_if_current(
-                        context,
-                        LiveTranslateServerEvent::SubtitleFinalPair {
-                            source: source_text.trim().to_string(),
-                            language: Some(context.normalized_source_language.clone()),
-                            translation: target_text.trim().to_string(),
-                        },
-                    );
-                }
-            } else {
+            // An empty MID is not a sentence boundary: a subsequent clear
+            // still excludes the tail of a sentence that already began.
+            turn.in_progress =
+                in_progress || !source_text.trim().is_empty() || !target_text.trim().is_empty();
+            emit_draft(context, source_text, target_text);
+        }
+        BaiduTranslateServerEvent::TranscriptFinal {
+            source_text,
+            target_text,
+            next_source_text,
+            next_target_text,
+        } => {
+            let current_revision = context.events.content_revision();
+            let accepts_final = turn.accepts_content(revision, current_revision, true);
+            if accepts_final && !source_text.trim().is_empty() && !target_text.trim().is_empty() {
                 emit_if_current(
                     context,
-                    LiveTranslateServerEvent::SourceDraft {
-                        text: source_text,
+                    LiveTranslateServerEvent::SubtitleFinalPair {
+                        source: source_text.trim().to_string(),
                         language: Some(context.normalized_source_language.clone()),
+                        translation: target_text.trim().to_string(),
                     },
                 );
-                emit_if_current(
-                    context,
-                    LiveTranslateServerEvent::TranslationDraft(target_text),
-                );
+            } else if accepts_final {
+                clear_draft(context);
+            }
+            // Consume the previous sentence's boundary even after a clear,
+            // then begin the next sentence independently. Never attach its
+            // ASR text to the previous confirmed translation.
+            if !next_source_text.trim().is_empty() || !next_target_text.trim().is_empty() {
+                turn.in_progress = true;
+                if revision == current_revision {
+                    emit_draft(context, next_source_text, next_target_text);
+                } else {
+                    // A clear raced with this decoded packet. Its next draft
+                    // is obsolete too, so exclude that sentence's tail.
+                    turn.discard_until_end = true;
+                }
             }
         }
         BaiduTranslateServerEvent::SessionFinished => {
@@ -623,12 +670,24 @@ async fn handle_server_event(context: &ReceiveContext, event: BaiduTranslateServ
             if is_recoverable {
                 // Official sentence-local failures do not invalidate the
                 // stream. Do not turn them into a session-fatal Error event.
+                // These errors end the failed sentence without a FIN; clear
+                // must not discard the next healthy sentence waiting for it.
+                if matches!(code, 20_311 | 20_312 | 20_315) {
+                    *turn = SentenceContentState::default();
+                    clear_draft(context);
+                }
                 return false;
             }
             emit_if_current(
                 context,
                 LiveTranslateServerEvent::Error {
-                    code: format!("baidu_provider_{code}"),
+                    code: if code == 20_314 {
+                        // The documented idle disconnect uses the existing
+                        // bounded transport recovery policy.
+                        "transport_error".into()
+                    } else {
+                        format!("baidu_provider_{code}")
+                    },
                     message: GENERIC_PROVIDER_ERROR.into(),
                 },
             );
@@ -639,6 +698,25 @@ async fn handle_server_event(context: &ReceiveContext, event: BaiduTranslateServ
         }
     }
     false
+}
+
+fn clear_draft(context: &ReceiveContext) {
+    emit_if_current(context, LiveTranslateServerEvent::SubtitlePreviewCleared);
+    emit_draft(context, String::new(), String::new());
+}
+
+fn emit_draft(context: &ReceiveContext, source_text: String, target_text: String) {
+    emit_if_current(
+        context,
+        LiveTranslateServerEvent::SourceDraft {
+            text: source_text,
+            language: Some(context.normalized_source_language.clone()),
+        },
+    );
+    emit_if_current(
+        context,
+        LiveTranslateServerEvent::TranslationDraft(target_text),
+    );
 }
 
 fn fail_receive_loop(context: &ReceiveContext, code: &str, message: &str) {
@@ -831,6 +909,344 @@ mod tests {
         assert_eq!(padded.len(), BaiduTranslateEndpoint::AUDIO_FRAME_BYTE_COUNT);
         assert_eq!(&padded[..17], &[9; 17]);
         assert!(padded[17..].iter().all(|byte| *byte == 0));
+    }
+
+    async fn next_event(events: &mut ProviderEventReceiver) -> LiveTranslateServerEvent {
+        tokio::time::timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    fn transcript_frame(kind: &str, source: &str, translation: &str, next: &str) -> String {
+        serde_json::json!({"code":0,"data":{"status":"TRN","result":{
+            "type":kind,
+            "asr": if kind == "MID" { source } else { next },
+            "asr_trans": if kind == "MID" { translation } else { "" },
+            "sentence": if kind == "FIN" { source } else { "" },
+            "sentence_trans": if kind == "FIN" { translation } else { "" }
+        }}})
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn fin_preserves_the_next_draft_and_clear_discards_its_tail() {
+        for clear_previous in [false, true] {
+            let (send, mut commands) = tokio::sync::mpsc::unbounded_channel::<Vec<String>>();
+            let (client, mut events) = test_client(move |mut socket| {
+                Box::pin(async move {
+                    let _ = socket.next().await;
+                    socket
+                        .send(Message::Text(
+                            r#"{"code":0,"data":{"status":"STA"}}"#.into(),
+                        ))
+                        .await
+                        .unwrap();
+                    while let Some(frames) = commands.recv().await {
+                        if frames.is_empty() {
+                            break;
+                        }
+                        for frame in frames {
+                            socket.send(Message::Text(frame.into())).await.unwrap();
+                        }
+                    }
+                    let finish = socket.next().await.unwrap().unwrap();
+                    assert!(finish.to_text().unwrap().contains("FINISH"));
+                    socket
+                        .send(Message::Text(
+                            r#"{"code":0,"data":{"status":"END"}}"#.into(),
+                        ))
+                        .await
+                        .unwrap();
+                })
+            })
+            .await;
+            client.connect().await.unwrap();
+            assert_eq!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::SessionCreated
+            );
+            assert_eq!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::SessionUpdated
+            );
+            send.send(vec![transcript_frame(
+                "MID",
+                "first draft",
+                "first translation",
+                "",
+            )])
+            .unwrap();
+            assert!(matches!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::SourceDraft { .. }
+            ));
+            assert!(matches!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::TranslationDraft(_)
+            ));
+            send.send(vec![transcript_frame("MID", "", "", "")])
+                .unwrap();
+            assert!(
+                matches!(next_event(&mut events).await, LiveTranslateServerEvent::SourceDraft { text, .. } if text.is_empty())
+            );
+            assert_eq!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::TranslationDraft(String::new())
+            );
+            assert!(client.inner.content_lock.lock().await.in_progress);
+            if clear_previous {
+                client.clear_content().await;
+            }
+            send.send(vec![transcript_frame(
+                "FIN",
+                "first final",
+                "first final translation",
+                "next draft",
+            )])
+            .unwrap();
+            if !clear_previous {
+                assert!(
+                    matches!(next_event(&mut events).await, LiveTranslateServerEvent::SubtitleFinalPair { source, translation, .. }
+                    if source == "first final" && translation == "first final translation")
+                );
+            }
+            assert!(
+                matches!(next_event(&mut events).await, LiveTranslateServerEvent::SourceDraft { text, .. } if text == "next draft")
+            );
+            assert_eq!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::TranslationDraft(String::new())
+            );
+            assert!(client.inner.content_lock.lock().await.in_progress);
+            client.clear_content().await;
+            send.send(vec![
+                transcript_frame("MID", "next cleared tail", "next cleared translation", ""),
+                transcript_frame(
+                    "FIN",
+                    "next cleared final",
+                    "next cleared final translation",
+                    "",
+                ),
+                transcript_frame("FIN", "healthy final", "healthy translation", ""),
+            ])
+            .unwrap();
+            assert!(
+                matches!(next_event(&mut events).await, LiveTranslateServerEvent::SubtitleFinalPair { source, translation, .. }
+                if source == "healthy final" && translation == "healthy translation")
+            );
+            send.send(Vec::new()).unwrap();
+            client.finish(Duration::from_secs(2)).await;
+            assert_eq!(
+                next_event(&mut events).await,
+                LiveTranslateServerEvent::SessionFinished
+            );
+            assert!(events.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn sentence_failure_releases_a_cleared_turn_and_idle_timeout_uses_recovery() {
+        for (code, clear_previous) in [
+            (20_311, true),
+            (20_312, true),
+            (20_315, true),
+            (20_314, true),
+            (20_312, false),
+        ] {
+            let (resume, resumed) = tokio::sync::oneshot::channel();
+            let (healthy, healthy_allowed) = tokio::sync::oneshot::channel();
+            let (client, mut events) = test_client(move |mut socket| {
+                Box::pin(async move {
+                    let _ = socket.next().await;
+                    socket
+                        .send(Message::Text(
+                            r#"{"code":0,"data":{"status":"STA"}}"#.into(),
+                        ))
+                        .await
+                        .unwrap();
+                    socket
+                        .send(Message::Text(
+                            transcript_frame("MID", "obsolete", "obsolete translation", "").into(),
+                        ))
+                        .await
+                        .unwrap();
+                    resumed.await.unwrap();
+                    socket
+                        .send(Message::Text(
+                            serde_json::json!({"code":code,"msg":"private provider content"})
+                                .to_string()
+                                .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    if code == 20_314 {
+                        return;
+                    }
+                    healthy_allowed.await.unwrap();
+                    socket
+                        .send(Message::Text(
+                            transcript_frame("FIN", "healthy final", "healthy translation", "")
+                                .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    let _ = socket.next().await;
+                    socket
+                        .send(Message::Text(
+                            r#"{"code":0,"data":{"status":"END"}}"#.into(),
+                        ))
+                        .await
+                        .unwrap();
+                })
+            })
+            .await;
+            client.connect().await.unwrap();
+            let mut controller = crate::core::session::TranslationSessionController::default();
+            controller.handle(LiveTranslateServerEvent::SubtitleFinalPair {
+                source: "retained final".into(),
+                language: Some("ja".into()),
+                translation: "retained translation".into(),
+            });
+            for _ in 0..4 {
+                controller.handle(next_event(&mut events).await);
+            }
+            if clear_previous {
+                client.clear_content().await;
+                controller.clear_subtitles();
+            }
+            resume.send(()).unwrap();
+            if code == 20_314 {
+                let LiveTranslateServerEvent::Error { code, message } =
+                    next_event(&mut events).await
+                else {
+                    panic!("expected timeout recovery");
+                };
+                assert!(crate::core::recovery::provider_error_is_retryable(&code));
+                assert!(!message.contains("private"));
+                client.disconnect().await;
+            } else {
+                for expected in [
+                    LiveTranslateServerEvent::SubtitlePreviewCleared,
+                    LiveTranslateServerEvent::SourceDraft {
+                        text: String::new(),
+                        language: Some("ja".into()),
+                    },
+                    LiveTranslateServerEvent::TranslationDraft(String::new()),
+                ] {
+                    let event = next_event(&mut events).await;
+                    assert_eq!(event, expected);
+                    controller.handle(event);
+                }
+                assert!(controller.state.subtitles.realtime_preview.is_none());
+                if !clear_previous {
+                    assert!(controller.state.subtitles.display_pair_final);
+                    assert_eq!(
+                        controller
+                            .state
+                            .subtitles
+                            .display_pair
+                            .as_ref()
+                            .unwrap()
+                            .translation,
+                        "retained translation"
+                    );
+                }
+                healthy.send(()).unwrap();
+                assert!(
+                    matches!(next_event(&mut events).await, LiveTranslateServerEvent::SubtitleFinalPair { source, .. } if source == "healthy final")
+                );
+                client.finish(Duration::from_secs(2)).await;
+                assert_eq!(
+                    next_event(&mut events).await,
+                    LiveTranslateServerEvent::SessionFinished
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn batched_audio_is_paced_and_finish_flushes_one_padded_tail() {
+        let (client, mut events) = test_client(|mut socket| {
+            Box::pin(async move {
+                let _ = socket.next().await;
+                socket
+                    .send(Message::Text(
+                        r#"{"code":0,"data":{"status":"STA"}}"#.into(),
+                    ))
+                    .await
+                    .unwrap();
+                for index in 0..4 {
+                    let frame = socket.next().await.unwrap().unwrap().into_data();
+                    assert_eq!(frame.len(), BaiduTranslateEndpoint::AUDIO_FRAME_BYTE_COUNT);
+                    if index == 3 {
+                        assert_eq!(&frame[..2], &[9, 9]);
+                        assert!(frame[2..].iter().all(|byte| *byte == 0));
+                    } else {
+                        assert!(frame.iter().all(|byte| *byte == 9));
+                    }
+                }
+                assert!(socket
+                    .next()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .to_text()
+                    .unwrap()
+                    .contains("FINISH"));
+                socket
+                    .send(Message::Text(
+                        r#"{"code":0,"data":{"status":"END"}}"#.into(),
+                    ))
+                    .await
+                    .unwrap();
+            })
+        })
+        .await;
+        client.connect().await.unwrap();
+        let stale_generation = client.inner.generation.load(Ordering::SeqCst) - 1;
+        assert_eq!(
+            client
+                .send_text(
+                    BaiduTranslateRequestEncoder::finish().to_string(),
+                    stale_generation
+                )
+                .await,
+            Err(BaiduTranslateClientError::NotConnected)
+        );
+        assert_eq!(
+            client
+                .send_paced_binary(
+                    vec![0; BaiduTranslateEndpoint::AUDIO_FRAME_BYTE_COUNT],
+                    &mut None,
+                    stale_generation
+                )
+                .await,
+            Err(BaiduTranslateClientError::NotConnected)
+        );
+        let started = tokio::time::Instant::now();
+        client
+            .send_audio(&vec![
+                9;
+                BaiduTranslateEndpoint::AUDIO_FRAME_BYTE_COUNT * 3 + 2
+            ])
+            .await
+            .unwrap();
+        client.finish(Duration::from_secs(2)).await;
+        assert!(started.elapsed() >= Duration::from_millis(120));
+        assert_eq!(
+            next_event(&mut events).await,
+            LiveTranslateServerEvent::SessionCreated
+        );
+        assert_eq!(
+            next_event(&mut events).await,
+            LiveTranslateServerEvent::SessionUpdated
+        );
+        assert_eq!(
+            next_event(&mut events).await,
+            LiveTranslateServerEvent::SessionFinished
+        );
+        assert!(client.inner.pending_audio.lock().await.is_empty());
     }
 
     #[tokio::test]
