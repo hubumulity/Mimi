@@ -547,6 +547,26 @@ capture failure. Preserve the retry/final/render event chain, then run sequentia
 sessions to avoid concurrent quota pressure. Counts and adapter timestamps do not
 establish semantic accuracy or cross-platform end-to-end latency.
 
+## Android live operator and saved-profile acceptance
+
+Prepare the paused source and native controls before starting the live operator.
+Keep consent/readiness waiting separate from the capture budget. After abort,
+ignore late CaptureActive for Play/recording and stop a newly opened session.
+Join the instrumentation output reader before testing its final state; a
+synchronous Pause can delay the final Stop line after the child process exits.
+Accept success only after the private result reports passed, the final
+instrumentation result agrees, and projection/service/overlay are clear. Disarm
+the capture guard after that cleanup, and record through normal Stop and clear.
+
+Temporary provider fixtures normally restore their prior configuration. If the
+owner explicitly requests a saved account, use the normal encrypted save and
+read-back path, allow only that provider's expected keys, and preserve the new
+account in the final backup instead of restoring an older empty profile.
+Compare ServiceConfiguration credentials, endpoint and model values explicitly:
+the class has no value equality, so comparing separately loaded objects with
+`==` falsely reports a changed account. Never print private parser errors or
+put credentials in shell arguments or diagnostics.
+
 ## Android emulator interruption and recovery
 
 An emulator hang/crash or offline ADB connection interrupts native acceptance,

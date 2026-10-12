@@ -130,8 +130,8 @@ A bounded same-source native Volcano follow-up admitted 30 source boundaries and
 the actual adapter path. The earlier native excerpt did not prove the late-final
 counterexample occurred; neither run establishes frequency, semantic accuracy,
 controlled quality comparison or reading-comfort acceptance. Android's live
-three-mode video validates the independent-MT candidate at `ed345c26`; the new
-Volcano rule has JNI/build coverage without a new Android provider session.
+three-mode video at that stage validated the independent-MT candidate at
+`ed345c26`; Android Volcano service acceptance was still pending for those receipts.
 
 
 The proto3 correction at `1ae919cf` passed 56 focused Volcano cases and the new
@@ -149,8 +149,8 @@ entries. Its 60-second silent effect clip has actual native caption pixels.
 A preceding near-silent attempt is excluded. Native time-field presence is not
 observable in this evidence schema, so omitted/explicit-zero equivalence is
 proved by deterministic wire and actual JNI regressions, not inferred from the
-native owner's suffix. Android's service clip remains the independent-MT run;
-no new Android Volcano service, native frequency or comfort acceptance is claimed.
+native owner's suffix. At that stage Android's service clip remained the
+independent-MT run; those receipts did not include Android Volcano service acceptance.
 
 
 The equivalent JNI hex iterator correction `6c7193cd` addresses the newer
@@ -159,3 +159,12 @@ Rust 1.88 JNI compilation, the full canonical pipeline, focused actual JNI 31
 and rerun Debug/Release JVM 205 each, optimized four-ABI release and lint.
 The new 327-input manifest matches that correction. Desktop runtime/core and
 rendering files are unchanged, so the native clip retains its `1ae919cf` label.
+
+A subsequent API 35 ARM64 emulator session on product source `e8631199`
+exercised live Volcano English-to-Chinese captions in all three display modes
+and completed normal Stop. Its screen recording includes window clearance.
+The owner requested retaining the account through normal encrypted storage;
+test-only persistence checks preserve other accounts and preferences. Exact APK
+hashes, the excluded startup attempt and source-clock/wire-evidence limits are
+in the [latest run ledger](../development/integration-runs.md). This does not
+change the pending reading-comfort or physical-device acceptance boundaries.

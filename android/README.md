@@ -315,18 +315,23 @@ offline comparison fixtures; production capture never selects them. Run
 
 The updated interface and Alibaba Cloud system-playback translation have been exercised in an Android 15
 emulator with Firefox. The bundled Chrome tested there explicitly disables playback capture and yields silent
-samples; this finding is specific to that browser package. The additional provider adapters have protocol tests,
-including Tencent signing and Volcano binary frames, but have not been verified against live accounts. Do not
-interpret build or protocol-test success as physical-device or all-provider acceptance. The original contributor’s
-reported device test applies to the original port, not every subsequent change.
+samples; this finding is specific to that browser package. Volcano has also been exercised with a live account
+in an API 35 ARM64 emulator: English-to-Chinese captions in all three display modes, followed by normal Stop.
+See the [exact run ledger](../docs/development/integration-runs.md) for the tested APK and evidence limits.
+Other provider adapters, including Tencent signing, have protocol tests and still need separate live-account
+acceptance. Do not interpret emulator, build or protocol-test success as physical-device or all-provider acceptance.
+The original contributor’s reported device test applies to the original port, not every subsequent change.
 
 For real playback acceptance, use the independent debug app with a stable local
 signing identity. `LiveAcceptanceChecks` requires native Start and fresh platform
 consent; its bounded report stores counts and status, not subtitle content.
 An explicitly authorized temporary provider fixture must enter the app's private
 cache through stdin, be read back before testing, and be consumed and restored
-in the test's finally block. Never put credentials in arguments, environment
-variables, screenshots, logs or Git, or treat this fixture as configuration sync.
+in the test's finally block. If the owner explicitly requests keeping a Volcano test account,
+`save_provider_fixture=true` instead performs a normal encrypted save and read-back
+check while preserving other accounts and preferences; restore the final backup that
+includes that account. Never put credentials in arguments, environment variables,
+screenshots, logs or Git, or treat either acceptance input as configuration sync.
 
 Disable video autoplay and verify the player's actual 0:00 and end states. The
 tested Firefox MediaSession can retain a stale position, so timestamps derived

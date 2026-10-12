@@ -18,7 +18,12 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
     private val translation = SettingsStore.translationConfiguration(context)
     private val model = SettingsStore.qwenMtModel(context)
     private var original: ServiceConfiguration? = null
-    fun apply() {
+    fun apply() = save(activate = true)
+
+    /** Explicit owner-approved saved profile; preserves all other configuration and preferences. */
+    fun persistOnly() = save(activate = false)
+
+    private fun save(activate: Boolean) {
         try {
             check(input.isFile && input.length() in 1..16_384)
             val value = JSONObject(input.readText(Charsets.UTF_8))
@@ -38,8 +43,12 @@ internal class TemporaryProviderAcceptance(private val context: Context) : AutoC
             val testTranslation = TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
             runtimeModelNames(buildRuntimeConfiguration(configuration, testTranslation, from, to, testModel))
             original = SettingsStore.configuration(context, provider)
-            check(SettingsStore.saveConfiguration(context, configuration, testTranslation, true, testModel) && SettingsStore.activateProvider(context, provider))
-            SettingsStore.setSourceLang(context, from); SettingsStore.setTargetLang(context, to)
+            check(SettingsStore.saveConfiguration(context, configuration, testTranslation, true, testModel))
+            check(SettingsStore.configuration(context, provider).credentials == configuration.credentials)
+            if (activate) {
+                check(SettingsStore.activateProvider(context, provider))
+                SettingsStore.setSourceLang(context, from); SettingsStore.setTargetLang(context, to)
+            }
             check(SettingsStore.flushPendingWritesForTests(context))
         } catch (_: Exception) {
             // JSONObject parser/type errors can include their private input.

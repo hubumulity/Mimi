@@ -23,6 +23,10 @@ internal class ModelSelectionChecks(private val test: Instrumentation) {
         val inventory = JSONArray()
         try {
             check(context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 && !MimiService.isRunning)
+            if (arguments?.getString("save_provider_fixture") == "true") {
+                stage = "explicit_private_profile_save"
+                PrivateProviderSaveChecks(context).run()
+            }
             arguments?.getString("restore_source")?.let {
                 check(it in listOf("auto", "en", "zh", "ja")); SettingsStore.setSourceLang(context, it)
             }
