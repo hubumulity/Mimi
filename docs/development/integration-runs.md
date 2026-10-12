@@ -2880,3 +2880,52 @@
   configuration edits still require an incremental signed rebuild. The user's
   durable instruction is preview first and proportional checks; pure copy/style
   edits do not require unrelated state matrices or repeated full local suites.
+
+## 2026-10-12 — Offline provider repair review and Alibaba integration candidate
+
+- Independent review used baseline `b04e394b835967e51a1a455827cdf1da5d9e6a86`
+  and identical synthetic loopback wire-to-session sequences. Both old-baseline
+  cases failed: Baidu FIN lost the following draft; Tencent's late A final
+  replaced the current B pair. Each exact repair source passed independently.
+- Baidu [#267](https://github.com/yuxino/Mimi/pull/267), source
+  `6626f8316e7815aaa3f8d2b2cd7ae2da1049c266`, passed final desktop/Android CI and
+  was squash-merged as `a95bcb638ba7e3fc21726ec8f2e209af271d0853`.
+  Tencent [#268](https://github.com/yuxino/Mimi/pull/268), source
+  `9fad4c690ce0c26c5e16b42a9be0b57c3d7327a6`, passed final desktop/Android CI and
+  was squash-merged as `27b13ea337d1abf050d91279f0a6569cae26b5fe`.
+  Tencent's earlier fixture-shape and test-schedule failures were corrected
+  without removing normalized-event, identity, timing or outcome assertions.
+- Candidate baseline is main `27b13ea337d1abf050d91279f0a6569cae26b5fe`, retaining
+  the separate development-iteration optimization `668e36ff`. Only Alibaba
+  draft [#266](https://github.com/yuxino/Mimi/pull/266), source
+  `b2fa096515eb935ffdcac888a79d15067cf3bfad`, is added to that baseline. Local
+  validation used the Alibaba merge `27a985ca` plus the focused regressions
+  committed with this record; exact final-head CI is tracked on the draft PR.
+- Preserved Tencent/Baidu's existing single realtime-translation routes,
+  credential/profile schemas and defaults. Alibaba retains explicit ASR+MT and
+  LiveTranslate choices and their setup guidance. Existing profiles still default
+  to ASR+MT; removed Omni metadata deserializes as disabled. LiveTranslate's
+  Android selection UI remains unavailable, as documented by #266.
+- Original canonical checks passed: strict Rust formatting/Clippy, 749 runtime
+  tests (one existing manual network smoke ignored), 89 core unit/contract
+  tests, 5 JNI-adapter Rust tests, 573 desktop tests (one manual probe ignored),
+  2,075 frontend tests, production build and architecture/packaging rejection
+  fixtures. Android Debug/Release each passed 200 JVM/actual-JNI tests and both
+  lint variants. No checks or platform CI scopes were weakened.
+- Added the two independent regressions and a shared Tencent replay fixture
+  through the real TLS/WebSocket client, JNI poll and Android subtitle bus.
+  Confirmed A remains paired in history while B's paired preview stays current;
+  duplicate finals and stale previews do not overwrite confirmed results;
+  distinct IDs with identical text remain distinct. Existing Alibaba tests cover
+  item/response pairing and cleared tails; Baidu tests cover FIN/next-draft,
+  empty MID, clear races, failed-sentence reset and idle recovery classification.
+  Pacing, padded tails, normal finish, bounded errors and generation isolation
+  remain covered. Baidu's identity-free MID/FIN protocol does not prove handling
+  of arbitrary unidentifiable server reorderings.
+- All samples and credentials were synthetic; sockets stayed on loopback.
+  No real service requests, audio uploads, real credential reads/configuration,
+  funding, account/OS permission changes, app launch/replacement, release or
+  deployment occurred. Native audio/capture/UI, live permission/quota behavior,
+  speech accuracy/latency and subjective reading comfort remain untested. No
+  screenshot acceptance was performed. Further real-service work requires its
+  own current authorization; historical sample budgets do not apply.

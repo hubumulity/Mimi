@@ -1588,4 +1588,63 @@ mod tests {
             TencentCloudClientError::SessionSetupTimedOut
         );
     }
+
+    #[tokio::test]
+    async fn independent_review_late_final_keeps_newer_sentence_pair() {
+        let (publish, mut commands) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (client, mut events) = test_client(move |mut socket| {
+            Box::pin(async move {
+                socket
+                    .send(Message::Text(r#"{"code":0}"#.into()))
+                    .await
+                    .unwrap();
+                while let Some(frame) = commands.recv().await {
+                    if frame.is_empty() {
+                        break;
+                    }
+                    socket.send(Message::Text(frame.into())).await.unwrap();
+                }
+            })
+        })
+        .await;
+        client.connect().await.unwrap();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        for (id, start, text) in [("A", 0, "Synthetic A"), ("B", 1000, "Synthetic B")] {
+            publish.send(serde_json::json!({"code":0,"sentence_id":id,"result":{
+                "source":"en","target":"zh","source_text":text,"target_text":format!("Translated {text}"),
+                "start_time":start,"end_time":start+500,"sentence_end":false
+            }}).to_string()).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while controller.state.subtitles.source.text != text
+                    || controller.state.subtitles.translation.text != format!("Translated {text}")
+                {
+                    controller.handle(events.recv().await.unwrap());
+                }
+            })
+            .await
+            .unwrap();
+        }
+        publish.send(r#"{"code":0,"sentence_id":"A","result":{"source":"en","target":"zh","source_text":"Synthetic A final","target_text":"Translated A final","start_time":0,"end_time":800,"sentence_end":true}}"#.into()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while controller.state.subtitles.history.is_empty() {
+                controller.handle(events.recv().await.unwrap());
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic A final"
+        );
+        assert_eq!(
+            controller.state.subtitles.source.text, "Synthetic B",
+            "A late final must not replace B's current source"
+        );
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Translated Synthetic B"
+        );
+        publish.send(String::new()).unwrap();
+        client.disconnect().await;
+    }
 }

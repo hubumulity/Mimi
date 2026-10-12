@@ -332,6 +332,23 @@
         "expected": "rejected",
         "label": "tencent_provider_rejected"
       }
+    ],
+    "jniReplayPhases": [
+      [
+        "{\"code\":0,\"sentence_id\":\"A\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic A draft\",\"target_text\":\"Translated Synthetic A draft\",\"start_time\":0,\"end_time\":500,\"sentence_end\":false}}",
+        "{\"code\":0,\"sentence_id\":\"B\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic B draft\",\"target_text\":\"Translated Synthetic B draft\",\"start_time\":1000,\"end_time\":1500,\"sentence_end\":false}}"
+      ],
+      [
+        "{\"code\":0,\"sentence_id\":\"A\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic A final\",\"target_text\":\"Translated Synthetic A final\",\"start_time\":0,\"end_time\":800,\"sentence_end\":true}}",
+        "{\"code\":0,\"sentence_id\":\"A\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic A duplicate\",\"target_text\":\"Translated Synthetic A duplicate\",\"start_time\":0,\"end_time\":800,\"sentence_end\":true}}",
+        "{\"code\":0,\"sentence_id\":\"A\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic A stale\",\"target_text\":\"Translated Synthetic A stale\",\"start_time\":0,\"end_time\":900,\"sentence_end\":false}}"
+      ],
+      [
+        "{\"code\":0,\"sentence_id\":\"B\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic repeated final\",\"target_text\":\"Translated Synthetic repeated final\",\"start_time\":1000,\"end_time\":1800,\"sentence_end\":true}}",
+        "{\"code\":0,\"sentence_id\":\"B\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic B stale\",\"target_text\":\"Translated Synthetic B stale\",\"start_time\":1000,\"end_time\":1900,\"sentence_end\":false}}",
+        "{\"code\":0,\"sentence_id\":\"C\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic repeated final\",\"target_text\":\"Translated Synthetic repeated final\",\"start_time\":2000,\"end_time\":2800,\"sentence_end\":true}}",
+        "{\"code\":0,\"sentence_id\":\"C\",\"result\":{\"source\":\"en\",\"target\":\"zh\",\"source_text\":\"Synthetic C duplicate\",\"target_text\":\"Translated Synthetic C duplicate\",\"start_time\":2000,\"end_time\":2800,\"sentence_end\":true}}"
+      ]
     ]
   },
   "websocketHandshakeFailures": [

@@ -161,7 +161,7 @@ class NativeRuntimeJniTest {
         }
         SubtitleBus.addListener(listener)
         try {
-            BaiduLoopback().use { fixture ->
+            RealtimeLoopback(ServiceProvider.BAIDU).use { fixture ->
                 val handle = NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "create")
                     .put("configuration", configuration(ServiceProvider.BAIDU).put("sourceLanguage", "en")).put("network", fixture.network)).getLong("handle")
                 fun awaitState(predicate: (JSONObject) -> Boolean): JSONObject {
@@ -229,13 +229,77 @@ class NativeRuntimeJniTest {
         }
     }
 
-    /** A CONNECT/TLS/WebSocket server for the unchanged production Baidu endpoint. */
-    private class BaiduLoopback : AutoCloseable {
-        private val frames = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
-            .bufferedReader().use { it.readText() }).getJSONObject("baiduRealtimeTranslation").getJSONArray("streams").let { streams ->
-            (0 until streams.length()).map(streams::getJSONObject).single { it.getString("id") == "final-with-following-draft" }.getJSONArray("frames")
+    @Test fun tencentLateFinalAndReplayPreserveSentenceOwnersAcrossActualJni() {
+        SubtitleBus.clear()
+        SubtitleBus.setHistoryLimit(3)
+        try {
+            RealtimeLoopback(ServiceProvider.TENCENT).use { fixture ->
+                val handle = NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "create")
+                    .put("configuration", configuration(ServiceProvider.TENCENT).put("sourceLanguage", "en"))
+                    .put("network", fixture.network)).getLong("handle")
+                fun awaitState(predicate: (JSONObject) -> Boolean): JSONObject {
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                    while (System.nanoTime() < deadline) {
+                        fixture.checkFailure()
+                        val state = NativeRuntimeConfiguration.command("poll", handle)
+                        assertTrue("Loopback runtime failed: ${state.optString("errorCode")}", state.isNull("errorCode"))
+                        if (predicate(state)) {
+                            SubtitleBus.onRuntimeSnapshot(state, false)
+                            return state
+                        }
+                        Thread.sleep(10)
+                    }
+                    error("Tencent loopback state did not arrive")
+                }
+                try {
+                    NativeRuntimeConfiguration.command("start", handle)
+                    awaitState { it.getJSONObject("snapshot").getJSONObject("source").getString("text") == "Synthetic B draft" }
+                    fixture.nextMid.countDown()
+                    val late = awaitState { it.getJSONObject("snapshot").getJSONArray("history").length() == 1 }.getJSONObject("snapshot")
+                    assertEquals("Synthetic A final", late.getJSONArray("history").getJSONObject(0).getString("source"))
+                    val preview = late.getJSONObject("realtimePreview")
+                    assertEquals("B", preview.getJSONObject("source").getString("utteranceId"))
+                    assertEquals("B", preview.getJSONObject("translation").getString("utteranceId"))
+                    assertEquals("Synthetic B draft", preview.getJSONObject("source").getString("text"))
+                    assertEquals("Translated Synthetic B draft", preview.getJSONObject("translation").getString("text"))
+                    assertEquals("Synthetic B draft", SubtitleBus.displaySnapshot().source)
+                    fixture.nextFinal.countDown()
+                    val final = awaitState { it.getJSONObject("snapshot").getJSONArray("history").length() == 3 }.getJSONObject("snapshot")
+                    val history = final.getJSONArray("history")
+                    for (index in 1..2) {
+                        assertEquals("Synthetic repeated final", history.getJSONObject(index).getString("source"))
+                        assertEquals("Translated Synthetic repeated final", history.getJSONObject(index).getString("translation"))
+                        assertEquals("system", history.getJSONObject(index).getString("audioSource"))
+                    }
+                    assertEquals("C", final.getJSONObject("source").getString("utteranceId"))
+                    assertTrue(final.getJSONObject("source").getBoolean("isFinal"))
+                    assertTrue(final.getJSONObject("translation").getBoolean("isFinal"))
+                    assertTrue(final.isNull("realtimePreview"))
+                    assertTrue(SubtitleBus.displaySnapshot().confirmed)
+                    NativeRuntimeConfiguration.command("finish", handle)
+                    val stopped = awaitState { it.getBoolean("finished") }.getJSONObject("snapshot")
+                    assertEquals(3, stopped.getJSONArray("history").length())
+                    assertEquals("Synthetic repeated final", stopped.getJSONObject("displayPair").getString("source"))
+                    fixture.checkFailure()
+                } finally { NativeRuntimeConfiguration.command("stop", handle) }
+            }
+        } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
+    }
+
+    /** CONNECT/TLS/WebSocket fixtures intercept the unchanged production endpoints on loopback. */
+    private class RealtimeLoopback(private val provider: ServiceProvider) : AutoCloseable {
+        private val tencent = provider == ServiceProvider.TENCENT
+        private val host = if (tencent) "asr.cloud.tencent.com" else "aip.baidubce.com"
+        private val phases = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
+            .bufferedReader().use { it.readText() }).let { contract ->
+            if (tencent) contract.getJSONObject("tencentSpeechTranslation").getJSONArray("jniReplayPhases")
+            else contract.getJSONObject("baiduRealtimeTranslation").getJSONArray("streams").let { streams ->
+                val frames = (0 until streams.length()).map(streams::getJSONObject)
+                    .single { it.getString("id") == "final-with-following-draft" }.getJSONArray("frames")
+                JSONArray((0 until frames.length()).map { JSONArray(listOf(frames.getString(it))) })
+            }
         }
-        private val directory = Files.createTempDirectory("mimi-baidu-jni-").toFile()
+        private val directory = Files.createTempDirectory("mimi-realtime-jni-").toFile()
         private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         private val failure = AtomicReference<Throwable?>()
         private var socket: Socket? = null
@@ -249,7 +313,7 @@ class NativeRuntimeJniTest {
             val keytool = java.io.File(System.getProperty("java.home"), "bin/keytool${if (System.getProperty("os.name").orEmpty().startsWith("Windows")) ".exe" else ""}")
             val storeFile = java.io.File(directory, "fixture.p12")
             val process = ProcessBuilder(keytool.absolutePath, "-genkeypair", "-alias", "fixture", "-keyalg", "EC", "-groupname", "secp256r1",
-                "-dname", "CN=aip.baidubce.com", "-ext", "SAN=dns:aip.baidubce.com", "-ext", "EKU=serverAuth", "-validity", "2",
+                "-dname", "CN=$host", "-ext", "SAN=dns:$host", "-ext", "EKU=serverAuth", "-validity", "2",
                 "-storetype", "PKCS12", "-keystore", storeFile.absolutePath, "-storepass", "mimi-fixture", "-keypass", "mimi-fixture", "-noprompt")
                 .redirectErrorStream(true).redirectOutput(java.io.File(directory, "keytool.log")).start()
             check(process.waitFor(20, TimeUnit.SECONDS)) { process.destroyForcibly(); "Synthetic TLS identity timed out" }
@@ -261,37 +325,43 @@ class NativeRuntimeJniTest {
             network = JSONObject().put("speechProxy", JSONObject().put("mode", "custom").put("url", "http://127.0.0.1:${server.localPort}"))
                 .put("textProxy", JSONObject().put("mode", "direct").put("url", JSONObject.NULL))
                 .put("trustRoots", JSONArray(listOf(Base64.getEncoder().encodeToString(store.getCertificate("fixture").encoded))))
-            worker = thread(name = "mimi-baidu-loopback", isDaemon = true) {
+            worker = thread(name = "mimi-realtime-loopback", isDaemon = true) {
                 try {
                     server.soTimeout = 5_000
                     val tcp = server.accept().also { socket = it; it.soTimeout = 5_000 }
-                    check(headers(DataInputStream(tcp.getInputStream())).startsWith("CONNECT aip.baidubce.com:443 HTTP/1.1\r\n"))
+                    check(headers(DataInputStream(tcp.getInputStream())).startsWith("CONNECT $host:443 HTTP/1.1\r\n"))
                     tcp.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII))
-                    val secure = (tls.socketFactory.createSocket(tcp, "aip.baidubce.com", 443, true) as SSLSocket).apply { useClientMode = false; startHandshake() }
+                    val secure = (tls.socketFactory.createSocket(tcp, host, 443, true) as SSLSocket).apply { useClientMode = false; startHandshake() }
                     socket = secure
                     val input = DataInputStream(secure.inputStream)
                     val output = secure.outputStream
                     val request = headers(input)
-                    check(request.startsWith("GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
+                    check(request.startsWith(if (tencent) "GET /asr/speech_translate/123456789?" else "GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
                     val key = request.lineSequence().first { it.startsWith("sec-websocket-key:", true) }.substringAfter(':').trim()
                     val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII)))
                     output.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray(Charsets.US_ASCII))
-                    val start = JSONObject(readText(input, output))
-                    check(start.getString("type") == "START" && start.getString("app_key") == "synthetic-appKey")
-                    check(start.getString("from") == "en" && start.getString("to") == "zh")
-                    send(output, """{"code":0,"data":{"status":"STA"}}""")
-                    send(output, frames.getString(0))
+                    if (tencent) send(output, """{"code":0}""") else {
+                        val start = JSONObject(readText(input, output))
+                        check(start.getString("type") == "START" && start.getString("app_key") == "synthetic-appKey")
+                        check(start.getString("from") == "en" && start.getString("to") == "zh")
+                        send(output, """{"code":0,"data":{"status":"STA"}}""")
+                    }
+                    fun phase(index: Int) {
+                        val frames = phases.getJSONArray(index)
+                        repeat(frames.length()) { send(output, frames.getString(it)) }
+                    }
+                    phase(0)
                     check(nextMid.await(10, TimeUnit.SECONDS))
-                    send(output, frames.getString(1))
+                    phase(1)
                     check(nextFinal.await(10, TimeUnit.SECONDS))
-                    send(output, frames.getString(2))
-                    check(JSONObject(readText(input, output)).getString("type") == "FINISH")
-                    send(output, """{"code":0,"data":{"status":"END"}}""")
+                    phase(2)
+                    check(JSONObject(readText(input, output)).getString("type") == if (tencent) "end" else "FINISH")
+                    send(output, if (tencent) """{"code":0,"final":1}""" else """{"code":0,"data":{"status":"END"}}""")
                 } catch (error: Throwable) { failure.set(error) }
             }
         }
 
-        fun checkFailure() { failure.get()?.let { throw AssertionError("Baidu loopback server failed", it) } }
+        fun checkFailure() { failure.get()?.let { throw AssertionError("$provider loopback server failed", it) } }
         private fun headers(input: DataInputStream): String {
             val bytes = java.io.ByteArrayOutputStream()
             var tail = 0

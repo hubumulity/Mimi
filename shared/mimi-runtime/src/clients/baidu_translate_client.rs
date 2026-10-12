@@ -1476,4 +1476,58 @@ mod tests {
         );
         assert!(!error.to_string().contains("private credential detail"));
     }
+
+    #[tokio::test]
+    async fn independent_review_fin_retains_its_next_draft() {
+        let (publish, mut commands) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (client, mut events) = test_client(move |mut socket| {
+            Box::pin(async move {
+                let _ = socket.next().await;
+                socket
+                    .send(Message::Text(
+                        r#"{"code":0,"data":{"status":"STA"}}"#.into(),
+                    ))
+                    .await
+                    .unwrap();
+                while let Some(frame) = commands.recv().await {
+                    if frame.is_empty() {
+                        break;
+                    }
+                    socket.send(Message::Text(frame.into())).await.unwrap();
+                }
+            })
+        })
+        .await;
+        client.connect().await.unwrap();
+        publish.send(r#"{"code":0,"data":{"status":"TRN","result":{"type":"FIN","sentence":"Synthetic A final","sentence_trans":"Translated A final","asr":"Synthetic B draft","asr_trans":"Translated B draft"}}}"#.into()).unwrap();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while controller.state.subtitles.history.is_empty() {
+                controller.handle(events.recv().await.unwrap());
+            }
+        })
+        .await
+        .unwrap();
+        while let Ok(event) = events.try_recv() {
+            controller.handle(event);
+        }
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic A final"
+        );
+        assert_eq!(
+            controller.state.subtitles.history[0].translation,
+            "Translated A final"
+        );
+        assert_eq!(
+            controller.state.subtitles.source.text, "Synthetic B draft",
+            "FIN must carry the next sentence independently"
+        );
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Translated B draft"
+        );
+        publish.send(String::new()).unwrap();
+        client.disconnect().await;
+    }
 }
