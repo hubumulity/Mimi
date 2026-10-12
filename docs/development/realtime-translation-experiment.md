@@ -1,18 +1,20 @@
-# Try the optional Alibaba realtime models
+# Try Alibaba LiveTranslate simultaneous interpretation
 
-This draft adds a selector under **Settings → Services → edit an Alibaba
-configuration → Recognition and translation**. Keep **Existing ASR + MT** for the
-current behavior. Choose **Qwen LiveTranslate (Test)** first; choose **Qwen Omni
-(Test)** separately when ready. Enter the existing **Beijing Model Studio
-workspace ID**, save, then select that configuration. Use automatic source
-recognition and Chinese or English as the target. Saving alone starts no audio
+This draft adds a selector under **Settings → Speech & Translation → edit an Alibaba
+configuration → Recognition and translation**. Keep **Current ASR + MT** for the
+current behavior. Choose **LiveTranslate (simultaneous)**. Enter the
+existing **Beijing Model Studio workspace ID**, save, then select that
+configuration. Use automatic source recognition and Chinese or English as the
+target. Saving alone starts no audio
 session. Switching back restores the independent MT configuration.
 
 The API key stays in Mimi's existing private credential store. The workspace ID
-is non-secret metadata. These 3.8 models require workspace-specific hosts;
-[the official Omni guide](https://www.alibabacloud.com/help/en/model-studio/realtime)
-explicitly requires them. Missing IDs are rejected rather than guessed. This
-iteration does not offer Singapore routing.
+is non-secret metadata. LiveTranslate 3.8 uses a workspace-specific host in
+[the official setup guide](https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime).
+Missing IDs are rejected rather than guessed. This iteration does not offer
+Singapore routing or an Android selection UI. See the user-facing setup steps:
+[English](../provider-setup.md#alibaba-livetranslate) ·
+[简体中文](../provider-setup.zh-CN.md#alibaba-livetranslate).
 
 For a first user test, select system audio, play a short non-sensitive sample,
 and stop subtitles afterward. Keep microphone capture, audio recording and
@@ -28,8 +30,7 @@ Obtain current approval for any possible API charges before executing.
 
 Prepare one public or synthetic mono PCM16/16 kHz sample and a manifest using
 the existing [ASR fixture schema](../plans/2026-10-02-audio3-repeatable-benchmark.md).
-A sample may contain a command such as “tell me a joke” to check whether Omni
-translates it instead of following it. Do not upload a private meeting recording.
+Do not upload a private meeting recording.
 
 ```sh
 MIMI_TRANSLATION_COMPARISON_APPROVED=yes \
@@ -43,8 +44,10 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml \
   -- --ignored --exact --nocapture
 ```
 
-Select `baseline`, `liveTranslate` or `omni` individually. `all` explicitly runs
-all three serially and requires corresponding authorization. Missing arm means
+Select `baseline` or `liveTranslate` individually. `all` explicitly runs
+both serially and requires corresponding authorization. The ignored test's
+historical `manual_three_arm_translation_comparison` name remains compatible
+with existing invocations; it now accepts only these two arms. Missing arm means
 baseline only. One clip is capped at 20 seconds with a fixed two-second silent
 tail; there is no driver retry. Secrets must never be supplied through environment
 variables. Cache/path variables in this recipe contain no credentials.
@@ -66,11 +69,22 @@ coalesce updates, so rewrite counts are observed runtime changes, not exhaustive
 wire counts. Audio-clock speech ends are not exposed here; sentence-end waiting
 remains unavailable. A baseline source final arrives with the translated pair,
 not at the recognizer's raw final time. Audio3 gets the manifest language hint;
-the 3.8 models require automatic source detection. Review omissions, readability,
-wrong answers and interruptions separately against the fixed sample.
+LiveTranslate 3.8 requires automatic source detection. Review omissions,
+incorrect translations, and readability separately against the fixed sample.
 
-All models can charge. Public new-user allowances do not prove an account's
+Both routes can charge. Public new-user allowances do not prove an account's
 remaining quota. Check [prices](https://help.aliyun.com/zh/model-studio/model-pricing)
 and [quota expiry](https://help.aliyun.com/zh/model-studio/new-free-quota) for the
-actual account. In particular, Omni's `max_tokens` truncates returned content
-without limiting generation, so it is not a billing cap.
+actual account. Choosing **Original** changes what Mimi displays, but LiveTranslate
+may still generate translation output and charge for it.
+
+## Existing evidence
+
+The [integration run ledger](integration-runs.md) records one LiveTranslate-only
+run using 10.277 seconds of synthetic English audio plus the fixed silent tail.
+From the first PCM frame, the first accepted translation appeared at 3,170 ms;
+the complete final text first appeared at 10,990 ms and was confirmed at
+12,993 ms. The approved budget and estimated audio charge are recorded there;
+the actual account bill was not verified. The ASR + MT baseline was not run, so
+this is not an A/B quality result. Offline checks, provider response, visible
+desktop behavior, and comparative quality remain separate claims.

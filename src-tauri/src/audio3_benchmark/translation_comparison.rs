@@ -225,7 +225,6 @@ pub(super) async fn compare_client(
     let model = match configuration.alibaba_realtime_mode {
         AlibabaRealtimeMode::Disabled => BASELINE_MODEL,
         AlibabaRealtimeMode::LiveTranslate => "qwen3.8-livetranslate-flash-realtime",
-        AlibabaRealtimeMode::Omni => "qwen3.8-omni-flash-realtime",
     };
     if clip.pcm.is_empty() || clip.pcm.len() > MAX_CLIP_BYTES || !clip.pcm.len().is_multiple_of(2) {
         return Trial {
@@ -368,11 +367,9 @@ fn selected_arms(value: Option<&str>) -> Result<Vec<AlibabaRealtimeMode>, &'stat
     match value {
         None | Some("baseline") => Ok(vec![AlibabaRealtimeMode::Disabled]),
         Some("liveTranslate") => Ok(vec![AlibabaRealtimeMode::LiveTranslate]),
-        Some("omni") => Ok(vec![AlibabaRealtimeMode::Omni]),
         Some("all") => Ok(vec![
             AlibabaRealtimeMode::Disabled,
             AlibabaRealtimeMode::LiveTranslate,
-            AlibabaRealtimeMode::Omni,
         ]),
         _ => Err("arm_invalid"),
     }
@@ -492,7 +489,6 @@ async fn manual_three_arm_translation_comparison() {
             let name = match arm {
                 AlibabaRealtimeMode::Disabled => "arm-a.json",
                 AlibabaRealtimeMode::LiveTranslate => "arm-b.json",
-                AlibabaRealtimeMode::Omni => "arm-c.json",
             };
             private_json(&output.join(name), &value)?;
             failures += usize::from(trial.failure.is_some());
@@ -513,7 +509,7 @@ async fn manual_three_arm_translation_comparison() {
             "target_language": "zh",
             "timing_origin": "first scheduled PCM send after provider readiness; setup excluded",
             "baseline_event_boundary": "production provider acceptance; drafts may coalesce; source final arrives with translated pair; audio-clock speech ends unavailable",
-            "source_hint_boundary": "Audio3 uses the manifest ASR language hint; LiveTranslate and Omni use automatic source detection as required by the 3.8 realtime protocol; the PCM is identical but source-language configuration differs",
+            "source_hint_boundary": "Audio3 uses the manifest ASR language hint; LiveTranslate uses automatic source detection as required by the 3.8 realtime protocol; the PCM is identical but source-language configuration differs",
             "requested_arms": arms.len(),
             "completed_arms": trials.len(),
             "trials": trials,
@@ -640,11 +636,8 @@ fn each_arm_requires_its_own_explicit_selection() {
         selected_arms(Some("liveTranslate")).unwrap(),
         vec![AlibabaRealtimeMode::LiveTranslate]
     );
-    assert_eq!(
-        selected_arms(Some("omni")).unwrap(),
-        vec![AlibabaRealtimeMode::Omni]
-    );
-    assert_eq!(selected_arms(Some("all")).unwrap().len(), 3);
+    assert!(selected_arms(Some("omni")).is_err());
+    assert_eq!(selected_arms(Some("all")).unwrap().len(), 2);
     assert!(selected_arms(Some("both")).is_err());
 }
 

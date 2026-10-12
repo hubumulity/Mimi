@@ -3243,3 +3243,16 @@
 .profile-language-preset { margin-top: 16px; }
 .profile-language-preset__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }
 .profile-language-preset__controls > span { overflow-wrap: anywhere; }
+
+
+/* Setup actions stay with their field and wrap within the existing label column. */
+.alibaba-setup-field-label {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.alibaba-setup-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  text-align: start;
+}

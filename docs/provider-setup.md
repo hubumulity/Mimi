@@ -4,13 +4,13 @@
 
 This guide explains where to enable each service, where to get its credentials, and what to enter in Mimi. Configure only the services you plan to use. For a first setup, the README recommends Volcano Engine, Alibaba Cloud or Google Gemini.
 
-Last checked: **2026-10-06**. The instructions primarily cover the current desktop app, with Android differences noted separately. Console menus, model access, trial allowances, and billing rules can change. Check the linked official documentation and your own account status.
+Alibaba LiveTranslate setup checked: **2026-10-13**; other service instructions last checked: **2026-10-06**. The instructions primarily cover the current desktop app, with Android differences noted separately. Console menus, model access, trial allowances, and billing rules can change. Check the linked official documentation and your own account status.
 
 ## Find your service
 
 | Service in Mimi | Setup / management | What you need |
 | --- | --- | --- |
-| [Alibaba Cloud](#alibaba-cloud) | [Model Studio API Keys](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) | A Model Studio API key for the Beijing region |
+| [Alibaba Cloud](#alibaba-cloud) | [Beijing API Keys](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [Workspaces](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) | A Beijing Model Studio API key; [LiveTranslate](#alibaba-livetranslate) also needs its workspace ID |
 | [Volcano Engine](#volcano-engine) | [Doubao Speech API Key management](https://console.volcengine.com/speech/new/setting/apikeys?projectName=default) | An API key from the same project where Simultaneous Interpretation 2.0 is enabled |
 | [Google Gemini](#google-gemini) | [Google AI Studio](https://aistudio.google.com/api-keys) | An API key with access to the Gemini Live translation model |
 | [Tencent Cloud](#tencent-cloud) | [ASR console](https://console.cloud.tencent.com/asr) | AppID, SecretID, and SecretKey |
@@ -28,11 +28,12 @@ Only setting up text translation? Go to [Apple Translation](#apple-translation),
 
 ## Current models and request paths
 
-This table describes the desktop app's configured requests on the main branch as of the date above. Model IDs help you check access and understand usage. Built-in configurations select their models automatically; only Azure deployments and custom services require you to enter names. Providers can update models under the same ID, and an ID alone does not guarantee recognition quality or support for a particular language.
+This table describes the desktop app's default and optional request paths. Model IDs help you check access and understand usage. Built-in configurations select their models automatically; only Azure deployments and custom services require you to enter names. Providers can update models under the same ID, and an ID alone does not guarantee recognition quality or support for a particular language.
 
 | Desktop service | Models or APIs used for recognition / original text and translation | How to select them in Mimi |
 | --- | --- | --- |
 | Alibaba Cloud | Recognition: `qwen-audio-3.0-asr-flash-streaming`; default text translation: `qwen-mt-lite` | Fixed built-in models; the text translation service can be changed independently |
+| Alibaba Cloud — optional LiveTranslate | `qwen3.8-livetranslate-flash-realtime`; original and translated text come from one realtime session | Select **LiveTranslate (simultaneous)** under **Recognition and translation**; [setup](#alibaba-livetranslate) |
 | Google Gemini | `gemini-3.5-live-translate-preview`; original and translated text come from the same Live session, with no separate ASR model to enter | Fixed built-in model |
 | Volcano Engine | Doubao Simultaneous Interpretation 2.0, resource ID `volc.service_type.10053`; `/api/v4/ast/v2/translate` | Built-in service endpoint; the request does not specify a public model ID |
 | Tencent Cloud | ASR realtime speech translation; translation model: `hunyuan-translation-lite` | Fixed built-in configuration; the service provides recognition without a separate ASR model ID in the request |
@@ -83,10 +84,10 @@ Cloud recognition receives audio from the selected source, and remote text trans
 
 ## Alibaba Cloud (Model Studio)
 
-Links: [Beijing API Key management](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [Official activation guidance](https://help.aliyun.com/zh/model-studio/faq-about-alibaba-cloud-model-studio) · [Get an API key](https://help.aliyun.com/zh/model-studio/get-api-key)
+Links: [Beijing API Key management](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [Beijing workspace management](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) · [Official activation guidance](https://help.aliyun.com/zh/model-studio/faq-about-alibaba-cloud-model-studio) · [Get an API key](https://help.aliyun.com/zh/model-studio/get-api-key)
 
 1. Sign in to Alibaba Cloud and complete any real-name verification required by the console. In Model Studio, select **China North 2 (Beijing)** and follow the prompts to enable model services in that region.
-2. Open API Key management in the Beijing region and create a key in the workspace you intend to use. You can also use an existing key.
+2. Open API Key management in the Beijing region and use an existing key belonging to the workspace you intend to use. A separate key is not required for each model.
 3. If the workspace or key restricts model access, confirm that the models in the table below are authorized.
 4. Add **Alibaba Cloud** in Mimi, enter the key under **Speech recognition → API Key**, and save. Default text translation uses the same Model Studio credentials.
 
@@ -94,12 +95,29 @@ Links: [Beijing API Key management](https://bailian.console.aliyun.com/cn-beijin
 | --- | --- |
 | Desktop default recognition + translation | `qwen-audio-3.0-asr-flash-streaming` and `qwen-mt-lite` |
 | Desktop with independent text translation or Skip translation | Recognition still uses `qwen-audio-3.0-asr-flash-streaming`; configure translation for the selected service |
+| Desktop optional LiveTranslate | `qwen3.8-livetranslate-flash-realtime` in the selected Beijing workspace |
 | Android default recognition + translation | `qwen-audio-3.0-asr-flash-streaming` and `qwen-mt-lite` (same shared default as desktop) |
 | Android with independent text translation or no translation | `qwen-audio-3.0-asr-flash-streaming`; configure translation for the selected service |
 
-Use a **Model Studio / DashScope API key**, not an Alibaba Cloud AccessKey ID / AccessKey Secret pair. The built-in configuration uses `dashscope.aliyuncs.com` and has no region or endpoint field; keys from other regions cannot be used interchangeably. See the [official region guidance](https://help.aliyun.com/zh/model-studio/regions) and [platform parity](development/platform-parity.md) for the shared behavior and remaining platform differences.
+Use a **Model Studio / DashScope API key**, not an Alibaba Cloud AccessKey ID / AccessKey Secret pair. The default ASR + MT route uses `dashscope.aliyuncs.com`; optional LiveTranslate uses a Beijing workspace-specific host. Neither offers a region or endpoint field. Keys from other regions cannot be used interchangeably. See the [official region guidance](https://help.aliyun.com/zh/model-studio/regions) and [platform parity](development/platform-parity.md).
 
 Billing: the default setup on both platforms includes both speech recognition and text translation. Changing the text translation service still generates cloud recognition usage; whether it is charged depends on the recognition model's remaining trial allowance and billing status. Check [Model Studio pricing](https://help.aliyun.com/zh/model-studio/model-pricing) and the trial status of the models you use.
+
+<a id="alibaba-livetranslate"></a>
+
+### Configure LiveTranslate simultaneous interpretation on desktop
+
+This optional experiment keeps **Current ASR + MT** as the default. LiveTranslate sends selected audio directly to `qwen3.8-livetranslate-flash-realtime` and displays text subtitles; it skips independent text translation and does not play translated speech. Mimi currently offers **Beijing**, **automatic source recognition**, and **Chinese or English translation targets** for this mode. **Original** displays recognition only, but the model may still generate billable translation output. Android has no selector for this mode yet.
+
+1. Stop subtitles. Open **Settings → Speech & Translation**, select an **Alibaba Cloud** configuration, and edit it.
+2. Under **Recognition and translation**, choose **LiveTranslate (simultaneous)**. The **Get API key** and **Get workspace ID** buttons open the official Beijing console pages linked above.
+3. In workspace management, find the **existing workspace belonging to your key**. Copy its workspace ID; if the console shows an **API Host** such as `llm-xxx.cn-beijing.maas.aliyuncs.com`, use only `llm-xxx`. Enter that value in **Model Studio Beijing workspace ID**. It is not the model name, API key, or full hostname. A new workspace is usually unnecessary.
+4. Reuse the saved key if it belongs to that Beijing workspace. Otherwise, copy an existing matching key from API Key management into Mimi's **API Key** field. In the workspace's model list, confirm that `qwen3.8-livetranslate-flash-realtime` has model-call access. If the key has custom permissions, also check its model scope and IP allowlist; ask the account administrator if access is missing. Console account and permission changes are your own actions.
+5. Save, select the configuration if it is not active, choose automatic recognition and Chinese or English translation, then play a short non-sensitive sample and turn on **Live Subtitles**. Stop afterward. Switching back to **Current ASR + MT** restores the saved independent translation settings.
+
+LiveTranslate is an API service with its own usage charges. Check the model's remaining trial allowance, expiry, and billing status before starting; having a key does not guarantee free usage. A successful connection check confirms that request only. It does not establish subtitle quality or long-session stability.
+
+Official references: [LiveTranslate setup and protocol](https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime) · [Regions and workspace hosts](https://help.aliyun.com/zh/model-studio/regions) · [Workspace and model permissions](https://help.aliyun.com/zh/model-studio/permission-management-overview) · [API key permissions](https://help.aliyun.com/zh/model-studio/get-api-key) · [Pricing](https://help.aliyun.com/zh/model-studio/model-pricing) · [Trial allowances](https://help.aliyun.com/zh/model-studio/new-free-quota)
 
 <a id="volcano-engine"></a>
 

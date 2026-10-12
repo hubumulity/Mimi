@@ -594,6 +594,7 @@ mod tests {
             "profile_credential_editor_state",
             "profile_duplicate",
             "open_tencent_setup_page",
+            "open_alibaba_setup_page",
         ] {
             assert!(include_str!("lib.rs").contains(&format!("commands::{command},")));
             let permissions = include_str!("../permissions/app.toml");
@@ -611,6 +612,26 @@ mod tests {
                 .iter()
                 .any(|permission| permission == "app-settings"));
             assert_eq!(capability["windows"], serde_json::json!(["settings"]));
+        }
+    }
+
+    #[test]
+    fn alibaba_setup_pages_reject_arbitrary_urls() {
+        for (value, expected) in [
+            (
+                "apiKey",
+                "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
+            ),
+            (
+                "workspace",
+                "https://bailian.console.aliyun.com/cn-beijing/settings/workspace",
+            ),
+        ] {
+            let page: AlibabaSetupPage = serde_json::from_value(serde_json::json!(value)).unwrap();
+            assert_eq!(page.url(), expected);
+        }
+        for value in ["https://example.com", "file:///tmp/test", "ApiKey", ""] {
+            assert!(serde_json::from_value::<AlibabaSetupPage>(serde_json::json!(value)).is_err());
         }
     }
 
@@ -1604,6 +1625,36 @@ pub fn app_open_releases(app: AppHandle) -> Result<(), String> {
         .map_err(|_| {
             tracing::warn!(label = "system_opener_failed", "release page open failed");
             "Could not open the release page.".to_string()
+        })
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlibabaSetupPage {
+    ApiKey,
+    Workspace,
+}
+
+impl AlibabaSetupPage {
+    fn url(self) -> &'static str {
+        match self {
+            Self::ApiKey => "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
+            Self::Workspace => "https://bailian.console.aliyun.com/cn-beijing/settings/workspace",
+        }
+    }
+}
+
+/// Only explicit user actions open one of the fixed Beijing setup pages.
+#[tauri::command]
+pub fn open_alibaba_setup_page(app: AppHandle, page: AlibabaSetupPage) -> Result<(), String> {
+    app.opener()
+        .open_url(page.url(), None::<&str>)
+        .map_err(|_| {
+            tracing::warn!(
+                label = "system_opener_failed",
+                "Alibaba setup page open failed"
+            );
+            "Could not open the Alibaba Cloud setup page.".to_string()
         })
 }
 

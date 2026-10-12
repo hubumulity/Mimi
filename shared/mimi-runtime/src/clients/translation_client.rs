@@ -958,40 +958,36 @@ mod tests {
 
     #[test]
     fn explicitly_selected_alibaba_realtime_routes_use_the_shared_client() {
-        for mode in [
-            AlibabaRealtimeMode::LiveTranslate,
-            AlibabaRealtimeMode::Omni,
-        ] {
-            let configuration = LiveTranslationConfiguration::for_provider(
-                ProviderKind::AlibabaCloud,
-                "synthetic-key",
-                SourceLanguage::Automatic,
-                TargetLanguage::SimplifiedChinese,
-                TranslationMode::Turbo,
-            )
-            .with_alibaba_realtime(mode, "synthetic-workspace")
-            .validated()
-            .unwrap();
-            let (events, _receiver) = provider_event_channel();
-            let TranslationClient::LowLatency(client) =
-                TranslationClient::new_without_network(&configuration, events).unwrap()
-            else {
-                panic!("explicit realtime mode must select the portable realtime client");
-            };
-            let endpoint = client.network_endpoint();
-            assert_eq!(
-                endpoint.host_str(),
-                Some("synthetic-workspace.cn-beijing.maas.aliyuncs.com")
-            );
-            assert_eq!(
-                endpoint
-                    .query_pairs()
-                    .find(|(key, _)| key == "model")
-                    .unwrap()
-                    .1,
-                mode.model_name().unwrap()
-            );
-        }
+        let mode = AlibabaRealtimeMode::LiveTranslate;
+        let configuration = LiveTranslationConfiguration::for_provider(
+            ProviderKind::AlibabaCloud,
+            "synthetic-key",
+            SourceLanguage::Automatic,
+            TargetLanguage::SimplifiedChinese,
+            TranslationMode::Turbo,
+        )
+        .with_alibaba_realtime(mode, "synthetic-workspace")
+        .validated()
+        .unwrap();
+        let (events, _receiver) = provider_event_channel();
+        let TranslationClient::LowLatency(client) =
+            TranslationClient::new_without_network(&configuration, events).unwrap()
+        else {
+            panic!("explicit realtime mode must select the portable realtime client");
+        };
+        let endpoint = client.network_endpoint();
+        assert_eq!(
+            endpoint.host_str(),
+            Some("synthetic-workspace.cn-beijing.maas.aliyuncs.com")
+        );
+        assert_eq!(
+            endpoint
+                .query_pairs()
+                .find(|(key, _)| key == "model")
+                .unwrap()
+                .1,
+            mode.model_name().unwrap()
+        );
     }
 
     #[test]

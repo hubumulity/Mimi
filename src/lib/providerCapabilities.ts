@@ -125,7 +125,7 @@ export function activeServiceProfile(
 }
 
 export function usesAlibabaRealtime(profile: ServiceProfile): boolean {
-  return profile.provider === "alibabaCloud" && (profile.alibabaRealtimeMode ?? "disabled") !== "disabled";
+  return profile.provider === "alibabaCloud" && profile.alibabaRealtimeMode === "liveTranslate";
 }
 
 export function textTranslationForProfile(profile: ServiceProfile): TextTranslation {

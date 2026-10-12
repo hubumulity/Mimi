@@ -247,7 +247,7 @@ export type ProviderCredentialsInput =
 export type CredentialState = "present" | "missing" | "unavailable";
 
 export type ProfileNetworkProxyDraft = Partial<Pick<ServiceProfile, "speechNetworkProxy" | "textNetworkProxy">>;
-export type AlibabaRealtimeMode = "disabled" | "liveTranslate" | "omni";
+export type AlibabaRealtimeMode = "disabled" | "liveTranslate";
 export type QwenMTModel = "lite" | "flash" | "plus";
 export type TextTranslationNameDraft = { route: Exclude<TextTranslation, "followService">; name: string };
 export type ProfileLanguagePreset = { sourceLanguage: SourceLanguage; targetLanguage: TargetLanguage };

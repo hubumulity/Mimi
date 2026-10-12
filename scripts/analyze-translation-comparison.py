@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline analysis of the opted-in three-arm probe's private event ledger.
+"""Offline analysis of the opted-in translation probe's private event ledger.
 
 Never opens credentials, calls services, or infers semantic quality from counts.
 The input/output contain the explicitly supplied test sample's subtitles; keep

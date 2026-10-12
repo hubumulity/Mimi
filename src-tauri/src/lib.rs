@@ -408,6 +408,7 @@ pub fn run() {
             commands::app_open_releases,
             commands::app_open_audio_privacy_settings,
             commands::open_tencent_setup_page,
+            commands::open_alibaba_setup_page,
             commands::settings_save,
             commands::profile_create,
             commands::profile_duplicate,

@@ -1,4 +1,4 @@
-//! Shared DashScope live translation and optional Omni subtitle client.
+//! Shared DashScope live translation client.
 
 use crate::clients::provider_events::ProviderEventSender;
 use crate::core::diagnostics::{milliseconds, TranslationLatency, TranslationLatencyKind};
@@ -11,7 +11,7 @@ use crate::core::provider::AlibabaRealtimeMode;
 use crate::pipeline_log;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -31,40 +31,6 @@ const GENERIC_TRANSPORT_ERROR: &str = "The live translation connection closed.";
 const GENERIC_PROTOCOL_ERROR: &str = "The live translation service returned invalid data.";
 #[cfg(test)]
 const MAX_TRACKED_ITEMS: usize = mimi_core::live_pair_aligner::MAX_TRACKED_ITEMS;
-
-// Keep the one-second silence counter bounded using the project's Rust 1.88
-// API surface. Newer Rust deprecates fetch_update; its replacement is newer
-// than our MSRV.
-fn record_trailing_silence(counter: &AtomicUsize, bytes: usize) {
-    let mut current = counter.load(Ordering::SeqCst);
-    loop {
-        let next = current.saturating_add(bytes).min(32_000);
-        match counter.compare_exchange_weak(current, next, Ordering::SeqCst, Ordering::SeqCst) {
-            Ok(_) => return,
-            Err(observed) => current = observed,
-        }
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn trailing_silence_count_stays_bounded_under_contention_and_overflow() {
-    let counter = AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..4 {
-            scope.spawn(|| {
-                for _ in 0..100 {
-                    record_trailing_silence(&counter, 20);
-                }
-            });
-        }
-    });
-    assert_eq!(counter.load(Ordering::SeqCst), 8_000);
-    record_trailing_silence(&counter, usize::MAX);
-    assert_eq!(counter.load(Ordering::SeqCst), 32_000);
-    record_trailing_silence(&counter, 1);
-    assert_eq!(counter.load(Ordering::SeqCst), 32_000);
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum LiveTranslateClientError {
@@ -107,7 +73,6 @@ struct Inner {
     decoder: Mutex<AlibabaRealtimeEventDecoder>,
     sink: Mutex<Option<Sink>>,
     received_session_finished: AtomicBool,
-    trailing_silence_bytes: AtomicUsize,
     pong_notify: Notify,
     receive_task: Mutex<Option<JoinHandle<()>>>,
     translation_latency: Arc<std::sync::Mutex<StreamTranslationLatency>>,
@@ -280,7 +245,6 @@ impl LiveTranslateClient {
                 decoder: Mutex::new(AlibabaRealtimeEventDecoder::new(mode)),
                 sink: Mutex::new(None),
                 received_session_finished: AtomicBool::new(false),
-                trailing_silence_bytes: AtomicUsize::new(0),
                 pong_notify: Notify::new(),
                 receive_task: Mutex::new(None),
                 translation_latency: Default::default(),
@@ -380,13 +344,7 @@ impl LiveTranslateClient {
         }
         let message = LiveTranslateRequestEncoder::audio_append(pcm_data, None)
             .expect("audio append encoding cannot fail");
-        self.send_text(message.to_string()).await?;
-        if pcm_data.iter().all(|byte| *byte == 0) {
-            record_trailing_silence(&self.inner.trailing_silence_bytes, pcm_data.len());
-        } else {
-            self.inner.trailing_silence_bytes.store(0, Ordering::SeqCst);
-        }
-        Ok(())
+        self.send_text(message.to_string()).await
     }
 
     /// Sends a WebSocket ping and waits for the matching pong (4s timeout).
@@ -427,10 +385,6 @@ impl LiveTranslateClient {
         if self.inner.sink.lock().await.is_none() {
             return;
         }
-        if self.mode == AlibabaRealtimeMode::Omni {
-            self.finish_omni(timeout).await;
-            return;
-        }
         if let Ok(message) = LiveTranslateRequestEncoder::finish(None) {
             let _ = self.send_text(message.to_string()).await;
         }
@@ -438,53 +392,6 @@ impl LiveTranslateClient {
         while !self.inner.received_session_finished.load(Ordering::SeqCst)
             && tokio::time::Instant::now() < deadline
         {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        self.disconnect().await;
-    }
-
-    /// VAD submits input and creates responses automatically. Sending an
-    /// additional commit/create here would duplicate a turn. A bounded silence
-    /// tail closes speech; the receive loop keeps successful response finals.
-    async fn finish_omni(&self, timeout: Duration) {
-        let missing =
-            32_000usize.saturating_sub(self.inner.trailing_silence_bytes.load(Ordering::SeqCst));
-        if missing > 0 && self.send_audio(&vec![0; missing]).await.is_err() {
-            self.disconnect().await;
-            return;
-        }
-        let started = tokio::time::Instant::now();
-        let deadline = started + timeout;
-        let grace = Duration::from_millis(1_000).min(timeout);
-        loop {
-            let pending = self.inner.decoder.lock().await.has_unfinished_turn();
-            let now = tokio::time::Instant::now();
-            if !pending && now.saturating_duration_since(started) >= grace {
-                let _content = self.inner.content_lock.lock().await;
-                // A receive may have started a new turn while acquiring the
-                // content lock. Close only after rechecking under that lock.
-                if !self.inner.decoder.lock().await.has_unfinished_turn() {
-                    for event in self.inner.aligner.lock().await.observe(
-                        &LiveTranslateServerEvent::SessionFinished,
-                        &LiveTranslateEventIdentity::default(),
-                    ) {
-                        let _ = self.events.send(event);
-                    }
-                    self.inner
-                        .received_session_finished
-                        .store(true, Ordering::SeqCst);
-                    break;
-                }
-            }
-            if now >= deadline {
-                if pending {
-                    let _ = self.events.send(LiveTranslateServerEvent::Error {
-                        code: "alibaba_realtime_finish_timeout".into(),
-                        message: "The Alibaba realtime session did not finish in time.".into(),
-                    });
-                }
-                break;
-            }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         self.disconnect().await;
@@ -506,7 +413,6 @@ impl LiveTranslateClient {
         self.inner
             .received_session_finished
             .store(false, Ordering::SeqCst);
-        self.inner.trailing_silence_bytes.store(0, Ordering::SeqCst);
     }
 
     async fn send_text(&self, text: String) -> Result<(), LiveTranslateClientError> {
@@ -979,17 +885,16 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn omni_wire_adapter_pairs_the_committed_source_only_after_response_success() {
-        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::Omni);
+    fn livetranslate_wire_pairs_actual_item_identity_after_response_success() {
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
         let mut aligner = LiveTranslatePairAligner::default();
         let mut published = Vec::new();
         for wire in [
-            r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","text":"","stash":"Translate this question?"}"#,
-            r#"{"type":"input_audio_buffer.committed","item_id":"source"}"#,
-            r#"{"type":"response.created","response":{"id":"response"}}"#,
-            r#"{"type":"response.text.delta","item_id":"out","response_id":"response","delta":"翻译这个问题？"}"#,
-            r#"{"type":"response.text.done","item_id":"out","response_id":"response","text":"翻译这个问题？"}"#,
-            r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"source","transcript":"Translate this question?"}"#,
+            r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":"Hello."}"#,
+            r#"{"type":"conversation.item.created","previous_item_id":"source","item":{"id":"out","role":"assistant"}}"#,
+            r#"{"type":"response.text.delta","item_id":"out","response_id":"response","delta":"你好。"}"#,
+            r#"{"type":"response.text.done","item_id":"out","response_id":"response","text":"你好。"}"#,
+            r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"source","transcript":"Hello."}"#,
         ] {
             for (event, identity) in decoder.decode(wire).unwrap() {
                 published.extend(aligner.observe(&event, &identity));
@@ -1012,9 +917,8 @@ mod tests {
             })
             .collect();
         assert!(
-            matches!(pairs.as_slice(), [LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {utterance_id,source,translation,..}] if utterance_id == "source" && source == "Translate this question?" && translation == "翻译这个问题？")
+            matches!(pairs.as_slice(), [LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {utterance_id,source,translation,..}] if utterance_id == "source" && source == "Hello." && translation == "你好。")
         );
-        assert!(!decoder.has_unfinished_turn());
     }
 
     #[test]
@@ -1056,7 +960,6 @@ mod tests {
             )),
             sink: Mutex::new(None),
             received_session_finished: AtomicBool::new(false),
-            trailing_silence_bytes: AtomicUsize::new(0),
             pong_notify: Notify::new(),
             receive_task: Mutex::new(None),
             translation_latency: Default::default(),

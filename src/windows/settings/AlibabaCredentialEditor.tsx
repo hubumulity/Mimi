@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { AlibabaSetupLink } from "./AlibabaSetupLink";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ConfigInput, type ConfigInputElement } from "./ConfigInput";
 import { SettingsHelp } from "./SettingsHelp";
@@ -190,13 +191,14 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
     {!textOnly && <section className="service-stage" aria-labelledby={`${inputId}-recognition-title`}>
       <header className="service-stage__heading">
         <h3 id={`${inputId}-recognition-title`}>{integratedRealtime ? I18N.settings.voiceTranslation : I18N.settings.speechRecognition}</h3>
+        {profile.provider === "alibabaCloud" && saved && !editingKey && <div className="service-stage__actions"><AlibabaSetupLink page="apiKey" disabled={disabled || busy} /></div>}
       </header>
       <div className="settings-field service-stage__selector">
         <span>{I18N.settings.serviceProvider}</span>
         <span className="service-stage__provider"><ProviderIcon provider="alibabaCloud" size={32} />Alibaba Cloud</span>
       </div>
       {(!saved || editingKey) && <div className="settings-field">
-        <label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>
+        <span className="service-stage__field-label alibaba-setup-field-label"><label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>{profile.provider === "alibabaCloud" && <AlibabaSetupLink page="apiKey" disabled={disabled || busy} />}</span>
         <SavedCredentialInput key={`${profile.id}:${revealEpoch}`} profileId={profile.id} field={profile.provider === "deepLX" ? "asrApiKey" : "apiKey"} label={I18N.settings.apiKey} hasSavedValue={recognitionState.state?.savedFields.includes(profile.provider === "deepLX" ? "asrApiKey" : "apiKey") ?? false} active={visible && !busy && !confirmingDelete} id={`${inputId}-apiKey`} type="password" autoComplete="new-password" spellCheck={false} disabled={disabled} value={draft.apiKey} placeholder={I18N.settings.apiKeyPlaceholder} aria-describedby={noteId} onValueChange={(value) => { setEditingKey(true); setDraft((current) => ({ ...current, apiKey: value })); }} />
       </div>}
     </section>}

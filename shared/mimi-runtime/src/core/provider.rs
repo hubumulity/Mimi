@@ -20,12 +20,11 @@ pub const DEFAULT_ALIBABA_PROFILE_ID: &str = "alibaba-default";
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AlibabaRealtimeMode {
     #[default]
-    #[serde(rename = "disabled")]
+    // Retire the short-lived Omni experiment without breaking its saved catalog.
+    #[serde(rename = "disabled", alias = "omni")]
     Disabled,
     #[serde(rename = "liveTranslate")]
     LiveTranslate,
-    #[serde(rename = "omni")]
-    Omni,
 }
 
 pub fn alibaba_workspace_id_is_valid(workspace: &str) -> bool {
@@ -49,7 +48,6 @@ impl AlibabaRealtimeMode {
         match self {
             Self::Disabled => None,
             Self::LiveTranslate => Some("qwen3.8-livetranslate-flash-realtime"),
-            Self::Omni => Some("qwen3.8-omni-flash-realtime"),
         }
     }
 
@@ -1027,8 +1025,22 @@ mod tests {
         let mut other =
             ServiceProfile::new("other", "Other", ProviderKind::OpenAIRealtime).unwrap();
         assert!(other
-            .set_alibaba_realtime(AlibabaRealtimeMode::Omni, "test-workspace")
+            .set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, "test-workspace")
             .is_err());
+    }
+
+    #[test]
+    fn removed_realtime_experiment_metadata_falls_back_without_losing_saved_settings() {
+        let profile: ServiceProfile = serde_json::from_str(
+            r#"{"id":"experiment","name":"Alibaba","provider":"alibabaCloud","alibabaRealtimeMode":"omni","alibabaWorkspaceId":"test-workspace","textTranslation":"deepLX"}"#,
+        ).unwrap();
+        let profile = profile.validated().unwrap();
+        assert_eq!(profile.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
+        assert_eq!(profile.alibaba_workspace_id, "test-workspace");
+        assert_eq!(profile.text_translation(), TextTranslation::DeepLX);
+        assert_eq!(profile.effective_provider(), ProviderKind::DeepLX);
+        let value = serde_json::to_value(profile).unwrap();
+        assert_eq!(value["alibabaRealtimeMode"], "disabled");
     }
 
     #[test]

@@ -571,7 +571,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       if (profile?.provider !== "alibabaCloud") throw new Error("provider-mismatch");
       const mode = options.alibabaRealtimeMode ?? profile.alibabaRealtimeMode ?? "disabled";
       const workspace = (options.alibabaWorkspaceId ?? profile.alibabaWorkspaceId ?? "").trim();
-      if (!["disabled", "liveTranslate", "omni"].includes(mode) || workspace.length > 63
+      if (!["disabled", "liveTranslate"].includes(mode) || workspace.length > 63
         || (workspace !== "" && !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(workspace)) || (mode !== "disabled" && workspace === "")) throw new Error("alibaba-realtime-invalid");
     }
     const declaration = options?.customSpeechSourceLanguages ?? null;

@@ -385,31 +385,27 @@ mod tests {
             TranslationMode::Turbo,
         );
         assert_eq!(config.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
-        for mode in [
-            AlibabaRealtimeMode::LiveTranslate,
-            AlibabaRealtimeMode::Omni,
-        ] {
-            assert_eq!(
-                config
-                    .clone()
-                    .with_alibaba_realtime(mode, "")
-                    .validated()
-                    .unwrap_err(),
-                LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId
-            );
-            let active = config.clone().with_alibaba_realtime(mode, "test-workspace");
-            assert_eq!(
-                active.model_names(),
-                vec![mode.model_name().unwrap().to_string()]
-            );
-            assert!(active.validated().is_ok());
-            let mut unsupported = active;
-            unsupported.source_language = SourceLanguage::English;
-            assert_eq!(
-                unsupported.validated().unwrap_err(),
-                LiveTranslationConfigurationError::UnsupportedSourceLanguage
-            );
-        }
+        let mode = AlibabaRealtimeMode::LiveTranslate;
+        assert_eq!(
+            config
+                .clone()
+                .with_alibaba_realtime(mode, "")
+                .validated()
+                .unwrap_err(),
+            LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId
+        );
+        let active = config.clone().with_alibaba_realtime(mode, "test-workspace");
+        assert_eq!(
+            active.model_names(),
+            vec![mode.model_name().unwrap().to_string()]
+        );
+        assert!(active.validated().is_ok());
+        let mut unsupported = active;
+        unsupported.source_language = SourceLanguage::English;
+        assert_eq!(
+            unsupported.validated().unwrap_err(),
+            LiveTranslationConfigurationError::UnsupportedSourceLanguage
+        );
     }
 
     #[test]

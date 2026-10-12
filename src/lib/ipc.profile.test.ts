@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { profileSelect, profileUpdate, testProfileConnection } from "./ipc";
+import { openAlibabaSetupPage, profileSelect, profileUpdate, testProfileConnection } from "./ipc";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue({}) }));
 beforeEach(() => vi.mocked(invoke).mockClear());
 it("omits language patches on unrelated profile updates", async () => {
@@ -37,6 +37,12 @@ it.each([null, { sourceLanguage: "ja", targetLanguage: "zh" }] as const)("sends 
 
 
 it("saves experimental Alibaba mode and non-secret workspace as metadata", async () => {
-  await profileUpdate("p", undefined, { alibabaRealtimeMode: "omni", alibabaWorkspaceId: "test-workspace" });
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("profile_update", { profileId: "p", name: undefined, alibabaRealtimeMode: "omni", alibabaWorkspaceId: "test-workspace" });
+  await profileUpdate("p", undefined, { alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "test-workspace" });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("profile_update", { profileId: "p", name: undefined, alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "test-workspace" });
+});
+
+
+it.each(["apiKey", "workspace"] as const)("opens only the requested Alibaba setup page %s", async page => {
+  await openAlibabaSetupPage(page);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("open_alibaba_setup_page", { page });
 });

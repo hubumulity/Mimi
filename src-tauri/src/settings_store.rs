@@ -4119,7 +4119,7 @@ mod tests {
                 None,
                 None,
                 None,
-                Some(AlibabaRealtimeMode::Omni),
+                Some(AlibabaRealtimeMode::LiveTranslate),
                 Some(""),
             )
             .is_err());
