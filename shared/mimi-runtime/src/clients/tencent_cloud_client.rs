@@ -1442,11 +1442,12 @@ mod tests {
         client.connect().await.unwrap();
         publish.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(1), async {
+            let mut saw_current_preview = false;
             loop {
                 let event = events.recv().await.unwrap();
-                let current_preview = matches!(&event, LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { utterance_id, .. } if utterance_id == "B");
+                saw_current_preview |= matches!(&event, LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { utterance_id, .. } if utterance_id == "B");
                 controller.handle(event);
-                if current_preview && !controller.state.subtitles.history.is_empty() { break; }
+                if saw_current_preview && !controller.state.subtitles.history.is_empty() { break; }
             }
         }).await.unwrap();
         assert_eq!(controller.state.subtitles.history.len(), 1);
