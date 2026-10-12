@@ -420,7 +420,9 @@ fn volcano_decode(value: &Value) -> Result<Value, &'static str> {
         .ok_or("native_runtime_invalid_request")?;
     let frame = hex
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|bytes| {
             let pair = std::str::from_utf8(bytes).map_err(|_| "native_runtime_invalid_request")?;
             u8::from_str_radix(pair, 16).map_err(|_| "native_runtime_invalid_request")
