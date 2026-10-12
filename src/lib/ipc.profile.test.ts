@@ -42,7 +42,7 @@ it("saves experimental Alibaba mode and non-secret workspace as metadata", async
 });
 
 
-it.each(["apiKey", "workspace"] as const)("opens only the requested Alibaba setup page %s", async page => {
+it.each(["guide", "apiKey", "workspace"] as const)("opens only the requested Alibaba setup page %s", async page => {
   await openAlibabaSetupPage(page);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("open_alibaba_setup_page", { page });
 });

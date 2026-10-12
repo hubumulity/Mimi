@@ -78,7 +78,7 @@ export function sessionStart(): Promise<void> {
   return invoke("session_start");
 }
 
-export type AlibabaSetupPage = "apiKey" | "workspace";
+export type AlibabaSetupPage = "guide" | "apiKey" | "workspace";
 export function openAlibabaSetupPage(page: AlibabaSetupPage): Promise<void> {
   return invoke("open_alibaba_setup_page", { page });
 }

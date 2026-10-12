@@ -1937,15 +1937,17 @@ it.each([false, true])("blocks realtime mode edits during active or paused subti
 });
 
 
-it("keeps both Alibaba configuration links next to their controls without provider requests", async () => {
+it("keeps Alibaba configuration links next to their controls without provider requests", async () => {
   const realtime: ServiceProfile = { ...profile, credentialState: "present", speechCredentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "saved-workspace" };
   await render({ ...settings, profiles: [realtime] });
   await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
   expect(openAlibabaSetupPage).not.toHaveBeenCalled();
-  await act(async () => host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings .alibaba-setup-link')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings .settings-field:not(.service-stage__selector) .alibaba-setup-link')!.click());
   expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("workspace");
   await act(async () => host.querySelector<HTMLButtonElement>('.service-stage__heading .alibaba-setup-link')!.click());
   expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("apiKey");
+  await act(async () => host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings .service-stage__selector .alibaba-setup-link')!.click());
+  expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("guide");
   expect(testProfileConnection).not.toHaveBeenCalled();
   expect(actions.updateProfile).not.toHaveBeenCalled();
   expect(actions.saveProfileCredentials).not.toHaveBeenCalled();

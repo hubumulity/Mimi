@@ -18,12 +18,17 @@ Source/translation identities must remain linked before accepting a final pair.
 LiveTranslate ends with `session.finish` → `session.finished`. Original mode suppresses the displayed
 translation, but the model can still generate billable translation output.
 
-The desktop selector offers ASR + MT and **LiveTranslate (simultaneous)** with
+The desktop selector lists **LiveTranslate (simultaneous)** first, while
+keeping existing profiles on ASR + MT until explicitly
+changed. A missing workspace ID prevents saving LiveTranslate. Both options have
 short descriptions: ASR + MT recognizes first and uses a separately selectable
 text translator; LiveTranslate produces source and translated text in one model
-session as audio arrives. Its help identifies the experimental limits. Fixed
-official Beijing console links beside
-the setup fields lead to API Key and workspace management. The existing key may
+session as audio arrives. Its help identifies the experimental limits. A guide
+link beside the selector opens the official configuration documentation. Fixed
+Beijing console links beside the fields open API Key and workspace management.
+The user flow has three steps: get an existing workspace ID and matching key;
+select LiveTranslate, fill and save in Mimi; choose automatic recognition and
+Chinese/English translation, then start a short subtitle test. The existing key may
 be reused when it belongs to that workspace and has model-call access. The
 workspace ID is copied from an existing workspace or the `llm-xxx` prefix of its
 API Host; it is never inferred from a key or confused with a model ID. Mimi does

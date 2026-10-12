@@ -107,15 +107,13 @@ Android 正式会话与桌面使用同一个共享 Rust 服务工厂。旧 Kotli
 
 ### 在桌面端配置 LiveTranslate 同声传译
 
-这是可选实验功能，默认仍为「现有 ASR + MT」。同声模式把所选音源直接发给 `qwen3.8-livetranslate-flash-realtime`，显示文字字幕，跳过独立文字翻译，不播放译音。Mimi 当前只提供**北京地域、自动识别源语言、中文或英文翻译目标**。选择「原文」仅显示识别结果，模型仍可能生成译文并产生用量。Android 暂无此模式的选择入口。
+使用阿里同声字幕时，优先试「**LiveTranslate（同声传译）**」。这个实验模式使用 `qwen3.8-livetranslate-flash-realtime`，在同一音频会话中返回原文和译文，只显示文字，不播放译音。目前支持**北京地域、自动识别源语言、中文或英文翻译目标**。已有 ASR + MT 配置保持不变，Android 暂无选择入口。
 
-1. 停止字幕，打开「**设置 → 语音与翻译**」，选择一项 **Alibaba Cloud** 配置并编辑。
-2. 在「**识别与翻译**」中选择「**LiveTranslate（同声传译）**」。「获取 API Key」和「获取业务空间 ID」按钮会打开上面的北京官方控制台页面。
-3. 在业务空间管理中找到**现有 Key 所属的业务空间**，复制它的业务空间 ID。如果页面显示的是 **API Host**，如 `llm-xxx.cn-beijing.maas.aliyuncs.com`，只填前面的 `llm-xxx`。将它填入「**百炼北京业务空间 ID**」。这里不是模型名、API Key 或完整域名，通常无需新建业务空间。
-4. 已保存的 Key 如果属于该北京业务空间，可以直接复用。否则在 API Key 管理中复制一个现有的匹配 Key，填入 Mimi 的「API Key」。在业务空间的模型列表中确认 `qwen3.8-livetranslate-flash-realtime` 的「模型调用」权限；若 Key 设置了自定义权限，还要确认模型范围和 IP 白名单。没有权限时联系账号管理员，控制台账号与权限操作由你自行完成。
-5. 保存；如果该配置尚未启用，先选用它。选择自动识别、中文或英文翻译，播放一小段非敏感样本，再开启「**实时字幕**」，试完后停止。切回「现有 ASR + MT」会恢复已保存的独立文字翻译配置。
+1. 打开[北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace)和 [API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key)，也可以在 Mimi 的阿里设置中点击「**获取业务空间 ID**」「**获取 API Key**」。复制现有业务空间 ID 和同一空间的 Key。若看到 `llm-xxx.cn-beijing.maas.aliyuncs.com` 这样的 API Host，ID 只填 `llm-xxx`；已保存的匹配 Key 可以复用。
+2. 停止字幕，在「**设置 → 语音与翻译 → Alibaba Cloud → 识别与翻译**」选择「**LiveTranslate（同声传译）**」，填入业务空间 ID、API Key，保存并选用该配置。
+3. 识别语言选「**自动识别**」，翻译选「**中文或英文**」，播放一小段非敏感样本，再开启「**实时字幕**」，试完后停止。「现有 ASR + MT」仍可选，切回后会恢复已保存的独立文字翻译服务。
 
-同声 API 有独立的用量计费，开始前查看该模型的试用余量、有效期和付费状态；有 Key 不代表免费。连接检查成功仅说明该次请求通过，不代表字幕质量或长会话稳定性已经验证。
+若提示无权限，检查业务空间中该模型的「模型调用」权限，以及 Key 的自定义模型范围和 IP 限制。**API 调用可能收费**，开始前查看试用余量、有效期和付费状态。「原文」只隐藏译文，仍可能产生翻译用量。连接检查不代表字幕质量或长会话稳定性已经验证。
 
 官方依据：[LiveTranslate 接入与协议](https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime) · [地域与业务空间域名](https://help.aliyun.com/zh/model-studio/regions) · [业务空间与模型权限](https://help.aliyun.com/zh/model-studio/permission-management-overview) · [API Key 权限](https://help.aliyun.com/zh/model-studio/get-api-key) · [模型计费](https://help.aliyun.com/zh/model-studio/model-pricing) · [试用额度](https://help.aliyun.com/zh/model-studio/new-free-quota)
 

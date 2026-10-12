@@ -619,6 +619,10 @@ mod tests {
     fn alibaba_setup_pages_reject_arbitrary_urls() {
         for (value, expected) in [
             (
+                "guide",
+                "https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime",
+            ),
+            (
                 "apiKey",
                 "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
             ),
@@ -1631,6 +1635,7 @@ pub fn app_open_releases(app: AppHandle) -> Result<(), String> {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AlibabaSetupPage {
+    Guide,
     ApiKey,
     Workspace,
 }
@@ -1638,13 +1643,16 @@ pub enum AlibabaSetupPage {
 impl AlibabaSetupPage {
     fn url(self) -> &'static str {
         match self {
+            Self::Guide => {
+                "https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime"
+            }
             Self::ApiKey => "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
             Self::Workspace => "https://bailian.console.aliyun.com/cn-beijing/settings/workspace",
         }
     }
 }
 
-/// Only explicit user actions open one of the fixed Beijing setup pages.
+/// Only explicit user actions open one of the fixed official setup pages.
 #[tauri::command]
 pub fn open_alibaba_setup_page(app: AppHandle, page: AlibabaSetupPage) -> Result<(), String> {
     app.opener()

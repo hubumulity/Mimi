@@ -1,12 +1,19 @@
 # Try Alibaba LiveTranslate simultaneous interpretation
 
-This draft adds a selector under **Settings → Speech & Translation → edit an Alibaba
-configuration → Recognition and translation**. Keep **Current ASR + MT** for the
-current behavior. Choose **LiveTranslate (simultaneous)**. Enter the
-existing **Beijing Model Studio workspace ID**, save, then select that
-configuration. Use automatic source recognition and Chinese or English as the
-target. Saving alone starts no audio
-session. Switching back restores the independent MT configuration.
+This draft lists **LiveTranslate (simultaneous)** first under
+**Settings → Speech & Translation → Alibaba Cloud → Recognition and
+translation**. Existing profiles keep **Current ASR + MT** until explicitly
+changed; a workspace ID is required before LiveTranslate can be saved.
+
+1. Use **Get workspace ID** and **Get API key** to open the official Beijing
+   console and copy an existing workspace ID and its matching key.
+2. Choose LiveTranslate in Mimi, fill the workspace ID, reuse or enter the
+   matching key, save, and select the configuration.
+3. Choose automatic recognition and Chinese or English translation, play a
+   short non-sensitive sample, and start subtitles. Stop afterward.
+
+The configuration guide is linked beside the mode selector. Saving alone starts
+no audio session. Switching back restores the independent MT configuration.
 
 The API key stays in Mimi's existing private credential store. The workspace ID
 is non-secret metadata. LiveTranslate 3.8 uses a workspace-specific host in
