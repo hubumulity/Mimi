@@ -32,6 +32,34 @@ class SharedTranslationContractTest {
         assertEquals(case.getString("id"), case.get("expected"), actual.get("candidate"))
     }
 
+    @Test fun readablePreviewSequencesCrossActualJniWithoutProviderRequests() = cases("readablePreviewSequences") { case ->
+        val actual = NativeRuntimeConfiguration.exchange(JSONObject(case.toString()).put("operation", "readable_preview_sequence"))
+        assertTrue(case.getString("id"), case.getJSONObject("expected").similar(actual))
+    }
+
+    @Test fun invalidReadablePreviewSequencesHaveSanitizedNativeErrors() {
+        fun step() = JSONObject().put("draft", "synthetic-private-marker").put("allowIncomplete", false)
+        fun request(steps: org.json.JSONArray = org.json.JSONArray().put(step())) = JSONObject()
+            .put("operation", "readable_preview_sequence").put("minimumCharacters", 20).put("steps", steps)
+        val expandingQueries = org.json.JSONArray().put(JSONObject()
+            .put("draft", "S" + "\"".repeat(65_535)).put("allowIncomplete", true))
+        repeat(32) { expandingQueries.put(JSONObject().put("allowIncomplete", true)) }
+        val invalid = listOf(
+            request().put("minimumCharacters", 0),
+            request(expandingQueries),
+            request(org.json.JSONArray()),
+            request(org.json.JSONArray().put(step().put("allowIncomplete", "false"))),
+            request(org.json.JSONArray().put(step().put("admit", "true"))),
+            request(org.json.JSONArray().put(step().put("draft", "x".repeat(65_537)))),
+            request(org.json.JSONArray().put(step().put("reset", true))),
+            request(org.json.JSONArray().put(JSONObject().put("reset", false).put("allowIncomplete", false))),
+        )
+        for (value in invalid) {
+            val error = assertThrows(IllegalArgumentException::class.java) { NativeRuntimeConfiguration.exchange(value) }
+            assertEquals("native_runtime_invalid_request", error.message)
+        }
+    }
+
     @Test fun invalidPreviewCandidateFieldsHaveSanitizedNativeErrors() {
         fun request() = JSONObject().put("operation", "preview_candidate").put("minimumCharacters", 12)
             .put("opening", true).put("draft", "synthetic-private-marker")
