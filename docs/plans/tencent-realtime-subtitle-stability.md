@@ -69,5 +69,6 @@ unverified locally. Do not replace or stop an existing test application.
 
 Main already provides integrated Tencent recognition and translation. It has no
 Tencent ASR plus independently selected MT route to preserve as a second mode.
-A requested new mode selector must resolve that route explicitly before adding
-two labels for the same API or changing existing profiles' defaults.
+Keep the existing single service path and defaults; this repair changes only
+protocol admission, paired presentation and connection termination. Profile,
+preference and credential schemas require no migration.
