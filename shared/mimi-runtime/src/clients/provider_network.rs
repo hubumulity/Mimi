@@ -199,15 +199,11 @@ async fn websocket_configured(
             .ok_or_else(proxy_error)?;
         let route = network.route(&destination).map_err(|_| proxy_error())?;
         let mut socket = match route {
-            None => TcpStream::connect((destination_host.as_str(), destination_port))
-                .await
-                .map_err(|_| proxy_error())?,
+            None => connect_tcp(&destination_host, destination_port).await?,
             Some(proxy) => {
                 let proxy_host = host(&proxy)?;
                 let proxy_port = proxy.port_or_known_default().ok_or_else(proxy_error)?;
-                let mut socket = TcpStream::connect((proxy_host.as_str(), proxy_port))
-                    .await
-                    .map_err(|_| proxy_error())?;
+                let mut socket = connect_tcp(&proxy_host, proxy_port).await?;
                 match proxy.scheme() {
                     "http" => {
                         connect_tunnel(&mut socket, &destination_host, destination_port).await?
@@ -238,6 +234,16 @@ async fn websocket_configured(
     })
     .await
     .map_err(|_| proxy_error())?
+}
+
+async fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, Error> {
+    let socket = TcpStream::connect((host, port))
+        .await
+        .map_err(|_| proxy_error())?;
+    // Small audio/control frames should not wait for Nagle aggregation.
+    // Install the policy before CONNECT/SOCKS, destination TLS and WS upgrade.
+    socket.set_nodelay(true).map_err(|_| proxy_error())?;
+    Ok(socket)
 }
 
 fn proxy_error() -> Error {
@@ -362,7 +368,7 @@ async fn socks_tunnel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
     use tokio::net::TcpListener;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -380,6 +386,48 @@ mod tests {
             url: None,
         })
         .unwrap()
+    }
+
+    async fn assert_ordered_frames(socket: &mut WebSocketStream<TcpStream>) {
+        use tokio_tungstenite::tungstenite::Message;
+        for bytes in [b"first".as_slice(), b"second".as_slice()] {
+            assert_eq!(
+                socket.next().await.unwrap().unwrap(),
+                Message::Binary(bytes.to_vec().into())
+            );
+        }
+        let Message::Ping(payload) = socket.next().await.unwrap().unwrap() else {
+            panic!("expected synthetic health ping after the ordered data frames");
+        };
+        assert_eq!(payload.as_ref(), b"health");
+        socket.send(Message::Pong(payload)).await.unwrap();
+    }
+
+    async fn assert_low_latency_frame_exchange(
+        mut socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    ) {
+        use tokio_tungstenite::tungstenite::Message;
+        let MaybeTlsStream::Plain(tcp) = socket.get_ref() else {
+            panic!("expected the fixture's plaintext TCP connection");
+        };
+        assert!(
+            tcp.nodelay().unwrap(),
+            "the actual connected socket must disable Nagle"
+        );
+        for bytes in [b"first".as_slice(), b"second".as_slice()] {
+            socket
+                .send(Message::Binary(bytes.to_vec().into()))
+                .await
+                .unwrap();
+        }
+        socket
+            .send(Message::Ping(b"health".to_vec().into()))
+            .await
+            .unwrap();
+        assert_eq!(
+            socket.next().await.unwrap().unwrap(),
+            Message::Pong(b"health".to_vec().into())
+        );
     }
 
     #[test]
@@ -559,10 +607,7 @@ mod tests {
                 .unwrap();
             let (socket, _) = listener.accept().await.unwrap();
             let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
-            assert!(matches!(
-                websocket.next().await,
-                None | Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | Some(Err(_))
-            ));
+            assert_ordered_frames(&mut websocket).await;
         });
         let network = direct();
         let endpoint = url::Url::parse(&format!("http://{address}/path")).unwrap();
@@ -589,7 +634,7 @@ mod tests {
         )
         .await
         .unwrap();
-        drop(socket);
+        assert_low_latency_frame_exchange(socket).await;
         server.await.unwrap();
     }
 
@@ -619,14 +664,14 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            let _ = websocket.next().await;
+            assert_ordered_frames(&mut websocket).await;
         });
         let mut request = "ws://fixture.invalid/live".into_client_request().unwrap();
         request
             .headers_mut()
             .insert("authorization", "synthetic-service-key".parse().unwrap());
         let (socket, _) = websocket(request, &network).await.unwrap();
-        drop(socket);
+        assert_low_latency_frame_exchange(socket).await;
         server.await.unwrap();
     }
 
@@ -680,7 +725,7 @@ mod tests {
                 (3, b"fixture.invalid".as_slice(), 80)
             );
             let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
-            let _ = websocket.next().await;
+            assert_ordered_frames(&mut websocket).await;
         });
         let endpoint = url::Url::parse("http://fixture.invalid/path").unwrap();
         assert_eq!(
@@ -704,7 +749,7 @@ mod tests {
         )
         .await
         .unwrap();
-        drop(socket);
+        assert_low_latency_frame_exchange(socket).await;
         server.await.unwrap();
     }
 
