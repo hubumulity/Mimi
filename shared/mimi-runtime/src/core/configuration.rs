@@ -6,7 +6,10 @@ use crate::core::credentials::{
 use crate::core::models::{SourceLanguage, TargetLanguage, TranslationMode};
 use crate::core::network_proxy::{ProxyConfig, ProxyConfigError};
 use crate::core::protocols::qwen_mt::QwenMTModel;
-use crate::core::provider::{alibaba_workspace_id_is_valid, AlibabaRealtimeMode, ProviderCapabilities, ProviderKind, TextTranslation};
+use crate::core::provider::{
+    alibaba_workspace_id_is_valid, AlibabaRealtimeMode, ProviderCapabilities, ProviderKind,
+    TextTranslation,
+};
 use std::fmt;
 use thiserror::Error;
 
@@ -244,7 +247,11 @@ impl LiveTranslationConfiguration {
         self
     }
 
-    pub fn with_alibaba_realtime(mut self, mode: AlibabaRealtimeMode, workspace_id: impl Into<String>) -> Self {
+    pub fn with_alibaba_realtime(
+        mut self,
+        mode: AlibabaRealtimeMode,
+        workspace_id: impl Into<String>,
+    ) -> Self {
         self.alibaba_realtime_mode = mode;
         self.alibaba_workspace_id = workspace_id.into();
         self
@@ -263,7 +270,9 @@ impl LiveTranslationConfiguration {
     }
 
     pub fn capabilities(&self) -> ProviderCapabilities {
-        if self.provider == ProviderKind::AlibabaCloud && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled {
+        if self.provider == ProviderKind::AlibabaCloud
+            && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled
+        {
             return self.alibaba_realtime_mode.capabilities();
         }
         let route = self.text_credentials.as_ref().map_or_else(
@@ -288,8 +297,7 @@ impl LiveTranslationConfiguration {
                 return Err(LiveTranslationConfigurationError::UnsupportedAlibabaRealtime);
             }
             let workspace = self.alibaba_workspace_id.trim();
-            if !alibaba_workspace_id_is_valid(workspace)
-            {
+            if !alibaba_workspace_id_is_valid(workspace) {
                 return Err(LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId);
             }
         }
@@ -370,18 +378,37 @@ mod tests {
     fn experimental_realtime_configuration_requires_workspace_and_has_one_model() {
         use super::*;
         let config = LiveTranslationConfiguration::for_provider(
-            ProviderKind::AlibabaCloud, "synthetic-key", SourceLanguage::Automatic,
-            TargetLanguage::English, TranslationMode::Turbo,
+            ProviderKind::AlibabaCloud,
+            "synthetic-key",
+            SourceLanguage::Automatic,
+            TargetLanguage::English,
+            TranslationMode::Turbo,
         );
         assert_eq!(config.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
-        for mode in [AlibabaRealtimeMode::LiveTranslate, AlibabaRealtimeMode::Omni] {
-            assert_eq!(config.clone().with_alibaba_realtime(mode, "").validated().unwrap_err(), LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId);
+        for mode in [
+            AlibabaRealtimeMode::LiveTranslate,
+            AlibabaRealtimeMode::Omni,
+        ] {
+            assert_eq!(
+                config
+                    .clone()
+                    .with_alibaba_realtime(mode, "")
+                    .validated()
+                    .unwrap_err(),
+                LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId
+            );
             let active = config.clone().with_alibaba_realtime(mode, "test-workspace");
-            assert_eq!(active.model_names(), vec![mode.model_name().unwrap().to_string()]);
+            assert_eq!(
+                active.model_names(),
+                vec![mode.model_name().unwrap().to_string()]
+            );
             assert!(active.validated().is_ok());
             let mut unsupported = active;
             unsupported.source_language = SourceLanguage::English;
-            assert_eq!(unsupported.validated().unwrap_err(), LiveTranslationConfigurationError::UnsupportedSourceLanguage);
+            assert_eq!(
+                unsupported.validated().unwrap_err(),
+                LiveTranslationConfigurationError::UnsupportedSourceLanguage
+            );
         }
     }
 

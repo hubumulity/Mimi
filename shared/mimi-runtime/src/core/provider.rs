@@ -29,10 +29,19 @@ pub enum AlibabaRealtimeMode {
 }
 
 pub fn alibaba_workspace_id_is_valid(workspace: &str) -> bool {
-    !workspace.is_empty() && workspace.len() <= 63
-        && workspace.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        && workspace.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
-        && workspace.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+    !workspace.is_empty()
+        && workspace.len() <= 63
+        && workspace
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        && workspace
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && workspace
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
 }
 
 impl AlibabaRealtimeMode {
@@ -48,14 +57,17 @@ impl AlibabaRealtimeMode {
     pub fn capabilities(self) -> ProviderCapabilities {
         ProviderCapabilities {
             source_languages: vec![SourceLanguage::Automatic],
-            target_languages: vec![TargetLanguage::Original, TargetLanguage::SimplifiedChinese, TargetLanguage::English],
+            target_languages: vec![
+                TargetLanguage::Original,
+                TargetLanguage::SimplifiedChinese,
+                TargetLanguage::English,
+            ],
             translation_modes: vec![TranslationMode::Turbo],
             input_sample_rate_hz: 16_000,
             target_pairs: Vec::new(),
         }
     }
 }
-
 
 /// A stable identifier used in settings JSON and provider-scoped keychain
 /// account names. The serde values are part of the frontend contract.
@@ -850,7 +862,9 @@ impl ServiceProfile {
     }
 
     pub fn text_translation(&self) -> TextTranslation {
-        if self.provider == ProviderKind::AlibabaCloud && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled {
+        if self.provider == ProviderKind::AlibabaCloud
+            && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled
+        {
             return TextTranslation::FollowService;
         }
         self.text_translation
@@ -862,7 +876,9 @@ impl ServiceProfile {
     }
 
     pub fn capabilities(&self, target: TargetLanguage) -> ProviderCapabilities {
-        if self.provider == ProviderKind::AlibabaCloud && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled {
+        if self.provider == ProviderKind::AlibabaCloud
+            && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled
+        {
             return self.alibaba_realtime_mode.capabilities();
         }
         if self.provider.is_standalone_asr() {
@@ -976,26 +992,43 @@ mod tests {
 
     #[test]
     fn experimental_realtime_metadata_defaults_and_keeps_independent_route() {
-        let mut profile: ServiceProfile = serde_json::from_str(
-            r#"{"id":"legacy","name":"Alibaba","provider":"alibabaCloud"}"#,
-        ).unwrap();
+        let mut profile: ServiceProfile =
+            serde_json::from_str(r#"{"id":"legacy","name":"Alibaba","provider":"alibabaCloud"}"#)
+                .unwrap();
         assert_eq!(profile.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
         assert!(profile.alibaba_workspace_id.is_empty());
-        assert!(profile.set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, "").is_err());
+        assert!(profile
+            .set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, "")
+            .is_err());
         profile.text_translation = Some(TextTranslation::DeepLX);
-        profile.set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, " test-workspace ").unwrap();
+        profile
+            .set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, " test-workspace ")
+            .unwrap();
         let restored = profile.validated().unwrap();
         assert_eq!(restored.alibaba_workspace_id, "test-workspace");
         assert_eq!(restored.text_translation(), TextTranslation::FollowService);
         assert_eq!(restored.effective_provider(), ProviderKind::AlibabaCloud);
-        assert_eq!(restored.capabilities(TargetLanguage::English).source_languages, vec![SourceLanguage::Automatic]);
+        assert_eq!(
+            restored
+                .capabilities(TargetLanguage::English)
+                .source_languages,
+            vec![SourceLanguage::Automatic]
+        );
         assert_eq!(restored.text_translation, Some(TextTranslation::DeepLX));
-        profile.set_alibaba_realtime(AlibabaRealtimeMode::Disabled, "test-workspace").unwrap();
+        profile
+            .set_alibaba_realtime(AlibabaRealtimeMode::Disabled, "test-workspace")
+            .unwrap();
         assert_eq!(profile.text_translation(), TextTranslation::DeepLX);
         let serialized = serde_json::to_string(&restored).unwrap();
-        assert_eq!(serde_json::from_str::<ServiceProfile>(&serialized).unwrap(), restored);
-        let mut other = ServiceProfile::new("other", "Other", ProviderKind::OpenAIRealtime).unwrap();
-        assert!(other.set_alibaba_realtime(AlibabaRealtimeMode::Omni, "test-workspace").is_err());
+        assert_eq!(
+            serde_json::from_str::<ServiceProfile>(&serialized).unwrap(),
+            restored
+        );
+        let mut other =
+            ServiceProfile::new("other", "Other", ProviderKind::OpenAIRealtime).unwrap();
+        assert!(other
+            .set_alibaba_realtime(AlibabaRealtimeMode::Omni, "test-workspace")
+            .is_err());
     }
 
     #[test]
