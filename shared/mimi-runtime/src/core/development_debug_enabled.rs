@@ -152,6 +152,7 @@ impl ProviderObservation {
         let (event_kind, utterance_id, source_characters, translation_characters) = match event {
             E::SessionCreated => (K::SessionCreated, None, 0, 0),
             E::SessionUpdated => (K::SessionUpdated, None, 0, 0),
+            E::UtteranceRegistered { .. } => (K::Ignored, None, 0, 0),
             E::SourceDraft { text, .. } => (K::SourceDraft, None, text.chars().count(), 0),
             E::SourceFinal { text, .. } => (K::SourceFinal, None, text.chars().count(), 0),
             E::SourceUtteranceDraft {
@@ -194,6 +195,16 @@ impl ProviderObservation {
                 translation.chars().count(),
             ),
             E::SubtitlePreviewCleared => (K::PreviewCleared, None, 0, 0),
+            E::SubtitleIdentifiedPreviewPair {
+                source,
+                translation,
+                ..
+            } => (
+                K::PreviewPair,
+                None,
+                source.chars().count(),
+                translation.chars().count(),
+            ),
             E::TranslationDeferred(_) => (K::TranslationDeferred, None, 0, 0),
             E::TranslationDraft(text) => (K::TranslationDraft, None, 0, text.chars().count()),
             E::TranslationFinal(text) => (K::TranslationFinal, None, 0, text.chars().count()),

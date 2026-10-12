@@ -46,27 +46,33 @@
       },
       {
         "id": "draft",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source\",\"target_text\":\"合成译文\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":false}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source\",\"target_text\":\"合成译文\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":false,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": {
           "type": "draft",
           "source": "Synthetic source",
           "translation": "合成译文",
-          "language": "en"
+          "language": "en",
+          "sentenceId": "synthetic-sentence",
+          "startTimeMs": 0,
+          "endTimeMs": 800
         }
       },
       {
         "id": "atomic-final-pair",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"  Synthetic source.  \",\"target_text\":\" 合成译文。 \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"  Synthetic source.  \",\"target_text\":\" 合成译文。 \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": {
           "type": "finalPair",
           "source": "Synthetic source.",
           "translation": "合成译文。",
-          "language": "en"
+          "language": "en",
+          "sentenceId": "synthetic-sentence",
+          "startTimeMs": 0,
+          "endTimeMs": 800
         }
       },
       {
         "id": "blank-final-ignored",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"  \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"  \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": {
           "type": "ignored"
         }
@@ -101,42 +107,48 @@
       },
       {
         "id": "zero-final-draft-result",
-        "frame": "{\"code\":0,\"final\":0,\"result\":{\"source_text\":\"Synthetic source\",\"target_text\":\"合成译文\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":false}}",
+        "frame": "{\"code\":0,\"final\":0,\"result\":{\"source_text\":\"Synthetic source\",\"target_text\":\"合成译文\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":false,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": {
           "type": "draft",
           "source": "Synthetic source",
           "translation": "合成译文",
-          "language": "en"
+          "language": "en",
+          "sentenceId": "synthetic-sentence",
+          "startTimeMs": 0,
+          "endTimeMs": 800
         }
       },
       {
         "id": "zero-final-atomic-pair",
-        "frame": "{\"code\":0,\"final\":0,\"result\":{\"source_text\":\"  Synthetic source.  \",\"target_text\":\" 合成译文。 \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"final\":0,\"result\":{\"source_text\":\"  Synthetic source.  \",\"target_text\":\" 合成译文。 \",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": {
           "type": "finalPair",
           "source": "Synthetic source.",
           "translation": "合成译文。",
-          "language": "en"
+          "language": "en",
+          "sentenceId": "synthetic-sentence",
+          "startTimeMs": 0,
+          "endTimeMs": 800
         }
       },
       {
         "id": "missing-source-language",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": null
       },
       {
         "id": "invalid-language-label",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"source\":\"private label\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"source\":\"private label\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": null
       },
       {
         "id": "non-string-transcript",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":123,\"target_text\":\"合成译文。\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":123,\"target_text\":\"合成译文。\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":true,\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": null
       },
       {
         "id": "string-boolean-rejected",
-        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":\"true\"}}",
+        "frame": "{\"code\":0,\"result\":{\"source_text\":\"Synthetic source.\",\"target_text\":\"合成译文。\",\"source\":\"en\",\"target\":\"zh\",\"sentence_end\":\"true\",\"start_time\":0,\"end_time\":800},\"sentence_id\":\"synthetic-sentence\"}",
         "expected": null
       },
       {

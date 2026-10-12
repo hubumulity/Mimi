@@ -181,6 +181,17 @@ pub enum LiveTranslateServerEvent {
         is_final: bool,
         language: Option<String>,
     },
+    /// Reliable metadata only, published once before a sentence's drafts.
+    UtteranceRegistered {
+        utterance_id: String,
+    },
+    /// One complete replaceable provider result, preserving source ownership.
+    SubtitleIdentifiedPreviewPair {
+        utterance_id: String,
+        source: String,
+        translation: String,
+        language: Option<String>,
+    },
     SubtitleFinalPair {
         source: String,
         language: Option<String>,
@@ -257,11 +268,18 @@ impl LiveTranslateServerEvent {
                 source,
                 translation,
                 ..
+            }
+            | Self::SubtitleIdentifiedPreviewPair {
+                utterance_id,
+                source,
+                translation,
+                ..
             } => {
                 subtitle_text_within_limit(utterance_id)
                     && subtitle_text_within_limit(source)
                     && subtitle_text_within_limit(translation)
             }
+            Self::UtteranceRegistered { utterance_id } => subtitle_text_within_limit(utterance_id),
             _ => true,
         }
     }

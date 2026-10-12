@@ -141,6 +141,17 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             })
     }
 
+    /// Retains provider sentence order even when replaceable drafts coalesce.
+    /// Registration carries no caption, confirmation, or display mutation.
+    pub fn register_source_identity(&mut self, id: &str) {
+        if !id.trim().is_empty()
+            && crate::models::subtitle_text_within_limit(id)
+            && !self.discarded_source_ids.iter().any(|old| old == id)
+        {
+            self.identify_source(id);
+        }
+    }
+
     /// Presentation retention is platform-selected; persistence is independent.
     pub fn set_history_limit(&mut self, limit: usize) {
         self.max_history_count = limit;
@@ -1811,6 +1822,31 @@ mod tests {
 #[cfg(test)]
 mod common_state_tests {
     use super::*;
+
+    #[test]
+    fn reliable_identity_registration_is_bounded_and_does_not_change_subtitles() {
+        let mut reducer = SubtitleReducer::<NoopArchive>::new(6);
+        let before = reducer.snapshot.clone();
+        for index in 0..MAX_IDENTIFIED_SOURCES * 3 {
+            reducer.register_source_identity(&format!("sentence-{index}"));
+        }
+        assert_eq!(reducer.snapshot, before);
+        assert_eq!(reducer.identified_sources.len(), MAX_IDENTIFIED_SOURCES);
+        assert_eq!(reducer.discarded_source_ids.len(), MAX_IDENTIFIED_SOURCES);
+        assert!(reducer
+            .identified_sources
+            .iter()
+            .all(|item| !item.confirmed));
+        assert!(reducer.validate_state(6).is_ok());
+        reducer.register_source_identity("");
+        reducer.register_source_identity(&"x".repeat(crate::models::MAX_SUBTITLE_TEXT_BYTES + 1));
+        assert_eq!(reducer.identified_sources.len(), MAX_IDENTIFIED_SOURCES);
+        let last_id = format!("sentence-{}", MAX_IDENTIFIED_SOURCES * 3 - 1);
+        reducer.apply(SubtitleEvent::Clear);
+        reducer.register_source_identity(&last_id);
+        assert!(reducer.identified_sources.is_empty());
+        assert_eq!(reducer.snapshot, before);
+    }
 
     #[test]
     fn identified_owner_indexes_and_clear_tombstones_are_bounded_and_validated() {
