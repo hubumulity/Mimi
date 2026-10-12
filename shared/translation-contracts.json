@@ -51,8 +51,10 @@
           "type": "draft",
           "source": "Synthetic source",
           "translation": "合成译文",
-          "language": "en",
-          "sentenceId": "synthetic-sentence",
+          "language": "en"
+        },
+        "sentence": {
+          "id": "synthetic-sentence",
           "startTimeMs": 0,
           "endTimeMs": 800
         }
@@ -64,8 +66,10 @@
           "type": "finalPair",
           "source": "Synthetic source.",
           "translation": "合成译文。",
-          "language": "en",
-          "sentenceId": "synthetic-sentence",
+          "language": "en"
+        },
+        "sentence": {
+          "id": "synthetic-sentence",
           "startTimeMs": 0,
           "endTimeMs": 800
         }
@@ -112,8 +116,10 @@
           "type": "draft",
           "source": "Synthetic source",
           "translation": "合成译文",
-          "language": "en",
-          "sentenceId": "synthetic-sentence",
+          "language": "en"
+        },
+        "sentence": {
+          "id": "synthetic-sentence",
           "startTimeMs": 0,
           "endTimeMs": 800
         }
@@ -125,8 +131,10 @@
           "type": "finalPair",
           "source": "Synthetic source.",
           "translation": "合成译文。",
-          "language": "en",
-          "sentenceId": "synthetic-sentence",
+          "language": "en"
+        },
+        "sentence": {
+          "id": "synthetic-sentence",
           "startTimeMs": 0,
           "endTimeMs": 800
         }

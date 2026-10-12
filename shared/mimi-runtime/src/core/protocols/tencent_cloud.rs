@@ -611,14 +611,14 @@ mod tests {
                                 && (source_text.trim().is_empty() || target_text.trim().is_empty())
                         );
                     } else {
-                        assert_eq!(sentence.id, expected["sentenceId"].as_str().unwrap());
+                        assert_eq!(sentence.id, case["sentence"]["id"].as_str().unwrap());
                         assert_eq!(
                             sentence.start_time_ms,
-                            expected["startTimeMs"].as_u64().unwrap()
+                            case["sentence"]["startTimeMs"].as_u64().unwrap()
                         );
                         assert_eq!(
                             sentence.end_time_ms,
-                            expected["endTimeMs"].as_u64().unwrap()
+                            case["sentence"]["endTimeMs"].as_u64().unwrap()
                         );
                         assert_eq!(sentence_end, kind == "finalPair");
                         assert_eq!(source_text.trim(), expected["source"].as_str().unwrap());
