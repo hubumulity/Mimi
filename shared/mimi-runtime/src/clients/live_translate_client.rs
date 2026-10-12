@@ -32,6 +32,40 @@ const GENERIC_PROTOCOL_ERROR: &str = "The live translation service returned inva
 #[cfg(test)]
 const MAX_TRACKED_ITEMS: usize = mimi_core::live_pair_aligner::MAX_TRACKED_ITEMS;
 
+// Keep the one-second silence counter bounded using the project's Rust 1.88
+// API surface. Newer Rust deprecates fetch_update; its replacement is newer
+// than our MSRV.
+fn record_trailing_silence(counter: &AtomicUsize, bytes: usize) {
+    let mut current = counter.load(Ordering::SeqCst);
+    loop {
+        let next = current.saturating_add(bytes).min(32_000);
+        match counter.compare_exchange_weak(current, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn trailing_silence_count_stays_bounded_under_contention_and_overflow() {
+    let counter = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                for _ in 0..100 {
+                    record_trailing_silence(&counter, 20);
+                }
+            });
+        }
+    });
+    assert_eq!(counter.load(Ordering::SeqCst), 8_000);
+    record_trailing_silence(&counter, usize::MAX);
+    assert_eq!(counter.load(Ordering::SeqCst), 32_000);
+    record_trailing_silence(&counter, 1);
+    assert_eq!(counter.load(Ordering::SeqCst), 32_000);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum LiveTranslateClientError {
     #[error("credential_authentication_failed")]
@@ -348,11 +382,7 @@ impl LiveTranslateClient {
             .expect("audio append encoding cannot fail");
         self.send_text(message.to_string()).await?;
         if pcm_data.iter().all(|byte| *byte == 0) {
-            let _ = self.inner.trailing_silence_bytes.fetch_update(
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-                |current| Some(current.saturating_add(pcm_data.len()).min(32_000)),
-            );
+            record_trailing_silence(&self.inner.trailing_silence_bytes, pcm_data.len());
         } else {
             self.inner.trailing_silence_bytes.store(0, Ordering::SeqCst);
         }
