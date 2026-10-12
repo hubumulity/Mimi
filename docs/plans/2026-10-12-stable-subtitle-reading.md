@@ -25,7 +25,7 @@ not end-to-end speech latency. Geometry counters do not establish comfort.
 | Corroborated complete sentence prefixes | Withhold incomplete tails; translate a complete prefix retained by consecutive ASR observations | Local preview heuristic, not a final or accuracy guarantee |
 
 Use the third option in the shared independent-MT path. A non-resetting six-second
-rescue timer supplies a whole draft when no complete prefix is available. This
+rescue timer supplies a whole draft when no new complete prefix is available. This
 bound is a proposed tradeoff requiring continuous-reading validation; rescue
 previews may still revise. A new stable prefix takes precedence over rescue.
 Track actual HTTP progress so an already translated prefix neither repeatedly
@@ -69,9 +69,20 @@ prompt, wire protocol, VAD, recording default, version, tag or release change.
 3. Shared fixtures run in direct Rust and actual host JNI; Android projection
    covers original, translation and bilingual modes. Run architecture checks,
    canonical checks and Debug/Release JVM tests.
-4. Review existing continuous native clips qualitatively. A new same-segment
-   baseline/candidate run needs current authorization for service requests and
-   system-audio capture. Keep microphone and persistence off, Mac output muted,
-   and use `/Applications/mimi-dev.app`; do not replace formal/release bundles.
-5. Keep the PR reviewable and mark comfort acceptance pending until a comparable
-   continuous run and the user's reading feedback support the proposed default.
+4. The current authorization was used for bounded native attempts and a
+   24.0267-second PC caption-only video of the official Stanford clip from
+   180 seconds. Actual frames show source, translation and confirmed captions.
+   Three Ego baseline attempts had silent sent PCM; Android reached
+   MediaProjection but timed out before any scored playback phase. PC used
+   Qwen-MT Lite with English recognition; Android used Flash with automatic
+   recognition. These attempts do not establish a controlled or cross-device
+   comparison. Microphone, session history and audio recording stayed off;
+   evidence remains outside Git. Both development apps and preferences were
+   restored, Mac output remained muted and formal/release bundles were preserved.
+5. Keep PR #261 as a draft. The six-second tradeoff, continuous reading comfort,
+   controlled baseline comparison and Android live video remain pending. The PC
+   sample ended through a process watchdog, so graceful native Stop-tail
+   acceptance also remains separate from the local HTTP regression. Further
+   service/capture work uses the remaining current authorization or a new
+   explicitly granted scope; confirm valid input and obtain comparable continuous
+   reading feedback before accepting the default or merging.

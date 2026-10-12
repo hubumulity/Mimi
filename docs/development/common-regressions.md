@@ -89,6 +89,11 @@ Rules:
   If navigation remains unchanged, use Mimi's native menu → Settings to
   activate the window, then observe and retry the intended control. A window
   Raise alone did not restore input in the macOS 27 continuous-audio test.
+- For window-only caption recording, identify the current subtitle NSPanel and
+  its window ID afresh before using `screencapture -l <window-id>`. CGWindowList
+  `onScreen` and bounds alone do not prove the intended composition is captured.
+  Inspect a preflight first frame before live playback, then verify the actual
+  recorded frames contain the subtitle window.
 - All worktrees install to the same development path. A later launch from
   another worktree can replace the package, including with an older UI-only
   build, even when the application name, version and signing identity match.
