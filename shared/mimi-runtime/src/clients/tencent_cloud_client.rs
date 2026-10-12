@@ -524,6 +524,18 @@ impl TencentCloudClient {
     }
 
     pub async fn disconnect(&self) {
+        self.disconnect_with_generation(None).await;
+    }
+
+    async fn disconnect_with_generation(&self, expected_generation: Option<u64>) {
+        // The receive task uses this same gate for terminal state. Keep teardown
+        // serialized until its resources are retired, including a stale finish.
+        let _turn = self.inner.content_lock.lock().await;
+        if expected_generation
+            .is_some_and(|expected| self.inner.generation.load(Ordering::SeqCst) != expected)
+        {
+            return;
+        }
         self.inner.generation.fetch_add(1, Ordering::SeqCst);
         self.inner.ready.store(false, Ordering::SeqCst);
         self.inner.receive_ended.store(true, Ordering::SeqCst);
@@ -609,9 +621,7 @@ impl TencentCloudClient {
     }
 
     async fn disconnect_if_current(&self, generation: u64) {
-        if self.inner.generation.load(Ordering::SeqCst) == generation {
-            self.disconnect().await;
-        }
+        self.disconnect_with_generation(Some(generation)).await;
     }
 }
 
@@ -707,12 +717,15 @@ async fn receive_loop(mut context: ReceiveContext) {
     // Take only this generation's sink. A delayed old receive task must never
     // close a replacement connection. Keep the close bounded even if the peer
     // ignores the closing handshake.
-    if context.inner.generation.load(Ordering::SeqCst) != context.generation {
-        return;
+    {
+        let _turn = context.inner.content_lock.lock().await;
+        if context.inner.generation.load(Ordering::SeqCst) != context.generation {
+            return;
+        }
+        context.inner.ready.store(false, Ordering::SeqCst);
+        context.inner.receive_ended.store(true, Ordering::SeqCst);
+        context.inner.finish_notify.notify_waiters();
     }
-    context.inner.ready.store(false, Ordering::SeqCst);
-    context.inner.receive_ended.store(true, Ordering::SeqCst);
-    context.inner.finish_notify.notify_waiters();
     let close = async {
         let mut sink = context.inner.sink.lock().await;
         if context.inner.generation.load(Ordering::SeqCst) != context.generation {
@@ -1567,6 +1580,94 @@ mod tests {
             }
         }
         assert_eq!(errors, vec!["tencent_provider_6005"]);
+        client.disconnect().await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_serializes_generation_and_readiness_with_receive_state() {
+        let (client, _events) = test_client(|mut socket| {
+            Box::pin(async move {
+                socket
+                    .send(Message::Text(r#"{"code":0}"#.into()))
+                    .await
+                    .unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    if matches!(message, Message::Close(_)) {
+                        break;
+                    }
+                }
+            })
+        })
+        .await;
+        client.connect().await.unwrap();
+        let generation = client.inner.generation.load(Ordering::SeqCst);
+        let receive_state = client.inner.content_lock.lock().await;
+        let disconnecting = client.clone();
+        let mut stopped = tokio::spawn(async move {
+            disconnecting.disconnect().await;
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut stopped)
+                .await
+                .is_err()
+        );
+        assert_eq!(client.inner.generation.load(Ordering::SeqCst), generation);
+        assert!(client.inner.ready.load(Ordering::SeqCst));
+        drop(receive_state);
+        tokio::time::timeout(Duration::from_secs(1), stopped)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            client.inner.generation.load(Ordering::SeqCst),
+            generation + 1
+        );
+        assert!(!client.inner.ready.load(Ordering::SeqCst));
+        assert!(client.inner.receive_ended.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn stale_finish_rechecks_generation_after_waiting_for_receive_state() {
+        let (client, _events) = test_client(|mut socket| {
+            Box::pin(async move {
+                socket
+                    .send(Message::Text(r#"{"code":0}"#.into()))
+                    .await
+                    .unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    if matches!(message, Message::Close(_)) {
+                        break;
+                    }
+                }
+            })
+        })
+        .await;
+        client.connect().await.unwrap();
+        let generation = client.inner.generation.load(Ordering::SeqCst);
+        let receive_state = client.inner.content_lock.lock().await;
+        let finishing = client.clone();
+        let mut retired = tokio::spawn(async move {
+            finishing.disconnect_if_current(generation).await;
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut retired)
+                .await
+                .is_err()
+        );
+        // Simulate a newer generation taking ownership while the old finish
+        // waits at the same state gate used by connect/disconnect.
+        client.inner.generation.fetch_add(1, Ordering::SeqCst);
+        drop(receive_state);
+        tokio::time::timeout(Duration::from_secs(1), retired)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            client.inner.generation.load(Ordering::SeqCst),
+            generation + 1
+        );
+        assert!(client.inner.ready.load(Ordering::SeqCst));
+        assert!(client.inner.sink.lock().await.is_some());
         client.disconnect().await;
     }
 
