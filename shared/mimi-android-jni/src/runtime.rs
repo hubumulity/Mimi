@@ -13,7 +13,10 @@ use mimi_runtime::{
         configuration::LiveTranslationConfiguration,
         models::{SessionStatus, SourceLanguage, TargetLanguage, TranslationMode},
         network_proxy::ProxyConfig,
-        protocols::live_translate::LiveTranslateServerEvent,
+        protocols::{
+            live_translate::LiveTranslateServerEvent,
+            volcano_engine::{VolcanoEngineEndpoint, VolcanoEngineServerEvent},
+        },
         provider::{ProviderKind, ProviderPreferences, TextTranslation},
         recovery::{
             advance_lifecycle_sequence_if_current, provider_error_is_retryable,
@@ -405,6 +408,46 @@ fn probes() -> &'static Mutex<HashMap<u64, Arc<TextProbe>>> {
     PROBES.get_or_init(Default::default)
 }
 
+// An offline contract view of the shared wire decoder. This never creates a
+// provider, session or audio pipeline; protocol rejection is represented by null.
+fn volcano_decode(value: &Value) -> Result<Value, &'static str> {
+    let hex = value["hex"]
+        .as_str()
+        .filter(|hex| {
+            hex.len() <= VolcanoEngineEndpoint::MAXIMUM_SERVER_FRAME_BYTES * 2
+                && hex.len().is_multiple_of(2)
+        })
+        .ok_or("native_runtime_invalid_request")?;
+    let frame = hex
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|bytes| {
+            let pair = std::str::from_utf8(bytes).map_err(|_| "native_runtime_invalid_request")?;
+            u8::from_str_radix(pair, 16).map_err(|_| "native_runtime_invalid_request")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let event = VolcanoEngineServerEvent::decode(&frame).ok().map(|event| match event {
+        VolcanoEngineServerEvent::SourceSubtitleStarted { start_time_ms } =>
+            json!({"type":"sourceStart","startTimeMs":start_time_ms}),
+        VolcanoEngineServerEvent::SourceSubtitleDraft(text) =>
+            json!({"type":"sourceDraft","text":text}),
+        VolcanoEngineServerEvent::SourceSubtitleFinal { text, start_time_ms, end_time_ms } =>
+            json!({"type":"sourceFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms}),
+        VolcanoEngineServerEvent::TranslationSubtitleStarted { start_time_ms } =>
+            json!({"type":"translationStart","startTimeMs":start_time_ms}),
+        VolcanoEngineServerEvent::TranslationSubtitleDraft(text) =>
+            json!({"type":"translationDraft","text":text}),
+        VolcanoEngineServerEvent::TranslationSubtitleFinal { text, start_time_ms, end_time_ms } =>
+            json!({"type":"translationFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms}),
+        VolcanoEngineServerEvent::SessionStarted => json!({"type":"sessionStarted"}),
+        VolcanoEngineServerEvent::SessionFinished => json!({"type":"sessionFinished"}),
+        VolcanoEngineServerEvent::SessionFailed { status_code } =>
+            json!({"type":"sessionFailed","statusCode":status_code}),
+        VolcanoEngineServerEvent::Ignored { event } => json!({"type":"ignored","event":event}),
+    });
+    Ok(json!({"event":event}))
+}
+
 pub fn exchange(request: &str) -> Result<String, &'static str> {
     if request.len() > MAX_REQUEST {
         return Err("native_runtime_invalid_request");
@@ -419,6 +462,7 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
             json!({"snapshotPublishIntervalMs":mimi_runtime::core::health::SNAPSHOT_PUBLISH_INTERVAL.as_millis() as u64,
                 "sessionFinishTimeoutMs":mimi_runtime::core::health::SESSION_FINISH_TIMEOUT.as_millis() as u64})
         }
+        "volcano_decode" => volcano_decode(&value)?,
         "preview_candidate" => {
             let minimum = value["minimumCharacters"]
                 .as_u64()
@@ -858,6 +902,37 @@ mod tests {
         assert_eq!(snapshot["displayPair"]["source"], "Complete B");
         assert!(snapshot["realtimePreview"].is_null());
     }
+    #[test]
+    fn volcano_timing_contracts_cross_native_exchange_without_network() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../../translation-contracts.json")).unwrap();
+        let cases = contract["volcanoSubtitleTimingEvents"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let request = json!({"operation":"volcano_decode","hex":case["hex"]});
+            let response: Value =
+                serde_json::from_str(&exchange(&request.to_string()).unwrap()).unwrap();
+            assert_eq!(response["event"], case["expected"], "{}", case["id"]);
+        }
+    }
+
+    #[test]
+    fn invalid_volcano_decode_requests_have_content_free_errors() {
+        for hex in [
+            Value::Null,
+            json!(12),
+            json!("0"),
+            json!("synthetic-private-marker"),
+            json!("日"),
+            json!("00".repeat(VolcanoEngineEndpoint::MAXIMUM_SERVER_FRAME_BYTES + 1)),
+        ] {
+            assert_eq!(
+                exchange(&json!({"operation":"volcano_decode","hex":hex}).to_string()).unwrap_err(),
+                "native_runtime_invalid_request"
+            );
+        }
+    }
+
     #[test]
     fn malformed_native_requests_and_pcm_have_content_free_errors() {
         assert_eq!(

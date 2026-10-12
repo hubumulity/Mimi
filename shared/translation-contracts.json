@@ -15656,6 +15656,184 @@
       "expected": null
     }
   ],
+  "volcanoSubtitleTimingEvents": [
+    {
+      "id": "sourceStart-omitted-zero",
+      "hex": "108a05",
+      "expected": {
+        "type": "sourceStart",
+        "startTimeMs": 0
+      }
+    },
+    {
+      "id": "sourceStart-explicit-zero",
+      "hex": "108a052800",
+      "expected": {
+        "type": "sourceStart",
+        "startTimeMs": 0
+      }
+    },
+    {
+      "id": "translationStart-omitted-zero",
+      "hex": "108d05",
+      "expected": {
+        "type": "translationStart",
+        "startTimeMs": 0
+      }
+    },
+    {
+      "id": "translationStart-explicit-zero",
+      "hex": "108d052800",
+      "expected": {
+        "type": "translationStart",
+        "startTimeMs": 0
+      }
+    },
+    {
+      "id": "sourceFinal-omitted-zero-empty",
+      "hex": "108c05",
+      "expected": {
+        "type": "sourceFinal",
+        "text": "",
+        "startTimeMs": 0,
+        "endTimeMs": 0
+      }
+    },
+    {
+      "id": "sourceFinal-explicit-zero-empty",
+      "hex": "108c0528003000",
+      "expected": {
+        "type": "sourceFinal",
+        "text": "",
+        "startTimeMs": 0,
+        "endTimeMs": 0
+      }
+    },
+    {
+      "id": "sourceFinal-omitted-start-zero",
+      "hex": "108c05220a53796e7468657469632e30c801",
+      "expected": {
+        "type": "sourceFinal",
+        "text": "Synthetic.",
+        "startTimeMs": 0,
+        "endTimeMs": 200
+      }
+    },
+    {
+      "id": "sourceFinal-explicit-start-zero",
+      "hex": "108c05220a53796e7468657469632e280030c801",
+      "expected": {
+        "type": "sourceFinal",
+        "text": "Synthetic.",
+        "startTimeMs": 0,
+        "endTimeMs": 200
+      }
+    },
+    {
+      "id": "translationFinal-omitted-zero-empty",
+      "hex": "108f05",
+      "expected": {
+        "type": "translationFinal",
+        "text": "",
+        "startTimeMs": 0,
+        "endTimeMs": 0
+      }
+    },
+    {
+      "id": "translationFinal-explicit-zero-empty",
+      "hex": "108f0528003000",
+      "expected": {
+        "type": "translationFinal",
+        "text": "",
+        "startTimeMs": 0,
+        "endTimeMs": 0
+      }
+    },
+    {
+      "id": "translationFinal-omitted-start-zero",
+      "hex": "108f05220a53796e7468657469632e30c801",
+      "expected": {
+        "type": "translationFinal",
+        "text": "Synthetic.",
+        "startTimeMs": 0,
+        "endTimeMs": 200
+      }
+    },
+    {
+      "id": "translationFinal-explicit-start-zero",
+      "hex": "108f05220a53796e7468657469632e280030c801",
+      "expected": {
+        "type": "translationFinal",
+        "text": "Synthetic.",
+        "startTimeMs": 0,
+        "endTimeMs": 200
+      }
+    },
+    {
+      "id": "sourceDraft-no-inferred-zero-owner",
+      "hex": "108b05220953796e746865746963",
+      "expected": {
+        "type": "sourceDraft",
+        "text": "Synthetic"
+      }
+    },
+    {
+      "id": "translationDraft-no-inferred-zero-owner",
+      "hex": "108e05220953796e746865746963",
+      "expected": {
+        "type": "translationDraft",
+        "text": "Synthetic"
+      }
+    },
+    {
+      "id": "sourceStart-maximum-clock",
+      "hex": "108a0528ffffffff07",
+      "expected": {
+        "type": "sourceStart",
+        "startTimeMs": 2147483647
+      }
+    },
+    {
+      "id": "duplicate-start",
+      "hex": "108a0528002800",
+      "expected": null
+    },
+    {
+      "id": "duplicate-end",
+      "hex": "108c0530003000",
+      "expected": null
+    },
+    {
+      "id": "negative-start",
+      "hex": "108a0528ffffffffffffffffff01",
+      "expected": null
+    },
+    {
+      "id": "negative-end",
+      "hex": "108f0530ffffffffffffffffff01",
+      "expected": null
+    },
+    {
+      "id": "overflow-start",
+      "hex": "108d05288080808008",
+      "expected": null
+    },
+    {
+      "id": "overflow-end",
+      "hex": "108c05308080808008",
+      "expected": null
+    },
+    {
+      "id": "wrong-time-wire-type",
+      "hex": "108a052a00",
+      "expected": null
+    },
+    {
+      "id": "truncated-time",
+      "hex": "108c052880",
+      "expected": null
+    }
+  ],
   "volcanoSubtitleSequences": [
     {
       "id": "incremental-unicode-empty-and-new-sentence",
@@ -15664,20 +15842,20 @@
         "108b052206e59088e68890",
         "108b05220ce38386e382b9e38388e38082",
         "108b05",
-        "108c052212e59088e68890e38386e382b9e38388e38082286430c801",
+        "108c052212e59088e68890e38386e382b9e38388e3808230c801",
         "108d05",
         "108e052206e59088e68890",
         "108e052209e6b58be8af95e38082",
         "108e05",
-        "108f05220fe59088e68890e6b58be8af95e38082286430c801",
-        "108a05",
+        "108f05220fe59088e68890e6b58be8af95e3808230c801",
+        "108a0528fa01",
         "108b052206e7a0b4e6a384",
-        "108a05",
+        "108a0528ac02",
         "108b05220ce6aca1e381aee69687e38082",
         "108c05220ce6aca1e381aee69687e3808228ac02309003",
-        "108d05",
+        "108d0528fa01",
         "108e052206e4b8a2e5bc83",
-        "108d05",
+        "108d0528ac02",
         "108e05220ce4b88be4b880e58fa5e38082",
         "108f05220ce4b88be4b880e58fa5e3808228ac02309003"
       ],

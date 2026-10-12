@@ -272,6 +272,30 @@ impl VolcanoSubtitlePairCommitter {
                 self.discard_source = false;
                 return false;
             }
+            if self.source_owner == Some(owner)
+                && !self.source_in_progress
+                && !self
+                    .sources
+                    .iter()
+                    .any(|pending| pending.source_owner == Some(owner))
+                && self
+                    .source_blocks
+                    .iter()
+                    .any(|block| block.owner == owner && block.finished)
+            {
+                // An empty END supplied no final text or durable pair. The
+                // same current clock may resume without creating a new owner.
+                // Retired clocks were rejected above; older owners and any
+                // pending source final remain closed.
+                self.source_blocks
+                    .iter_mut()
+                    .find(|block| block.owner == owner)
+                    .unwrap()
+                    .finished = false;
+                self.source_in_progress = true;
+                self.discard_source = false;
+                return true;
+            }
             // A known old START cannot reopen its text or replace an active B.
             self.discard_source = true;
             return false;
@@ -1856,7 +1880,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_end_only_before_b_start_preserves_admitted_and_queued_b() {
+    async fn ownership_omitted_zero_a_before_b_preserves_admitted_queued_and_stopping_b() {
         for (drain_before_final, stopping) in [(false, false), (true, false), (true, true)] {
             let (_client, context, mut events, _server) = ownership_context().await;
             let mut controller = crate::core::session::TranslationSessionController::default();
@@ -1864,7 +1888,7 @@ mod tests {
                 server_event(EVENT_SOURCE_SUBTITLE_START as u64, None),
                 server_event(
                     EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
-                    Some("Synthetic anonymous A"),
+                    Some("Synthetic zero A"),
                 ),
                 started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, 1000),
                 server_event(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("Synthetic B")),
@@ -1879,7 +1903,7 @@ mod tests {
                 controller.begin_stopping();
             }
             for (event, text) in [
-                (EVENT_SOURCE_SUBTITLE_END, "Synthetic anonymous A."),
+                (EVENT_SOURCE_SUBTITLE_END, "Synthetic zero A."),
                 (EVENT_TRANSLATION_SUBTITLE_END, "合成 A。"),
             ] {
                 let mut wire = server_event(event as u64, Some(text));
@@ -1890,9 +1914,9 @@ mod tests {
             let snapshot = &controller.state.subtitles;
             assert_eq!(snapshot.source.text, "Synthetic B");
             assert_eq!(snapshot.history.len(), 1);
-            assert_eq!(snapshot.history[0].source, "Synthetic anonymous A.");
+            assert_eq!(snapshot.history[0].source, "Synthetic zero A.");
             let pair = snapshot.display_pair.as_ref().unwrap();
-            assert_eq!(pair.source, "Synthetic anonymous A.");
+            assert_eq!(pair.source, "Synthetic zero A.");
             assert_ne!(snapshot.source.utterance_id, pair.utterance_id);
             let committer = context.inner.committer.lock().await;
             assert_eq!(committer.source_owner, Some(b_owner));
@@ -1913,14 +1937,253 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ownership_late_a_end_does_not_clear_anonymous_translation_b() {
+    async fn ownership_omitted_and_explicit_zero_starts_keep_first_preview_and_late_final_owned() {
+        for omitted in [false, true] {
+            for translation_first in [false, true] {
+                let (_client, context, mut events, _server) = ownership_context().await;
+                let mut controller = crate::core::session::TranslationSessionController::default();
+                let start = |event| {
+                    if omitted {
+                        server_event(event, None)
+                    } else {
+                        started_server_event(event, 0)
+                    }
+                };
+                let source = [
+                    start(EVENT_SOURCE_SUBTITLE_START as u64),
+                    server_event(
+                        EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                        Some("Synthetic zero A"),
+                    ),
+                ];
+                let translation = [
+                    start(EVENT_TRANSLATION_SUBTITLE_START as u64),
+                    server_event(EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64, Some("合成零 A")),
+                ];
+                let lanes = if translation_first {
+                    [translation, source]
+                } else {
+                    [source, translation]
+                };
+                for lane in lanes {
+                    for wire in lane {
+                        handle_wire(&context, wire).await;
+                        drain_into(&mut events, &mut controller);
+                    }
+                }
+                let snapshot = &controller.state.subtitles;
+                assert_eq!(snapshot.source.text, "Synthetic zero A");
+                assert_eq!(snapshot.translation.text, "合成零 A");
+                assert!(snapshot.source.utterance_id.is_some());
+                assert_eq!(
+                    snapshot.source.utterance_id,
+                    snapshot.translation.utterance_id
+                );
+                let preview = snapshot.realtime_preview.as_ref().unwrap();
+                assert_eq!(preview.source.text, "Synthetic zero A");
+                assert_eq!(preview.translation.text, "合成零 A");
+                assert_eq!(
+                    preview.source.utterance_id,
+                    preview.translation.utterance_id
+                );
+                for wire in [
+                    started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, 300),
+                    server_event(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("Synthetic B")),
+                    started_server_event(EVENT_TRANSLATION_SUBTITLE_START as u64, 300),
+                    server_event(EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64, Some("合成 B")),
+                ] {
+                    handle_wire(&context, wire).await;
+                }
+                for (event, text) in [
+                    (EVENT_SOURCE_SUBTITLE_END, "Synthetic zero A."),
+                    (EVENT_TRANSLATION_SUBTITLE_END, "合成零 A。"),
+                ] {
+                    let mut wire = server_event(event as u64, Some(text));
+                    if !omitted {
+                        write_varint_field(&mut wire, 5, 0);
+                    }
+                    write_varint_field(&mut wire, 6, 200);
+                    handle_wire(&context, wire).await;
+                }
+                drain_into(&mut events, &mut controller);
+                let snapshot = &controller.state.subtitles;
+                assert_eq!(snapshot.source.text, "Synthetic B");
+                assert_eq!(snapshot.translation.text, "合成 B");
+                assert_eq!(
+                    snapshot.source.utterance_id,
+                    snapshot.translation.utterance_id
+                );
+                assert_eq!(snapshot.history.len(), 1);
+                assert_eq!(snapshot.history[0].source, "Synthetic zero A.");
+                assert_eq!(snapshot.history[0].translation, "合成零 A。");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn ownership_empty_zero_duration_end_never_confirms_and_stop_keeps_a_real_tail() {
+        for stopping in [false, true] {
+            for tail_start in [0, 300] {
+                let (_client, context, mut events, _server) = ownership_context().await;
+                let mut controller = crate::core::session::TranslationSessionController::default();
+                for event in [
+                    EVENT_SOURCE_SUBTITLE_START,
+                    EVENT_TRANSLATION_SUBTITLE_START,
+                    EVENT_SOURCE_SUBTITLE_END,
+                    EVENT_TRANSLATION_SUBTITLE_END,
+                ] {
+                    handle_wire(&context, server_event(event as u64, None)).await;
+                    drain_into(&mut events, &mut controller);
+                }
+                assert!(controller.state.subtitles.history.is_empty());
+                assert!(controller.state.subtitles.display_pair.is_none());
+                for wire in [
+                    started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, tail_start),
+                    server_event(
+                        EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                        Some("Synthetic real tail"),
+                    ),
+                    started_server_event(EVENT_TRANSLATION_SUBTITLE_START as u64, tail_start),
+                    server_event(
+                        EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64,
+                        Some("合成真实尾句"),
+                    ),
+                ] {
+                    handle_wire(&context, wire).await;
+                    drain_into(&mut events, &mut controller);
+                }
+                let preview = controller
+                    .state
+                    .subtitles
+                    .realtime_preview
+                    .as_ref()
+                    .unwrap();
+                assert_eq!(preview.source.text, "Synthetic real tail");
+                assert_eq!(preview.translation.text, "合成真实尾句");
+                assert_eq!(
+                    preview.source.utterance_id,
+                    preview.translation.utterance_id
+                );
+                if stopping {
+                    controller.begin_stopping();
+                }
+                for wire in [
+                    server_event(EVENT_SOURCE_SUBTITLE_END as u64, None),
+                    server_event(EVENT_TRANSLATION_SUBTITLE_END as u64, None),
+                    timed_server_event(
+                        EVENT_SOURCE_SUBTITLE_END as u64,
+                        "Synthetic real tail.",
+                        tail_start,
+                        400,
+                    ),
+                    timed_server_event(
+                        EVENT_TRANSLATION_SUBTITLE_END as u64,
+                        "合成真实尾句。",
+                        tail_start,
+                        400,
+                    ),
+                ] {
+                    handle_wire(&context, wire).await;
+                    drain_into(&mut events, &mut controller);
+                }
+                assert_eq!(controller.state.subtitles.history.len(), 1);
+                assert_eq!(
+                    controller.state.subtitles.history[0].source,
+                    "Synthetic real tail."
+                );
+                assert!(controller.state.subtitles.display_pair_final);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn ownership_zero_start_cannot_reopen_pending_confirmed_or_older_source() {
+        let (_client, context, mut events, _server) = ownership_context().await;
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        for wire in [
+            server_event(EVENT_SOURCE_SUBTITLE_START as u64, None),
+            server_event(
+                EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                Some("Synthetic zero A"),
+            ),
+            timed_server_event(
+                EVENT_SOURCE_SUBTITLE_END as u64,
+                "Synthetic zero A.",
+                0,
+                200,
+            ),
+            server_event(EVENT_SOURCE_SUBTITLE_START as u64, None),
+            server_event(
+                EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                Some("Synthetic pending replay"),
+            ),
+        ] {
+            handle_wire(&context, wire).await;
+            drain_into(&mut events, &mut controller);
+        }
+        assert_eq!(controller.state.subtitles.source.text, "Synthetic zero A.");
+        assert!(context.inner.committer.lock().await.discard_source);
+        handle_wire(
+            &context,
+            timed_server_event(EVENT_TRANSLATION_SUBTITLE_END as u64, "合成零 A。", 0, 200),
+        )
+        .await;
+        drain_into(&mut events, &mut controller);
+        for wire in [
+            server_event(EVENT_SOURCE_SUBTITLE_START as u64, None),
+            server_event(
+                EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                Some("Synthetic confirmed replay"),
+            ),
+        ] {
+            handle_wire(&context, wire).await;
+            drain_into(&mut events, &mut controller);
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(controller.state.subtitles.source.text, "Synthetic zero A.");
+        for wire in [
+            started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, 300),
+            server_event(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("Synthetic B")),
+            server_event(EVENT_SOURCE_SUBTITLE_START as u64, None),
+            server_event(
+                EVENT_SOURCE_SUBTITLE_RESPONSE as u64,
+                Some("Synthetic older replay"),
+            ),
+        ] {
+            handle_wire(&context, wire).await;
+            drain_into(&mut events, &mut controller);
+        }
+        assert_eq!(controller.state.subtitles.source.text, "Synthetic B");
+        assert_eq!(
+            context.inner.committer.lock().await.source_draft,
+            "Synthetic B"
+        );
+    }
+
+    #[tokio::test]
+    async fn ownership_internal_unknown_start_does_not_claim_late_a_translation_end() {
         let (_client, context, mut events, _server) = ownership_context().await;
         let mut controller = crate::core::session::TranslationSessionController::default();
         for wire in [
             started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, 100),
             started_server_event(EVENT_SOURCE_SUBTITLE_START as u64, 300),
             server_event(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("Synthetic B")),
-            server_event(EVENT_TRANSLATION_SUBTITLE_START as u64, None),
+        ] {
+            handle_wire(&context, wire).await;
+            drain_into(&mut events, &mut controller);
+        }
+        // Internal unknown timing is a synthetic compatibility case. An
+        // omitted scalar in an actual START wire frame means zero instead.
+        assert!(
+            !handle_server_event(
+                &context,
+                VolcanoEngineServerEvent::TranslationSubtitleStarted {
+                    start_time_ms: None
+                }
+            )
+            .await
+        );
+        for wire in [
             server_event(EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64, Some("匿名 B")),
             timed_server_event(EVENT_SOURCE_SUBTITLE_END as u64, "Synthetic A.", 100, 200),
             timed_server_event(EVENT_TRANSLATION_SUBTITLE_END as u64, "合成 A。", 100, 200),
@@ -2066,7 +2329,7 @@ mod tests {
     }
 
     #[test]
-    fn ownership_missing_start_or_time_never_guesses_the_translation_owner() {
+    fn ownership_internal_unknown_time_never_guesses_the_translation_owner() {
         let mut committer = VolcanoSubtitlePairCommitter::new(SourceLanguage::English);
         assert!(committer.start_source(None));
         let owner = committer.source_owner.unwrap();
@@ -2760,7 +3023,13 @@ mod tests {
                         | LiveTranslateServerEvent::SourceDraft { text, .. } => {
                             source_drafts.push(text)
                         }
-                        LiveTranslateServerEvent::TranslationDraft(text) => {
+                        LiveTranslateServerEvent::UtteranceText {
+                            role: UtteranceRole::Translation,
+                            is_final: false,
+                            text,
+                            ..
+                        }
+                        | LiveTranslateServerEvent::TranslationDraft(text) => {
                             translation_drafts.push(text)
                         }
                         LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {

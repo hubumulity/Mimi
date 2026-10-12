@@ -20,6 +20,17 @@ END intervals became an unidentified final pair, which could overwrite a
 newer source draft. The focused accepted-wire probe demonstrates this state;
 native frequency and visible reading impact remain separate verification.
 
+The official document's [Protobuf archive](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/6493ecf3887246e3a99968961f716499~tplv-goo7wpa0wc-image.image)
+contains `protos/products/understanding/ast/ast_service.proto`: line 1 specifies
+`proto3`, and lines 40–41 declare `int32 start_time = 5` and `int32 end_time = 6`
+without `optional`. Its SHA-256 is
+`1e30c61ef9c91d139afd3000f96beeb6ee02f27944f957227ab44c9e986ef576`.
+The [official Protobuf presence rules](https://protobuf.dev/programming-guides/field_presence/)
+define an omitted implicit numeric scalar as zero. START and END therefore use
+zero for omitted time fields; retaining them as unknown would lose valid first
+block correlation and hide its paired preview. RESPONSE remains an unowned
+fragment unless an actual START already established its lane's identity.
+
 The owning implementation is `shared/mimi-runtime/src/core/protocols/volcano_engine.rs`
 and `shared/mimi-runtime/src/clients/volcano_engine_client.rs`. A minimal shared
 `SourceBoundary` event also registers explicit source order reliably, because
@@ -32,8 +43,10 @@ prefix heuristic to Volcano.
 
 ## Ownership rules
 
-1. Preserve optional START `start_time_ms`, including explicit zero. Do not infer
-   a zero timestamp from an omitted field without schema evidence.
+1. Preserve START/END `start_time_ms` and END `end_time_ms`, applying the official
+   proto3 scalar default zero when omitted. Preserve explicit values and reject
+   duplicate, malformed, negative and out-of-range fields. Do not give RESPONSE
+   a zero block identity just because its time fields are omitted.
 2. Allocate a local source block owner at a new START or first draft. Keep only
    bounded ordinal/time metadata, current draft buffers and the existing bounded
    pending final text. Translation drafts acquire an owner only through an exact
@@ -47,13 +60,17 @@ prefix heuristic to Volcano.
    `SubtitleIdentifiedFinalPair`.
 4. Resolve END ownership before clearing a lane. A delayed A END must preserve
    active B text and activity. Ignore duplicate active START without erasing its
-   text, and reject retired/replayed boundaries.
+   text, and reject retired/replayed boundaries. After an empty END, the same
+   current owner and clock may resume if no source final is pending or durable;
+   reuse its identity. This does not reopen an older or retired owner.
 5. After publishing an older matched final, republish any current newer owned
    draft using the existing buffers, owner and content revision. The reliable
    final otherwise suppresses an earlier queued latest-value draft. Preserve
    current pending activity; do not modify generic queue policy.
-6. Missing START/time keeps the compatible unowned path until a correlation is
-   proved. An END whose known end precedes the current source's known START gets
+6. A missing START event keeps the compatible unowned path until a correlation
+   is proved. Internal synthetic unknown-time events remain supported; they do
+   not represent scalar absence in a valid wire START/END. An internal END whose
+   known end precedes the current source's known START gets
    an independent final owner ordered by that end; do not fabricate its missing
    START or bind a translation START to its END. When the current source is
    anonymous and END cannot prove its relation, preserve that buffer but retain
@@ -62,7 +79,9 @@ prefix heuristic to Volcano.
    unproved END. A lane with no START at all retains the legacy END barrier:
    clear its draft, finish the implicit block, and begin the next draft fresh
    without assigning the final's clock or owner to that block. Empty or unmatched
-   tails never create a final pair.
+   tails never create a final pair. When source has a proved owner but translation
+   has no START/owner, its paired preview is withheld until a matching final;
+   attaching that translation to the current source would guess identity.
 7. Bound source metadata and tombstones; Clear removes text and bindings and
    tombstones known old intervals/starts. Reconnect resets the owner epoch and
    metadata. Generation and content-revision guards remain authoritative.
@@ -73,12 +92,15 @@ prefix heuristic to Volcano.
 
 ## Verification
 
-- Decoder: START timestamps, explicit zero, omitted time, malformed/duplicate
+- Decoder: START/END omitted-zero equivalence, explicit values, malformed/duplicate
   fields, END timing and existing binary fixtures.
 - Runtime: admitted and queued B before late A final; translation-first START;
   reordered finals; late END preserving B buffers; duplicate/retired START;
-  missing START/time, including an end-only A before known B and an anonymous
-  translation B; Clear/reconnect; bounded maps/text/order; incomplete Stop tail.
+  source/translation-first omitted zero paired preview; late zero A before known
+  B; internal synthetic unknown timing; Clear/reconnect; bounded maps/text/order;
+  incomplete Stop tail. Empty zero-duration END cannot confirm text or prevent
+  the same still-unconfirmed clock from resuming; pending/confirmed/older owners
+  remain closed.
   Include content-free ordering admission during Stop and successive complete
   source/translation blocks whose wire stream omits every START.
 - Shared projection: Original follows B, Bilingual never combines different
@@ -96,6 +118,11 @@ canonical checks including 2,043 frontend tests. Android actual JNI focused
 release builds, package alignment/license checks and lint completed (0 errors,
 54 warnings). Frozen inputs were checked against the commit; original build
 metadata remains `57ef8921` dirty rather than being relabeled a clean build.
+
+The schema-correct zero-default follow-up is a later candidate and is not covered
+by those `f9201391` build/native receipts. Its focused wire/controller regressions
+and 23 shared timing cases require fresh direct Rust, actual JNI and canonical
+verification before replacing those receipts.
 
 A bounded same-source native Volcano follow-up admitted 30 source boundaries and
 14 identified final pairs, displayed captions, completed normal Stop and sealed
