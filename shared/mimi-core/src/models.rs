@@ -215,6 +215,11 @@ impl Default for SubtitleSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SubtitleEventWire", into = "SubtitleEventWire")]
 pub enum SubtitleEvent {
+    /// Content-free ordering supplied by a provider with an audio-time boundary.
+    SourceBoundary {
+        utterance_id: String,
+        source_order: u64,
+    },
     SourceDraft(String),
     SourceUtteranceDraft {
         utterance_id: u64,
@@ -265,6 +270,7 @@ pub enum SubtitleEvent {
 impl SubtitleEvent {
     pub fn text_within_limit(&self) -> bool {
         match self {
+            Self::SourceBoundary { utterance_id, .. } => subtitle_text_within_limit(utterance_id),
             Self::SourceDraft(text)
             | Self::SourceUtteranceDraft { text, .. }
             | Self::SourceFinal(text)
@@ -313,6 +319,10 @@ pub enum UtteranceRole {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum SubtitleEventWire {
+    SourceBoundary {
+        utterance_id: String,
+        source_order: u64,
+    },
     SourceDraft {
         text: String,
     },
@@ -362,6 +372,13 @@ enum SubtitleEventWire {
 impl From<SubtitleEvent> for SubtitleEventWire {
     fn from(event: SubtitleEvent) -> Self {
         match event {
+            SubtitleEvent::SourceBoundary {
+                utterance_id,
+                source_order,
+            } => Self::SourceBoundary {
+                utterance_id,
+                source_order,
+            },
             SubtitleEvent::SourceDraft(text) => Self::SourceDraft { text },
             SubtitleEvent::SourceUtteranceDraft { utterance_id, text } => {
                 Self::SourceUtteranceDraft { utterance_id, text }
@@ -425,6 +442,13 @@ impl From<SubtitleEvent> for SubtitleEventWire {
 impl From<SubtitleEventWire> for SubtitleEvent {
     fn from(event: SubtitleEventWire) -> Self {
         match event {
+            SubtitleEventWire::SourceBoundary {
+                utterance_id,
+                source_order,
+            } => Self::SourceBoundary {
+                utterance_id,
+                source_order,
+            },
             SubtitleEventWire::SourceDraft { text } => Self::SourceDraft(text),
             SubtitleEventWire::SourceUtteranceDraft { utterance_id, text } => {
                 Self::SourceUtteranceDraft { utterance_id, text }
@@ -492,6 +516,10 @@ mod wire_tests {
     #[test]
     fn shared_events_have_one_flat_schema_and_round_trip_every_variant() {
         let events = [
+            SubtitleEvent::SourceBoundary {
+                utterance_id: "timed-provider-1".into(),
+                source_order: 100,
+            },
             SubtitleEvent::SourceDraft("英文、日本語、한국어、中文。".into()),
             SubtitleEvent::SourceUtteranceDraft {
                 utterance_id: 0,

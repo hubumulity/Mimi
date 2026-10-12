@@ -57,6 +57,13 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
         var temporary: TemporaryProviderAcceptance? = null
         val results = JSONArray()
         var failure: Throwable? = null
+        var captureStartedUnixMs: Long? = null
+        var audioStartedUnixMs: Long? = null
+        var stopStartedUnixMs: Long? = null
+        var stoppedUnixMs: Long? = null
+        var stopDrainMillis = 0L
+        val stopConfirmedSnapshots = AtomicInteger()
+        val visibleReported = AtomicBoolean(false)
         val drawFailure = AtomicReference<String?>()
         val draws = AtomicInteger()
         val captionDraws = AtomicInteger()
@@ -77,6 +84,9 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 if (!settling.get() && (compact.isShown || panel.isShown && panel.followingLive)) {
                     if (visibleRows.any { it.isShown && it.text.isNotBlank() }) {
                         captionDraws.incrementAndGet()
+                        if (visibleReported.compareAndSet(false, true)) {
+                            status("CAPTION_LIVE_VISIBLE unixMs=${System.currentTimeMillis()} mode=${observedMode.get()?.id}")
+                        }
                     }
                     val snapshot = SubtitleBus.displaySnapshot()
                     if (observedMode.get()?.translationVisible == true && !snapshot.hidden &&
@@ -138,12 +148,16 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
             while ((!MimiService.isRunning || root() == null) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
             check(MimiService.isRunning && root() != null) { "native_start_timeout" }
             check(MimiService.activeModelNames == models) { "active_model_mismatch" }
+            captureStartedUnixMs = System.currentTimeMillis()
+            status("CAPTION_LIVE_CAPTURE_ACTIVE unixMs=$captureStartedUnixMs elapsedMs=${SystemClock.elapsedRealtime()}")
             // Starting capture and sending a media key do not prove that the
             // browser resumed playback. Do not score a paused-input interval.
             val audioDeadline = SystemClock.elapsedRealtime() + 30000
             while (MimiService.isRunning && MimiService.captureObservation?.state?.name != "AUDIO" &&
                 SystemClock.elapsedRealtime() < audioDeadline) SystemClock.sleep(100)
             check(MimiService.isRunning && MimiService.captureObservation?.state?.name == "AUDIO") { "playback_audio_start_timeout" }
+            audioStartedUnixMs = System.currentTimeMillis()
+            status("CAPTION_LIVE_AUDIO unixMs=$audioStartedUnixMs elapsedMs=${SystemClock.elapsedRealtime()}")
             // Leave the operator's native consent/browser inspector free until
             // playback starts; only one UiAutomation connection can own it.
             if (screenChanges && !browserFullscreen) check(test.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_0))
@@ -302,13 +316,35 @@ internal class CaptionLiveReadingChecks(private val test: Instrumentation) {
                 SettingsStore.setOverlayWidthPercent(context, originalWidth); SettingsStore.setOverlayHeightPercent(context, originalHeight)
             }
             if (screenChanges && !browserFullscreen) test.uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE)
+            val stopListener = object : SubtitleBus.Listener {
+                override fun onSubtitleChanged() {
+                    val snapshot = SubtitleBus.displaySnapshot()
+                    if (MimiService.isStopping && snapshot.confirmed && snapshot.source.isNotBlank() &&
+                        snapshot.translation.isNotBlank()) stopConfirmedSnapshots.incrementAndGet()
+                }
+            }
+            SubtitleBus.addListener(stopListener)
+            stopStartedUnixMs = System.currentTimeMillis()
+            val stopStarted = SystemClock.elapsedRealtime()
+            status("CAPTION_LIVE_STOP_REQUESTED unixMs=$stopStartedUnixMs")
             context.startService(Intent(context, MimiService::class.java).setAction(MimiService.ACTION_STOP))
             repeat(100) { if (MimiService.isRunning || MimiService.isStopping) SystemClock.sleep(100) }
+            stopDrainMillis = SystemClock.elapsedRealtime() - stopStarted
+            SubtitleBus.removeListener(stopListener)
+            val stopped = !MimiService.isRunning && !MimiService.isStopping && root() == null
+            if (stopped) stoppedUnixMs = System.currentTimeMillis()
+            else if (failure == null) failure = IllegalStateException("native_stop_timeout")
+            status("CAPTION_LIVE_STOPPED unixMs=$stoppedUnixMs stopped=$stopped drainMs=$stopDrainMillis confirmedSnapshots=${stopConfirmedSnapshots.get()}")
             temporary?.close()
             SettingsStore.setSourceLang(context, originalSource); SettingsStore.setTargetLang(context, originalTarget)
             check(SettingsStore.flushPendingWritesForTests(context))
             File(context.getExternalFilesDir(null), "caption-live-reading-$label.json").writeText(JSONObject()
                 .put("provider", provider).put("models", JSONArray(models)).put("source", source).put("target", target).put("phases", results)
+                .put("captureStartedUnixMs", captureStartedUnixMs ?: JSONObject.NULL)
+                .put("audioStartedUnixMs", audioStartedUnixMs ?: JSONObject.NULL)
+                .put("stopStartedUnixMs", stopStartedUnixMs ?: JSONObject.NULL)
+                .put("stoppedUnixMs", stoppedUnixMs ?: JSONObject.NULL).put("stopDrainMs", stopDrainMillis)
+                .put("stopConfirmedSnapshots", stopConfirmedSnapshots.get())
                 .put("passed", failure == null).put("failure", failure?.message ?: JSONObject.NULL).toString(2))
         }
         test.finish(if (failure == null) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {

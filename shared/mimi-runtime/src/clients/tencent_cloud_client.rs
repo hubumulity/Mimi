@@ -703,6 +703,139 @@ fn emit_if_current(context: &ReceiveContext, event: LiveTranslateServerEvent) {
 #[cfg(test)]
 mod tests {
     #[tokio::test]
+    async fn offline_reading_boundary_revised_mid_admits_new_source_with_previous_translation() {
+        async fn admit(
+            receiver: &mut ProviderEventReceiver,
+            controller: &mut crate::core::session::TranslationSessionController,
+            expected: LiveTranslateServerEvent,
+        ) {
+            let event = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+                .await
+                .expect("synthetic provider event timed out")
+                .expect("synthetic provider event channel closed");
+            assert_eq!(event, expected);
+            controller.handle(event);
+        }
+
+        let (next_mid, next_mid_ready) = tokio::sync::oneshot::channel();
+        let (final_pair, final_pair_ready) = tokio::sync::oneshot::channel();
+        let (mut client, mut events) = test_client(move |mut socket| {
+            Box::pin(async move {
+                socket
+                    .send(Message::Text(r#"{"code":0,"final":0}"#.into()))
+                    .await
+                    .unwrap();
+                socket
+                    .send(Message::Text(r#"{"code":0,"result":{"source":"en","target":"zh","source_text":"Synthetic switch is enabled","target_text":"合成开关已启用","sentence_end":false}}"#.into()))
+                    .await
+                    .unwrap();
+                next_mid_ready.await.unwrap();
+                socket
+                    .send(Message::Text(r#"{"code":0,"result":{"source":"en","target":"zh","source_text":"Synthetic switch is not enabled","target_text":"合成开关未启用","sentence_end":false}}"#.into()))
+                    .await
+                    .unwrap();
+                final_pair_ready.await.unwrap();
+                socket
+                    .send(Message::Text(r#"{"code":0,"result":{"source":"en","target":"zh","source_text":"Synthetic switch is not enabled.","target_text":"合成开关未启用。","sentence_end":true}}"#.into()))
+                    .await
+                    .unwrap();
+                while socket.next().await.is_some() {}
+            })
+        })
+        .await;
+        client.source_language = SourceLanguage::English;
+        client.target_language = TargetLanguage::SimplifiedChinese;
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        controller.set_atomic_preview(false);
+        client.connect().await.unwrap();
+
+        for expected in [
+            LiveTranslateServerEvent::SessionCreated,
+            LiveTranslateServerEvent::SessionUpdated,
+            LiveTranslateServerEvent::SourceDraft {
+                text: "Synthetic switch is enabled".into(),
+                language: Some("en".into()),
+            },
+            LiveTranslateServerEvent::TranslationDraft("合成开关已启用".into()),
+        ] {
+            admit(&mut events, &mut controller, expected).await;
+        }
+        let preview = controller
+            .state
+            .subtitles
+            .realtime_preview
+            .as_ref()
+            .unwrap();
+        assert_eq!(preview.source.text, "Synthetic switch is enabled");
+        assert_eq!(preview.translation.text, "合成开关已启用");
+        assert!(controller.state.subtitles.history.is_empty());
+
+        // This observes the admitted shared state, not a native rendered frame.
+        // One raw MID response currently travels through two independent lanes.
+        next_mid.send(()).unwrap();
+        admit(
+            &mut events,
+            &mut controller,
+            LiveTranslateServerEvent::SourceDraft {
+                text: "Synthetic switch is not enabled".into(),
+                language: Some("en".into()),
+            },
+        )
+        .await;
+        let preview = controller
+            .state
+            .subtitles
+            .realtime_preview
+            .as_ref()
+            .unwrap();
+        assert_eq!(preview.source.text, "Synthetic switch is not enabled");
+        assert_eq!(preview.translation.text, "合成开关已启用");
+        assert!(!preview.source.is_final);
+        assert!(!preview.translation.is_final);
+        assert!(preview.source.utterance_id.is_none());
+        assert!(preview.translation.utterance_id.is_none());
+        assert!(controller.state.subtitles.history.is_empty());
+
+        admit(
+            &mut events,
+            &mut controller,
+            LiveTranslateServerEvent::TranslationDraft("合成开关未启用".into()),
+        )
+        .await;
+        let preview = controller
+            .state
+            .subtitles
+            .realtime_preview
+            .as_ref()
+            .unwrap();
+        assert_eq!(preview.source.text, "Synthetic switch is not enabled");
+        assert_eq!(preview.translation.text, "合成开关未启用");
+        assert!(controller.state.subtitles.history.is_empty());
+
+        final_pair.send(()).unwrap();
+        admit(
+            &mut events,
+            &mut controller,
+            LiveTranslateServerEvent::SubtitleFinalPair {
+                source: "Synthetic switch is not enabled.".into(),
+                language: Some("en".into()),
+                translation: "合成开关未启用。".into(),
+            },
+        )
+        .await;
+        let subtitles = &controller.state.subtitles;
+        let pair = subtitles.display_pair.as_ref().unwrap();
+        assert_eq!(pair.source, "Synthetic switch is not enabled.");
+        assert_eq!(pair.translation, "合成开关未启用。");
+        assert!(subtitles.display_pair_final);
+        assert!(subtitles.realtime_preview.is_none());
+        assert_eq!(subtitles.history.len(), 1);
+        assert_eq!(subtitles.history[0].source, pair.source);
+        assert_eq!(subtitles.history[0].translation, pair.translation);
+        client.disconnect().await;
+    }
+
+    #[tokio::test]
     async fn setup_rejections_preserve_status_without_provider_message_content() {
         let contract: serde_json::Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),

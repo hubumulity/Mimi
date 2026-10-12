@@ -94,6 +94,16 @@ Rules:
   `onScreen` and bounds alone do not prove the intended composition is captured.
   Inspect a preflight first frame before live playback, then verify the actual
   recorded frames contain the subtitle window.
+- For bounded live playback, complete preparation while the source is paused.
+  Confirm the exact live development PID, active provider session and evidence
+  collection immediately before starting its watchdog and recorder. Execute
+  Play, the bounded sample, Pause, native session Stop and evidence Stop as one
+  timed operator step. Do not leave playback running while analyzing results.
+  A watchdog armed during preparation can expire before Play; app-state queries
+  may then relaunch a stopped app and make an Off control look like success.
+  Check active state again before Play, wait for native Stop completion, and
+  verify the sealed case separately. Mark/cancel the exact watchdog promptly;
+  a kill after session Stop can still leave the evidence collector unsealed.
 - All worktrees install to the same development path. A later launch from
   another worktree can replace the package, including with an older UI-only
   build, even when the application name, version and signing identity match.

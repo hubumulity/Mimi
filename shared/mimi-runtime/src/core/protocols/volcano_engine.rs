@@ -238,14 +238,18 @@ fn target_language_code(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VolcanoEngineServerEvent {
     SessionStarted,
-    SourceSubtitleStarted,
+    SourceSubtitleStarted {
+        start_time_ms: Option<i32>,
+    },
     SourceSubtitleDraft(String),
     SourceSubtitleFinal {
         text: String,
         start_time_ms: Option<i32>,
         end_time_ms: Option<i32>,
     },
-    TranslationSubtitleStarted,
+    TranslationSubtitleStarted {
+        start_time_ms: Option<i32>,
+    },
     TranslationSubtitleDraft(String),
     TranslationSubtitleFinal {
         text: String,
@@ -335,14 +339,16 @@ impl VolcanoEngineServerEvent {
         let text = text.unwrap_or_default();
         match event.ok_or(VolcanoEngineProtocolError::MissingEvent)? as u32 {
             EVENT_SESSION_STARTED => Ok(Self::SessionStarted),
-            EVENT_SOURCE_SUBTITLE_START => Ok(Self::SourceSubtitleStarted),
+            EVENT_SOURCE_SUBTITLE_START => Ok(Self::SourceSubtitleStarted { start_time_ms }),
             EVENT_SOURCE_SUBTITLE_RESPONSE => Ok(Self::SourceSubtitleDraft(text)),
             EVENT_SOURCE_SUBTITLE_END => Ok(Self::SourceSubtitleFinal {
                 text,
                 start_time_ms,
                 end_time_ms,
             }),
-            EVENT_TRANSLATION_SUBTITLE_START => Ok(Self::TranslationSubtitleStarted),
+            EVENT_TRANSLATION_SUBTITLE_START => {
+                Ok(Self::TranslationSubtitleStarted { start_time_ms })
+            }
             EVENT_TRANSLATION_SUBTITLE_RESPONSE => Ok(Self::TranslationSubtitleDraft(text)),
             EVENT_TRANSLATION_SUBTITLE_END => Ok(Self::TranslationSubtitleFinal {
                 text,
@@ -740,7 +746,9 @@ mod tests {
             ),
             (
                 response(EVENT_SOURCE_SUBTITLE_START as u64, None),
-                VolcanoEngineServerEvent::SourceSubtitleStarted,
+                VolcanoEngineServerEvent::SourceSubtitleStarted {
+                    start_time_ms: None,
+                },
             ),
             (
                 response(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("hello")),
@@ -756,7 +764,9 @@ mod tests {
             ),
             (
                 response(EVENT_TRANSLATION_SUBTITLE_START as u64, None),
-                VolcanoEngineServerEvent::TranslationSubtitleStarted,
+                VolcanoEngineServerEvent::TranslationSubtitleStarted {
+                    start_time_ms: None,
+                },
             ),
             (
                 response(EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64, Some("你好")),
@@ -811,6 +821,31 @@ mod tests {
                 end_time_ms: Some(2_340),
             }
         );
+    }
+
+    #[test]
+    fn starts_preserve_explicit_zero_and_do_not_infer_omitted_timing() {
+        for (event, source) in [
+            (EVENT_SOURCE_SUBTITLE_START, true),
+            (EVENT_TRANSLATION_SUBTITLE_START, false),
+        ] {
+            for start in [Some(0), Some(1_200), None] {
+                let mut wire = response(event as u64, None);
+                if let Some(start) = start {
+                    write_varint_field(&mut wire, 5, start as u64);
+                }
+                let expected = if source {
+                    VolcanoEngineServerEvent::SourceSubtitleStarted {
+                        start_time_ms: start,
+                    }
+                } else {
+                    VolcanoEngineServerEvent::TranslationSubtitleStarted {
+                        start_time_ms: start,
+                    }
+                };
+                assert_eq!(VolcanoEngineServerEvent::decode(&wire).unwrap(), expected);
+            }
+        }
     }
 
     #[test]

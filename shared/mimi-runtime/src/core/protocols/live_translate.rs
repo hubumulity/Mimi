@@ -127,6 +127,11 @@ impl LiveTranslateRequestEncoder {
 /// Server events shared by every pipeline in the app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveTranslateServerEvent {
+    /// Reliable, content-free source order; no recognized text is finalized.
+    SubtitleSourceBoundary {
+        utterance_id: String,
+        source_order: u64,
+    },
     SessionCreated,
     SessionUpdated,
     SourceDraft {
@@ -230,6 +235,9 @@ impl LiveTranslateServerEvent {
     pub fn text_within_limit(&self) -> bool {
         use crate::core::models::subtitle_text_within_limit;
         match self {
+            Self::SubtitleSourceBoundary { utterance_id, .. } => {
+                subtitle_text_within_limit(utterance_id)
+            }
             Self::SourceDraft { text, .. }
             | Self::SourceUtteranceDraft { text, .. }
             | Self::SourceFinal { text, .. }

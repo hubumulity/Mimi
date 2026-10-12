@@ -72,6 +72,10 @@ class UiSmokeInstrumentation : Instrumentation() {
 
     override fun onStart() {
         super.onStart()
+        if (captureArguments?.getString("native_playback_preflight") == "true") {
+            NativePlaybackPreflightChecks(this).run()
+            return
+        }
         if (captureArguments?.getString("private_acceptance_input") == "true") {
             PrivateAcceptanceInputChecks(this).run()
             return

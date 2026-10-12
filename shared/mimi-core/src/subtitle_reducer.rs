@@ -274,6 +274,52 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 | SubtitleEvent::ConfirmedPair { .. }
         );
         match event {
+            SubtitleEvent::SourceBoundary {
+                utterance_id,
+                source_order,
+            } => {
+                if utterance_id.is_empty()
+                    || source_order == 0
+                    || source_order > i64::MAX as u64
+                    || self.discarded_source_ids.contains(&utterance_id)
+                {
+                    return;
+                }
+                if self
+                    .identified_sources
+                    .iter()
+                    .any(|item| item.id != utterance_id && item.ordinal == source_order)
+                {
+                    return;
+                }
+                if let Some(item) = self
+                    .identified_sources
+                    .iter_mut()
+                    .find(|item| item.id == utterance_id)
+                {
+                    if item.confirmed {
+                        return;
+                    }
+                    if self.latest_source_ordinal == Some(item.ordinal) {
+                        self.latest_source_ordinal = Some(source_order);
+                    }
+                    item.ordinal = source_order;
+                } else {
+                    self.identified_sources.push_back(IdentifiedSource {
+                        id: utterance_id,
+                        ordinal: source_order,
+                        confirmed: false,
+                    });
+                }
+                self.identified_sources
+                    .make_contiguous()
+                    .sort_by_key(|item| item.ordinal);
+                if self.identified_sources.len() > MAX_IDENTIFIED_SOURCES {
+                    let old = self.identified_sources.pop_front().unwrap();
+                    self.discard_source_id(old.id);
+                }
+                self.next_source_ordinal = self.next_source_ordinal.max(source_order);
+            }
             SubtitleEvent::SourceDraft(text) => {
                 self.latest_source_ordinal = None;
                 let text = trim(&text);
@@ -665,8 +711,16 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         if let Some(item) = self.identified_sources.iter().find(|item| item.id == id) {
             return (item.ordinal, item.confirmed);
         }
-        self.next_source_ordinal = self.next_source_ordinal.saturating_add(1);
-        let ordinal = self.next_source_ordinal;
+        let Some(ordinal) = self
+            .next_source_ordinal
+            .checked_add(1)
+            .filter(|ordinal| *ordinal < u64::MAX)
+        else {
+            // Treat exhausted new identities as inadmissible without mutating
+            // a restorable state or fabricating a confirmation.
+            return (self.next_source_ordinal, true);
+        };
+        self.next_source_ordinal = ordinal;
         self.identified_sources.push_back(IdentifiedSource {
             id: id.into(),
             ordinal,
@@ -833,6 +887,43 @@ mod tests {
     use crate::models::{SubtitleLine, SubtitlePair};
 
     type SubtitleReducer = super::SubtitleReducer<BoundedTestArchive>;
+
+    #[test]
+    fn source_order_limits_and_exhausted_auto_order_keep_state_restorable() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.apply(SubtitleEvent::SourceBoundary {
+            utterance_id: "clock-limit".into(),
+            source_order: i64::MAX as u64,
+        });
+        reducer.apply(SubtitleEvent::SourceBoundary {
+            utterance_id: "invalid-clock".into(),
+            source_order: i64::MAX as u64 + 1,
+        });
+        assert_eq!(reducer.identified_sources.len(), 1);
+        reducer.apply(SubtitleEvent::UtteranceText {
+            utterance_id: "automatic".into(),
+            role: UtteranceRole::Source,
+            text: "Synthetic current".into(),
+            is_final: false,
+        });
+        assert_eq!(reducer.next_source_ordinal, i64::MAX as u64 + 1);
+        assert!(reducer.validate_state(100).is_ok());
+        reducer.next_source_ordinal = u64::MAX - 1;
+        let before = serde_json::to_value(&reducer).unwrap();
+        reducer.apply(SubtitleEvent::UtteranceText {
+            utterance_id: "exhausted".into(),
+            role: UtteranceRole::Source,
+            text: "Synthetic rejected".into(),
+            is_final: false,
+        });
+        reducer.apply(SubtitleEvent::IdentifiedFinalPair {
+            utterance_id: "exhausted".into(),
+            source: "Synthetic rejected".into(),
+            translation: "Synthetic rejected translation".into(),
+        });
+        assert_eq!(serde_json::to_value(&reducer).unwrap(), before);
+        assert!(reducer.validate_state(100).is_ok());
+    }
 
     #[derive(Default)]
     struct BoundedTestArchive {

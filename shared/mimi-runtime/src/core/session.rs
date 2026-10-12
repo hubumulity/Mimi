@@ -163,7 +163,8 @@ impl SourceSessionController {
         if self.state.status == SessionStatus::Stopping
             && !matches!(
                 event,
-                LiveTranslateServerEvent::SubtitleFinalPair { .. }
+                LiveTranslateServerEvent::SubtitleSourceBoundary { .. }
+                    | LiveTranslateServerEvent::SubtitleFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
             )
@@ -172,6 +173,16 @@ impl SourceSessionController {
         }
 
         match event {
+            LiveTranslateServerEvent::SubtitleSourceBoundary {
+                utterance_id,
+                source_order,
+            } => {
+                self.subtitle_reducer
+                    .apply(crate::core::models::SubtitleEvent::SourceBoundary {
+                        utterance_id,
+                        source_order,
+                    });
+            }
             LiveTranslateServerEvent::SessionCreated => {}
             LiveTranslateServerEvent::SessionUpdated => self.did_connect(),
             LiveTranslateServerEvent::SourceDraft { text, language } => {

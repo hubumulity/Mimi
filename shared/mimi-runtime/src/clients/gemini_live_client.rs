@@ -1408,6 +1408,77 @@ mod tests {
     use tokio::net::TcpListener;
 
     #[test]
+    fn offline_reading_boundary_gemini_text_has_no_correction_identity() {
+        let mut committer = GeminiTranscriptPairCommitter::default();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        for (source, translation, expected_source, expected_translation) in [
+            ("Synthetic", "合成", "Synthetic", "合成"),
+            ("Synthetic claim", "合成陈述", "Synthetic claim", "合成陈述"),
+            (
+                "Synthetic corrected claim",
+                "合成修订陈述",
+                "Synthetic claimSynthetic corrected claim",
+                "合成陈述合成修订陈述",
+            ),
+        ] {
+            // The actual accepted shape carries text, not a revision marker.
+            // A non-prefix text therefore takes the fragment-compatible path.
+            // This does not establish that Gemini sends cumulative corrections.
+            let wire = json!({"serverContent": {
+                "inputTranscription": {"text": source, "languageCode": "en"},
+                "outputTranscription": {"text": translation}
+            }});
+            let decoded = GeminiLiveServerEvent::decode(&wire.to_string()).unwrap();
+            assert_eq!(
+                decoded,
+                vec![
+                    GeminiLiveServerEvent::SourceTranscript {
+                        text: source.into(),
+                        language_code: Some("en".into()),
+                    },
+                    GeminiLiveServerEvent::TranslationTranscript {
+                        text: translation.into(),
+                        language_code: None,
+                    },
+                ]
+            );
+            for event in decoded {
+                let events = match event {
+                    GeminiLiveServerEvent::SourceTranscript {
+                        text,
+                        language_code,
+                    } => committer.append_source(&text, language_code),
+                    GeminiLiveServerEvent::TranslationTranscript { text, .. } => {
+                        committer.append_translation(&text)
+                    }
+                    _ => unreachable!(),
+                };
+                for event in events {
+                    controller.handle(event);
+                }
+            }
+            assert_eq!(controller.state.subtitles.source.text, expected_source);
+            assert_eq!(
+                controller.state.subtitles.translation.text,
+                expected_translation
+            );
+            assert!(controller.state.subtitles.history.is_empty());
+        }
+        for event in committer.finish_turn() {
+            controller.handle(event);
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic claimSynthetic corrected claim"
+        );
+        assert_eq!(
+            controller.state.subtitles.history[0].translation,
+            "合成陈述合成修订陈述"
+        );
+    }
+
+    #[test]
     fn shared_gemini_transcript_contracts() {
         fn observe(
             event: LiveTranslateServerEvent,
