@@ -533,6 +533,14 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 if !newer_source_visible {
                     self.snapshot.source = SubtitleLine::new(source.clone(), true);
                     self.snapshot.translation = SubtitleLine::new(translation.clone(), true);
+                    // Original-only readers use the raw final lane. Retain the
+                    // same owner as its complete pair so confirmation/time is
+                    // not lost when a numeric ASR sentence finishes HTTP MT.
+                    if let Some(id) = source_utterance_id {
+                        let owner = self.source_layout_identity(id);
+                        self.snapshot.source.utterance_id = Some(owner.clone());
+                        self.snapshot.translation.utterance_id = Some(owner);
+                    }
                 }
                 // Raw B may arrive (including an empty begin) before A's
                 // final HTTP completes, while the complete preview still
@@ -922,7 +930,14 @@ mod tests {
         assert!(reducer.snapshot.preview_pair.is_none());
         assert!(reducer.snapshot.source.is_final);
         assert_eq!(reducer.snapshot.source.text, "Synthetic next source");
-        assert!(reducer.snapshot.source.utterance_id.is_none());
+        assert_eq!(
+            reducer.snapshot.source.utterance_id,
+            reducer.snapshot.display_pair.as_ref().unwrap().utterance_id
+        );
+        assert_eq!(
+            reducer.snapshot.translation.utterance_id,
+            reducer.snapshot.source.utterance_id
+        );
         assert_eq!(reducer.snapshot.history.len(), 2);
         reducer.apply(SubtitleEvent::Clear);
         reducer.apply(SubtitleEvent::SourceUtteranceDraft {

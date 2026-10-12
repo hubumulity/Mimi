@@ -115,3 +115,47 @@ async fn shared_optional_authorization_uses_actual_client_requests() {
         assert_eq!(authorization, case["expected"].as_str(), "{id}");
     }
 }
+
+#[test]
+fn shared_readable_preview_sequences_preserve_the_whole_recognition_tail() {
+    let fixtures: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../translation-contracts.json"
+    )))
+    .unwrap();
+    let cases = fixtures["readablePreviewSequences"].as_array().unwrap();
+    assert!(!cases.is_empty());
+    for case in cases {
+        let id = case["id"].as_str().unwrap();
+        let mut committer = crate::core::committer::ASRDraftCommitter::new(
+            case["minimumCharacters"].as_u64().unwrap() as usize,
+        );
+        let steps = case["steps"].as_array().unwrap();
+        let mut readable = Vec::with_capacity(steps.len());
+        let mut full_tail = Vec::with_capacity(steps.len());
+        let mut admitted = Vec::with_capacity(steps.len());
+        for step in steps {
+            if let Some(draft) = step.get("draft") {
+                committer.update_draft(draft.as_str().unwrap());
+            }
+            if step["reset"] == true {
+                committer.reset();
+            }
+            let candidate =
+                committer.preview_readable_draft(step["allowIncomplete"].as_bool().unwrap());
+            admitted.push(step.get("admit").map(|start| {
+                start.as_bool().unwrap()
+                    && candidate
+                        .as_deref()
+                        .is_some_and(|text| committer.note_preview_started(text))
+            }));
+            readable.push(candidate);
+            full_tail.push(committer.preview_latest_draft(false));
+        }
+        let mut actual = serde_json::json!({"readable":readable,"fullTail":full_tail});
+        if steps.iter().any(|step| step.get("admit").is_some()) {
+            actual["admitted"] = serde_json::json!(admitted);
+        }
+        assert_eq!(actual, case["expected"], "{id}");
+    }
+}

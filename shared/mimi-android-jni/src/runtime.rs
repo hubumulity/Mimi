@@ -436,6 +436,74 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
             committer.update_draft(draft);
             json!({"candidate":committer.preview_latest_draft(opening)})
         }
+        "readable_preview_sequence" => {
+            let minimum = value["minimumCharacters"]
+                .as_u64()
+                .filter(|n| (1..=65536).contains(n))
+                .ok_or("native_runtime_invalid_request")?;
+            let steps = value["steps"]
+                .as_array()
+                .filter(|steps| (1..=256).contains(&steps.len()))
+                .ok_or("native_runtime_invalid_request")?;
+            let mut committer =
+                mimi_runtime::core::committer::ASRDraftCommitter::new(minimum as usize);
+            let mut readable = Vec::with_capacity(steps.len());
+            let mut full_tail = Vec::with_capacity(steps.len());
+            let mut admitted = Vec::with_capacity(steps.len());
+            let mut response_bytes = json!({"readable":[],"fullTail":[],"admitted":[]})
+                .to_string()
+                .len();
+            for step in steps {
+                if step.get("draft").is_some() && step.get("reset").is_some() {
+                    return Err("native_runtime_invalid_request");
+                }
+                if let Some(draft) = step.get("draft") {
+                    let draft = draft
+                        .as_str()
+                        .filter(|text| mimi_runtime::core::models::subtitle_text_within_limit(text))
+                        .ok_or("native_runtime_invalid_request")?;
+                    committer.update_draft(draft);
+                }
+                if let Some(reset) = step.get("reset") {
+                    if reset.as_bool() != Some(true) {
+                        return Err("native_runtime_invalid_request");
+                    }
+                    committer.reset();
+                }
+                let allow_incomplete = step["allowIncomplete"]
+                    .as_bool()
+                    .ok_or("native_runtime_invalid_request")?;
+                let admit = step
+                    .get("admit")
+                    .map(|value| value.as_bool().ok_or("native_runtime_invalid_request"))
+                    .transpose()?;
+                let candidate = committer.preview_readable_draft(allow_incomplete);
+                let admission = admit.map(|start| {
+                    start
+                        && candidate
+                            .as_deref()
+                            .is_some_and(|text| committer.note_preview_started(text))
+                });
+                let tail = committer.preview_latest_draft(false);
+                // A short request can repeatedly sample one large draft. Count
+                // encoded strings, including JSON escaping, before retaining
+                // outputs. Tuple separators conservatively cover all arrays.
+                response_bytes += serde_json::to_string(&(&candidate, &tail, &admission))
+                    .map_err(|_| "native_runtime_failed")?
+                    .len();
+                if response_bytes > MAX_REQUEST {
+                    return Err("native_runtime_invalid_request");
+                }
+                admitted.push(admission);
+                readable.push(candidate);
+                full_tail.push(tail);
+            }
+            let mut output = json!({"readable":readable,"fullTail":full_tail});
+            if steps.iter().any(|step| step.get("admit").is_some()) {
+                output["admitted"] = json!(admitted);
+            }
+            output
+        }
         "text_probe_endpoint" => {
             let configuration = text_probe_configuration(&value["configuration"])?;
             let endpoint =

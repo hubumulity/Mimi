@@ -9,6 +9,470 @@
     { "id": "unicode-short-opening", "minimumCharacters": 4, "opening": true, "draft": "测试字", "expected": null },
     { "id": "punctuation", "minimumCharacters": 1, "opening": false, "draft": "……！？", "expected": null }
   ],
+  "readablePreviewSequences": [
+    {
+      "id": "stable-prefix-grows-only-at-complete-boundaries",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic first sentence.",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. Growing tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. Growing tail with more meaning",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. Growing tail with more meaning.",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. Growing tail with more meaning. Next",
+          "allowIncomplete": false
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Synthetic first sentence.",
+          "Synthetic first sentence.",
+          "Synthetic first sentence.",
+          "Synthetic first sentence. Growing tail with more meaning."
+        ],
+        "fullTail": [
+          "Synthetic first sentence.",
+          "Synthetic first sentence. Growing tail",
+          "Synthetic first sentence. Growing tail with more meaning",
+          "Synthetic first sentence. Growing tail with more meaning.",
+          "Synthetic first sentence. Growing tail with more meaning. Next"
+        ]
+      }
+    },
+    {
+      "id": "late-negation-without-boundary-stays-pending",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "The synthetic switch is enabled",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "The synthetic switch is not enabled",
+          "allowIncomplete": false
+        },
+        {
+          "allowIncomplete": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          null,
+          "The synthetic switch is not enabled"
+        ],
+        "fullTail": [
+          "The synthetic switch is enabled",
+          "The synthetic switch is not enabled",
+          "The synthetic switch is not enabled"
+        ]
+      }
+    },
+    {
+      "id": "fallback-keeps-complete-prefix-instead-of-retranslating-tail",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic first sentence. The switch is enabled",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The switch is enabled by default",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The switch is not enabled by default",
+          "allowIncomplete": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Synthetic first sentence.",
+          "Synthetic first sentence."
+        ],
+        "fullTail": [
+          "Synthetic first sentence. The switch is enabled",
+          "Synthetic first sentence. The switch is enabled by default",
+          "Synthetic first sentence. The switch is not enabled by default"
+        ]
+      }
+    },
+    {
+      "id": "correction-invalidates-prefix-until-observed-again",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic positive statement. Tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic positive statement. Tail grows",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic negative statement. Tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic negative statement. Tail grows",
+          "allowIncomplete": false
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Synthetic positive statement.",
+          null,
+          "Synthetic negative statement."
+        ],
+        "fullTail": [
+          "Synthetic positive statement. Tail",
+          "Synthetic positive statement. Tail grows",
+          "Synthetic negative statement. Tail",
+          "Synthetic negative statement. Tail grows"
+        ]
+      }
+    },
+    {
+      "id": "unicode-closing-quotes-and-full-tail",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "「合成字幕。」下一句",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "「合成字幕。」下一句继续",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "「合成字幕。」下一句继续。",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "「合成字幕。」下一句继续。尾部",
+          "allowIncomplete": false
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "「合成字幕。」",
+          "「合成字幕。」",
+          "「合成字幕。」下一句继续。"
+        ],
+        "fullTail": [
+          "「合成字幕。」下一句",
+          "「合成字幕。」下一句继续",
+          "「合成字幕。」下一句继续。",
+          "「合成字幕。」下一句继续。尾部"
+        ]
+      }
+    },
+    {
+      "id": "english-closing-quote-stays-with-prefix",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "He said, “Synthetic sentence!” Then",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "He said, “Synthetic sentence!” Then continued",
+          "allowIncomplete": false
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "He said, “Synthetic sentence!”"
+        ],
+        "fullTail": [
+          "He said, “Synthetic sentence!” Then",
+          "He said, “Synthetic sentence!” Then continued"
+        ]
+      }
+    },
+    {
+      "id": "comma-and-semicolon-do-not-create-readable-clause",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic condition, then the result",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic condition, then the result changes; still incomplete",
+          "allowIncomplete": false
+        },
+        {
+          "allowIncomplete": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          null,
+          "Synthetic condition, then the result changes; still incomplete"
+        ],
+        "fullTail": [
+          "Synthetic condition, then the result",
+          "Synthetic condition, then the result changes; still incomplete",
+          "Synthetic condition, then the result changes; still incomplete"
+        ]
+      }
+    },
+    {
+      "id": "reset-removes-observation-evidence-for-repeated-sentence",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Repeated synthetic sentence. Tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Repeated synthetic sentence. Tail grows",
+          "allowIncomplete": false
+        },
+        {
+          "reset": true,
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Repeated synthetic sentence. Tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Repeated synthetic sentence. Tail grows",
+          "allowIncomplete": false
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Repeated synthetic sentence.",
+          null,
+          null,
+          "Repeated synthetic sentence."
+        ],
+        "fullTail": [
+          "Repeated synthetic sentence. Tail",
+          "Repeated synthetic sentence. Tail grows",
+          null,
+          "Repeated synthetic sentence. Tail",
+          "Repeated synthetic sentence. Tail grows"
+        ]
+      }
+    },
+    {
+      "id": "whole-tail-fallback-does-not-truncate-final-input",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "  Short synthetic tail  ",
+          "allowIncomplete": false
+        },
+        {
+          "allowIncomplete": true
+        },
+        {
+          "reset": true,
+          "allowIncomplete": false
+        },
+        {
+          "draft": "……！？",
+          "allowIncomplete": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Short synthetic tail",
+          null,
+          null
+        ],
+        "fullTail": [
+          "Short synthetic tail",
+          "Short synthetic tail",
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "id": "admitted-prefix-cannot-starve-tail-or-rewind-after-rescue",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is enabled",
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is enabled by default",
+          "allowIncomplete": false
+        },
+        {
+          "allowIncomplete": true,
+          "admit": true
+        },
+        {
+          "allowIncomplete": false
+        },
+        {
+          "allowIncomplete": true
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is enabled by default.",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is enabled by default. Next tail",
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail grows",
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "reset": true,
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail",
+          "allowIncomplete": false
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail grows",
+          "allowIncomplete": false,
+          "admit": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Synthetic first sentence.",
+          null,
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          null,
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          null,
+          "Synthetic first sentence. The synthetic switch is enabled by default.",
+          null,
+          "Synthetic first sentence. The synthetic switch is not enabled by default.",
+          null,
+          null,
+          "Synthetic first sentence. The synthetic switch is not enabled by default."
+        ],
+        "fullTail": [
+          "Synthetic first sentence. The synthetic switch is",
+          "Synthetic first sentence. The synthetic switch is enabled",
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          "Synthetic first sentence. The synthetic switch is enabled by default",
+          "Synthetic first sentence. The synthetic switch is enabled by default.",
+          "Synthetic first sentence. The synthetic switch is enabled by default. Next tail",
+          "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail",
+          "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail grows",
+          null,
+          "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail",
+          "Synthetic first sentence. The synthetic switch is not enabled by default. Next tail grows"
+        ],
+        "admitted": [
+          null,
+          true,
+          null,
+          true,
+          null,
+          null,
+          null,
+          true,
+          null,
+          true,
+          false,
+          null,
+          true
+        ]
+      }
+    },
+    {
+      "id": "preview-query-does-not-consume-progress-before-http-start",
+      "minimumCharacters": 20,
+      "steps": [
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is",
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "draft": "Synthetic first sentence. The synthetic switch is enabled",
+          "allowIncomplete": false,
+          "admit": false
+        },
+        {
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "allowIncomplete": false,
+          "admit": true
+        },
+        {
+          "allowIncomplete": true,
+          "admit": true
+        }
+      ],
+      "expected": {
+        "readable": [
+          null,
+          "Synthetic first sentence.",
+          "Synthetic first sentence.",
+          null,
+          "Synthetic first sentence. The synthetic switch is enabled"
+        ],
+        "fullTail": [
+          "Synthetic first sentence. The synthetic switch is",
+          "Synthetic first sentence. The synthetic switch is enabled",
+          "Synthetic first sentence. The synthetic switch is enabled",
+          "Synthetic first sentence. The synthetic switch is enabled",
+          "Synthetic first sentence. The synthetic switch is enabled"
+        ],
+        "admitted": [
+          false,
+          false,
+          true,
+          false,
+          true
+        ]
+      }
+    }
+  ],
   "geminiFinishPolicy": {
     "quietCheckpointMs": 2000,
     "finishTimeoutMs": 4500,

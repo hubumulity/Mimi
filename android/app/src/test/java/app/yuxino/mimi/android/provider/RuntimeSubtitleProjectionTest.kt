@@ -178,6 +178,70 @@ class RuntimeSubtitleProjectionTest {
         assertNull(runtimeFeedbackResource(SubtitleBus.runtimeFeedback))
     }
 
+    @Test fun readableClauseRemainsPairedWhileRecognitionChangesUntilAuthoritativeFinal() {
+        SubtitleBus.setHistoryLimit(0)
+        val snapshots = Snapshots(true, 0)
+        val prefix = "Synthetic first sentence."
+        val drafts = listOf(
+            "$prefix The synthetic switch is enabled",
+            "$prefix The synthetic switch is enabled by default",
+            "$prefix The synthetic switch is not enabled by default",
+        )
+        val steps = org.json.JSONArray()
+        drafts.forEach { steps.put(JSONObject().put("draft", it).put("allowIncomplete", false).put("admit", true)) }
+        val previewSequence = NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "readable_preview_sequence")
+            .put("minimumCharacters", 20).put("steps", steps))
+        val candidates = previewSequence.getJSONArray("readable")
+        val admitted = previewSequence.getJSONArray("admitted")
+        assertTrue(candidates.isNull(0))
+        assertEquals(prefix, candidates.getString(1))
+        assertTrue(candidates.isNull(2))
+        assertFalse(admitted.getBoolean(0))
+        assertTrue(admitted.getBoolean(1))
+        assertFalse(admitted.getBoolean(2))
+        var displayedCandidate: String? = null
+        drafts.forEachIndexed { index, source ->
+            snapshots.apply(JSONObject().put("type", "source_utterance_draft").put("utterance_id", 17).put("text", source))
+            val candidate = candidates.optString(index).takeUnless { candidates.isNull(index) }
+            if (candidate != null && candidate != displayedCandidate) {
+                snapshots.apply(JSONObject().put("type", "preview_pair").put("source_utterance_id", 17)
+                    .put("source", candidate).put("translation", "合成第一句。"))
+                displayedCandidate = candidate
+            }
+            val state = SubtitleBus.displaySnapshot()
+            val original = state.forReading(CaptionDisplayMode.ORIGINAL)
+            assertEquals(source, original.source)
+            assertFalse(original.confirmed)
+            assertNull(original.createdAt)
+            for (mode in listOf(CaptionDisplayMode.TRANSLATION, CaptionDisplayMode.BILINGUAL)) {
+                val reading = state.forReading(mode)
+                assertEquals(if (index == 0) "" else "合成第一句。", reading.translation)
+                if (index > 0) assertEquals(prefix, reading.source)
+                assertFalse(reading.confirmed)
+                assertNull(reading.createdAt)
+                assertTrue(reading.history.isEmpty())
+            }
+        }
+        val finalSource = "${drafts.last()}."
+        val finalTranslation = "合成第一句。合成开关默认未启用。"
+        snapshots.apply(JSONObject().put("type", "confirmed_pair").put("utterance_id", 1).put("source_utterance_id", 17)
+            .put("source", finalSource).put("translation", finalTranslation))
+        for (mode in CaptionDisplayMode.entries) {
+            val reading = SubtitleBus.displaySnapshot().forReading(mode)
+            assertEquals(finalSource, reading.source)
+            assertEquals(finalTranslation, reading.translation)
+            assertTrue(reading.confirmed)
+            assertNotNull(reading.createdAt)
+            assertTrue(reading.history.isEmpty())
+        }
+        SubtitleBus.clear()
+        for (mode in CaptionDisplayMode.entries) {
+            val reading = SubtitleBus.displaySnapshot().forReading(mode)
+            assertEquals("", reading.source)
+            assertEquals("", reading.translation)
+        }
+    }
+
     @Test fun atomicRuntimeRetainsTheCompletePairUntilTheNextCompletePreviewArrives() {
         val snapshots = Snapshots(true)
         snapshots.apply(pair("A", "Synthetic A.", "合成 A。"))
