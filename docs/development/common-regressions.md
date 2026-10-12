@@ -104,6 +104,17 @@ Rules:
   Check active state again before Play, wait for native Stop completion, and
   verify the sealed case separately. Mark/cancel the exact watchdog promptly;
   a kill after session Stop can still leave the evidence collector unsealed.
+- Check the actual capture signal before accepting browser playback. A moving
+  video clock and `video.muted == false` do not prove system-audio output;
+  browser task tabs can have a separate mute state. Quantization-level nonzero
+  PCM alone is not speech evidence. Use an ordinary native source tab, inspect
+  meaningful captured levels and accepted captions, and retain a near-silent
+  run as invalid even if Stop and evidence sealing succeeded.
+- Pass the current app and source-tab handles explicitly into a bounded live
+  operator. A persistent REPL closure can retain an already closed tab after
+  the visible binding is replaced. Declare the result binding in the call and
+  persist the returned receipt immediately; a result-assignment failure after
+  Stop loses operator timestamps without proving the lifecycle failed.
 - All worktrees install to the same development path. A later launch from
   another worktree can replace the package, including with an older UI-only
   build, even when the application name, version and signing identity match.

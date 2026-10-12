@@ -132,3 +132,22 @@ counterexample occurred; neither run establishes frequency, semantic accuracy,
 controlled quality comparison or reading-comfort acceptance. Android's live
 three-mode video validates the independent-MT candidate at `ed345c26`; the new
 Volcano rule has JNI/build coverage without a new Android provider session.
+
+
+The proto3 correction at `1ae919cf` passed 56 focused Volcano cases and the new
+complete canonical checks (runtime 750 passed/1 ignored; core 85+4; desktop
+570 passed/1 ignored; frontend 2,043). The 23 shared binary timing fixtures also
+cross the actual JNI decoder: focused JVM 31/31, full Debug and Release 205/205
+each, plus optimized four-ABI release builds and lint. The sealed 327-input
+manifest matches that product commit; original Android metadata remains
+`6b2bf5e8 dirty`, and the APK has no embedded Git revision claim.
+
+A fresh signed macOS live run on that product source displayed same-owner
+realtime source/translation before its first complete pair, admitted 15
+identified finals, and completed normal Stop with 1,603/1,603 sealed trace
+entries. Its 60-second silent effect clip has actual native caption pixels.
+A preceding near-silent attempt is excluded. Native time-field presence is not
+observable in this evidence schema, so omitted/explicit-zero equivalence is
+proved by deterministic wire and actual JNI regressions, not inferred from the
+native owner's suffix. Android's service clip remains the independent-MT run;
+no new Android Volcano service, native frequency or comfort acceptance is claimed.

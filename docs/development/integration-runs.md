@@ -4,6 +4,51 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-12：火山 proto3 首段零时间修正
+
+- 产品提交 `1ae919cf73fc8f65e083bd0f76b4c1418d2ab085`，继续保留
+  [PR #261](https://github.com/yuxino/Mimi/pull/261) 为草稿。官方 Protobuf
+  schema 的 START／END 时间是非 optional 的 proto3 数值标量；省略代表零。
+  修正首段关联，并允许没有 final 内容的空 END 后同一当前身份恢复。
+  RESPONSE 不推断时间；待配／已确认／已退休旧段不能被重新开启。
+  schema 出处、哈希与缺少 START 的限制见[设计](../plans/2026-10-12-volcano-subtitle-ownership.md)。
+- 新完整 `./scripts/check.sh` 通过：core 85 unit + 4 contract、runtime
+  750 passed／1 ignored、desktop 570 passed／1 ignored、前端 132 文件／
+  2,043 项，以及实际 host JNI、fmt、严格 clippy、lint、类型及生产构建。
+  另有 56 项火山专项回归通过，覆盖省略／显式零、首段双语预览、迟到
+  final、队列合并、空 END 恢复和 Stop。未改变其他服务的生产规则。
+- Android 新增有界离线 JNI 解码视图，直接调用同一 Rust decoder。
+  23 项共享 timing fixture 经实际 JNI 检查；focused 31／31、Debug
+  205／205、Release 205／205，失败／错误／跳过均零。四 ABI optimized
+  release、ELF／ZIP 对齐、许可及 lint 通过（零错误、54 警告）。主机
+  JVM 使用 host JNI；四 ABI 编译并不代替手机运行。
+- 新 unsigned 验证 APK SHA-256 为
+  `353715b108ef0756802952bb3088b1e470d211c360818b3259588b86d38c0f1e`。
+  原始构建记录仍为 `6b2bf5e8` dirty；327 个输入逐字节匹配产品提交，
+  指纹 `3680288ed4c1157675b6d0a0c1bdd942f8e941607b6e6481193fc13159b6fe2d`。
+  APK 的 AGP 元数据没有嵌入 Git revision，回执使用封存输入与编译证据，
+  不声明干净提交构建。没有安装该 APK 或新跑 Android 火山服务；已有
+  Android Audio3＋Qwen-MT 三模式影片仍对应 `ed345c26`。
+- macOS canonical 签名候选元数据为 `1ae919cf` dirty。普通原生 Ego 标签
+  实播公开 Stanford 片段 180.422658→226.137593 秒，实际源 45.714935
+  秒。有效捕获峰值 −1.527 dBFS，原文／译文草稿各 64、source boundary
+  30、identified final pair 15。首同身份实时双语 snapshot 39 先于完整
+  final（history 0）；末 snapshot 109 inactive／idle，正常 Stop 的
+  GUI 观察为 528 ms，属于粗测。trace 1,603／1,603 已封存，无记录的
+  trace／content／frontend 丢弃、写入失败或限额，terminal stopped
+  的 unflushedWindows 为空。约 60 秒无声效果 MP4 的多帧确有双语文字，
+  源播放及 GUI Stop 位于录屏时窗内；尾部黑帧不作逐帧停止计时。
+- 前一浏览器轮次接近静音，峰值仅三个 int16 量化单位，accepted 字幕零；
+  已排除，正常 Stop／封存仅算生命周期证据。相关非零 PCM 误判、旧标签
+  closure 与结果赋值问题已加强在[常见回归](common-regressions.md)。
+  新原生取证不包含 wire 时间字段 presence，不能据 owner 或计数推断
+  实际省略零，也不证明旧 bug 的发生频率、语义质量或阅读舒适度。
+- 正常退出并精确恢复原 Dev 包与签名，原偏好和配置元数据保持字节一致；
+  正式安装未替换；
+  本轮源标签、重复／无效录屏及一次性 Android 构建已清理，必要影片和
+  验证证据保留在 Git 外。下一步是用户查看效果与阅读节奏后决定合并，
+  不将构建／自动回归通过升级为真机或所有供应商质量验收。
+
 ## 2026-10-12：Android 三模式实播与其他供应商跟进
 
 - 延续草稿 [PR #261](https://github.com/yuxino/Mimi/pull/261)。Android 实播使用
