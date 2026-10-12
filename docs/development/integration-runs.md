@@ -4,6 +4,46 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-12：共享 WebSocket 低延迟传输核验
+
+- 源基线为 main `7f851953`；共享 TCP 建连后、CONNECT／SOCKS／TLS／WS
+  前启用 NODELAY；Audio3 闲时补静音先检查真实 PCM pending，跳过本来
+  不应执行的写锁等待，并保留锁后的竞态复检。桌面和 Android 共用实现。
+  路由、CA／SNI、帧格式、发送顺序、超时、失败不回退及字幕／MT
+  调度规则保持原样。
+- 旧实现实际直连、HTTP CONNECT、SOCKS5h socket 合同 3 项失败；新实现
+  transport 11／11、含配置／工厂／立即 Pong 的 focused 18／18 通过。
+  Audio3 控制实帧用例持有忙碌 writer 时，旧 12 passed／2 failed；新
+  first-poll 合同及既有 PCM／闲时续发顺序通过，相关 focused 48／48。
+  完整 `./scripts/check.sh` 通过：core 84 unit＋4 contract、runtime
+  712 passed／1 ignored、desktop 570 passed／1 ignored、前端 2,043 项，
+  包含实际 host JNI、fmt、严格 clippy、lint、类型及生产构建。
+- Android Debug／Release 各 198／198，通过的实际 JNI／契约／生产投影
+  套件各含 41 项；双 lint 零 error／fatal，warning 为 50／49。四 ABI
+  optimized 原生库、JNI 符号、16KB ELF／ZIP／许可检查通过。350 个构建
+  输入前后等值；unsigned APK SHA-256 为
+  `ab33bf2312937c64962ecd1e450bec5b3c1b57f1050914a65cbcc874d9209de5`。
+  新增 Audio3 改动后完整 canonical 与 Android 五任务均重新通过；实际
+  host JNI 和四 ABI 库重新编译，349 个其他输入与 NODELAY 阶段等值。
+  没有安装该 APK 或替换现有 App。
+- 经本轮最多两分钟授权，两个相同私有 harness 分别连接旧／新共享源，
+  使用已有独立 Dev 阿里云配置、ja→zh、Turbo Audio3 ASR，无 PCM、合成
+  静音、MT 请求、采集或录制；临时只读载入及 Direct 覆盖不保存设置。
+  此对照对应 NODELAY 阶段；后加 Audio3 pending 调度由上述控制用例
+  验证，没有据空闲 Ping 声称其在持续音频中的实际收益。
+  旧／新／旧／新各 10 个 Ping，100ms 间隔；40／40 成功，含初始化／
+  退出的实际 runner 时间为 7.023 秒，全部连接已关闭。偏好、catalog、
+  credential 文件／完成 marker 的身份、大小、mtime 和权限未变。
+- 旧两轮应用 Ping 中位数为 41.90／42.41ms，新为 45.57／44.26ms。
+  各对同一服务目标，路由现场均 DIRECT；未证实本样本稳定提速。
+  NODELAY 去除小帧合并条件，但本轮不复现或归因用户持续字幕约 200ms。
+  现有 Ping 接受空 payload 的任意 Pong；此处是新建、零音频会话的应用
+  往返，包含本地收发处理，不是 nonce 关联的纯 RTT 或字幕端到端延迟。
+- 私有编译／运行回执在 Git 外。三个临时 test-only 附件已恢复，生产
+  变更仅共享 transport 与 Audio3 调度；必要核验记录保留，一次性源码／
+  可执行文件／构建产物清理。下一未决项是在授权的持续音频会话分解
+  发送等待、Pong 到达与处理时间；不先缩短阅读稳定、MT 限流预算或 Android 采集块。
+
 ## 2026-10-12：#255 新手指引与系统托盘菜单
 
 - 产品受测 revision 为干净 `436520e5`，基于 main `f8e231dc`。新手指引分为开始使用／常用操作；五条操作说明统一单列。免费 Apple 识别提示仅在 macOS 原生支持查询确认可用后显示。移除自绘托盘组件、窗口管理、IPC／权限、定位依赖、专属用例及依赖旧窗口的演示录制脚本，保留历史视频来源与拒绝旧窗口标签的权限回归。

@@ -652,7 +652,20 @@ fn task_failure_token(code: &str, category: &str, started: bool) -> String {
     format!("audio3_error.{phase}.{category}.{code}")
 }
 
+fn has_pending_pcm(inner: &Inner) -> bool {
+    inner
+        .pending_pcm
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(PendingPcmGate::has_pending)
+}
+
 async fn send_silence_if_idle(inner: &Inner) -> Result<(), Audio3ASRClientError> {
+    // The receive loop must keep reading while real PCM owns the writer.
+    if has_pending_pcm(inner) {
+        return Ok(());
+    }
     let operation = async {
         let mut sink = inner.sink.lock().await;
         if inner.finishing.load(Ordering::SeqCst)
@@ -664,13 +677,8 @@ async fn send_silence_if_idle(inner: &Inner) -> Result<(), Audio3ASRClientError>
         let Some(sink) = sink.as_mut() else {
             return Err(Audio3ASRClientError::NotConnected);
         };
-        let pending_pcm = inner
-            .pending_pcm
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(PendingPcmGate::has_pending);
-        if pending_pcm {
+        // Work can arrive while this heartbeat waits for the writer lock.
+        if has_pending_pcm(inner) {
             return Ok(());
         }
         let evidence = crate::development_audio::begin_pcm(&SILENCE_PCM, 16_000);
@@ -1330,7 +1338,25 @@ mod streaming_tests {
         // a real-time sleep/testutil. Real PCM is still pending in the pipeline.
         *client.inner.last_audio_sent.lock().await =
             tokio::time::Instant::now() - SILENCE_INTERVAL - Duration::from_millis(1);
-        send_silence_if_idle(&client.inner).await.unwrap();
+        if bind_gate {
+            // A real PCM writer can hold this lock while the receive loop's
+            // heartbeat fires. Pending work must let that loop keep reading.
+            let held_sink = client.inner.sink.lock().await;
+            {
+                let idle_send = send_silence_if_idle(&client.inner);
+                tokio::pin!(idle_send);
+                assert!(
+                    matches!(
+                        futures_util::poll!(idle_send.as_mut()),
+                        std::task::Poll::Ready(Ok(()))
+                    ),
+                    "pending real PCM must skip the heartbeat without waiting for its writer"
+                );
+            }
+            drop(held_sink);
+        } else {
+            send_silence_if_idle(&client.inner).await.unwrap();
+        }
         release_tx.send(()).unwrap();
         assert!(pipeline.finish(Duration::from_secs(2)).await);
         assert_eq!(pending_gate.pending_count(), 0);
