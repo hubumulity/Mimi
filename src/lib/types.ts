@@ -247,11 +247,16 @@ export type ProviderCredentialsInput =
 export type CredentialState = "present" | "missing" | "unavailable";
 
 export type ProfileNetworkProxyDraft = Partial<Pick<ServiceProfile, "speechNetworkProxy" | "textNetworkProxy">>;
+export type AlibabaRealtimeMode = "disabled" | "liveTranslate";
 export type QwenMTModel = "lite" | "flash" | "plus";
 export type TextTranslationNameDraft = { route: Exclude<TextTranslation, "followService">; name: string };
 export type ProfileLanguagePreset = { sourceLanguage: SourceLanguage; targetLanguage: TargetLanguage };
 export type ProfileOptionsDraft = ProfileNetworkProxyDraft & {
   qwenMtModel?: QwenMTModel;
+  /** Opt-in integrated audio route; historical profiles keep ASR + MT. */
+  alibabaRealtimeMode?: AlibabaRealtimeMode;
+  /** Non-secret Beijing workspace identifier; required by experimental realtime models. */
+  alibabaWorkspaceId?: string;
   languagePreset?: ProfileLanguagePreset | null;
   speechRecognitionName?: string;
   textTranslationName?: TextTranslationNameDraft;
@@ -264,6 +269,10 @@ export interface ServiceProfile {
   provider: ServiceProvider;
   /** Built-in Alibaba translation; historical snapshots default to Lite. */
   qwenMtModel?: QwenMTModel;
+  /** Opt-in integrated audio route; historical profiles keep ASR + MT. */
+  alibabaRealtimeMode?: AlibabaRealtimeMode;
+  /** Non-secret Beijing workspace identifier; required by experimental realtime models. */
+  alibabaWorkspaceId?: string;
   /** Applied on activation only; temporary session changes leave it intact. */
   languagePreset?: ProfileLanguagePreset | null;
   credentialState: CredentialState;

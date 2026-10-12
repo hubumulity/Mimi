@@ -4,13 +4,13 @@
 
 这份指南说明各项服务去哪里开通、凭证从哪里拿，以及在 Mimi 里填写什么。只需配置你要使用的服务，不必全部开通。首次使用可选择 README 推荐的火山引擎、阿里云或 Google Gemini。
 
-核对日期：**2026-10-06**。下文以当前桌面版为主，Android 差异单独注明。控制台菜单、模型开放范围、试用额度和计费规则可能变化，请以对应官方文档和自己账号的状态为准。
+阿里 LiveTranslate 配置核对日期：**2026-10-13**；其他服务说明最后核对日期：**2026-10-06**。下文以当前桌面版为主，Android 差异单独注明。控制台菜单、模型开放范围、试用额度和计费规则可能变化，请以对应官方文档和自己账号的状态为准。
 
 ## 先找到你的服务
 
 | Mimi 中的服务 | 开通 / 管理入口 | 需要准备 |
 | --- | --- | --- |
-| [Alibaba Cloud / 阿里云](#alibaba-cloud) | [百炼 API Key](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) | 北京地域的百炼 API Key |
+| [Alibaba Cloud / 阿里云](#alibaba-cloud) | [北京 API Key](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) | 北京地域的百炼 API Key；[LiveTranslate 同声](#alibaba-livetranslate)另需对应业务空间 ID |
 | [Volcano Engine / 火山引擎](#volcano-engine) | [豆包语音 API Key 管理](https://console.volcengine.com/speech/new/setting/apikeys?projectName=default) | 已开通同声传译 2.0 的同一项目内的 API Key |
 | [Google Gemini](#google-gemini) | [Google AI Studio](https://aistudio.google.com/api-keys) | 可调用 Gemini Live 翻译模型的 API Key |
 | [Tencent Cloud / 腾讯云](#tencent-cloud) | [ASR 控制台](https://console.cloud.tencent.com/asr) | AppID、SecretID、SecretKey |
@@ -28,11 +28,12 @@
 
 ## 当前模型与调用方式
 
-下表按核对日的主分支整理，列出桌面端当前配置的实际调用方式。模型 ID 用于确认权限和理解用量；内置配置会自动选用，只有 Azure 部署和自定义服务需要自己填写名称。服务商可更新同名模型，模型 ID 本身不能保证识别质量或某个语言的可用性。
+下表列出桌面端的默认和可选调用方式。模型 ID 用于确认权限和理解用量；内置配置会自动选用，只有 Azure 部署和自定义服务需要自己填写名称。服务商可更新同名模型，模型 ID 本身不能保证识别质量或某个语言的可用性。
 
 | 桌面服务 | 识别 / 原文与翻译所用模型或接口 | 在 Mimi 中如何选择 |
 | --- | --- | --- |
 | Alibaba Cloud | 识别：`qwen-audio-3.0-asr-flash-streaming`；默认文字翻译：`qwen-mt-lite` | 内置固定；可单独更换文字翻译服务 |
+| Alibaba Cloud — 可选 LiveTranslate 同声 | `qwen3.8-livetranslate-flash-realtime`；原文和译文来自同一实时会话 | 在「识别与翻译」中选择「LiveTranslate（同声传译）」；见[配置步骤](#alibaba-livetranslate) |
 | Google Gemini | `gemini-3.5-live-translate-preview`；原文和译文来自同一 Live 会话，没有另填 ASR 模型 | 内置固定 |
 | Volcano Engine | 豆包同声传译 2.0，资源 ID `volc.service_type.10053`；`/api/v4/ast/v2/translate` | 内置服务接口；请求未指定公开模型 ID |
 | Tencent Cloud | ASR 实时语音翻译；翻译模型 `hunyuan-translation-lite` | 内置固定；识别由该服务提供，未单独指定 ASR 模型 ID |
@@ -83,10 +84,10 @@ Android 正式会话与桌面使用同一个共享 Rust 服务工厂。旧 Kotli
 
 ## Alibaba Cloud（阿里云百炼）
 
-入口：[北京地域 API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [官方开通说明](https://help.aliyun.com/zh/model-studio/faq-about-alibaba-cloud-model-studio) · [获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key)
+入口：[北京地域 API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) · [官方开通说明](https://help.aliyun.com/zh/model-studio/faq-about-alibaba-cloud-model-studio) · [获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key)
 
 1. 登录阿里云，按控制台要求完成实名认证，在百炼中选择**华北 2（北京）**，按提示开通该地域的模型服务。
-2. 在北京地域进入 API Key 管理，在要使用的业务空间下创建 Key；已有 Key 也可以使用。
+2. 在北京地域进入 API Key 管理，使用要调用的业务空间下已有的可用 Key；不需要为每个模型单独创建 Key。
 3. 如果业务空间或 Key 限制了可调用模型，确认下表中的实际模型已获授权。
 4. 在 Mimi 添加 **Alibaba Cloud**，将 Key 填入「语音识别 → API Key」并保存。默认文字翻译同样使用该百炼凭证。
 
@@ -94,12 +95,27 @@ Android 正式会话与桌面使用同一个共享 Rust 服务工厂。旧 Kotli
 | --- | --- |
 | 桌面端默认识别 + 翻译 | `qwen-audio-3.0-asr-flash-streaming` 和 `qwen-mt-lite` |
 | 桌面端使用独立文字翻译或跳过翻译 | 识别仍使用 `qwen-audio-3.0-asr-flash-streaming`；翻译按所选服务配置 |
+| 桌面端可选 LiveTranslate 同声 | 所选北京业务空间中的 `qwen3.8-livetranslate-flash-realtime` |
 | Android 默认识别 + 翻译 | `qwen-audio-3.0-asr-flash-streaming` 和 `qwen-mt-lite`（与桌面共享默认链路） |
 | Android 使用独立文字翻译或不翻译 | `qwen-audio-3.0-asr-flash-streaming`；翻译按所选服务配置 |
 
-这里需要的是**百炼 / DashScope API Key**，不要填阿里云 AccessKey ID / AccessKey Secret。内置配置使用 `dashscope.aliyuncs.com`，没有地域或端点输入框；其他地域的 Key 不能直接混用。地域对应关系见[官方地域说明](https://help.aliyun.com/zh/model-studio/regions)，共享链路及剩余平台差异见[平台差异（英文）](development/platform-parity.md)。
+这里需要的是**百炼 / DashScope API Key**，不要填阿里云 AccessKey ID / AccessKey Secret。默认 ASR + MT 使用 `dashscope.aliyuncs.com`，可选 LiveTranslate 使用北京业务空间专属域名；两者均没有地域或端点输入框，其他地域的 Key 不能直接混用。地域对应关系见[官方地域说明](https://help.aliyun.com/zh/model-studio/regions)，平台差异见[平台差异（英文）](development/platform-parity.md)。
 
 计费：两个平台的默认链路均包含语音识别和文字翻译两部分。更换文字翻译服务后，云端识别仍会产生用量，是否扣费取决于识别模型的试用余量和计费状态。查看[百炼模型计费](https://help.aliyun.com/zh/model-studio/model-pricing)及所用模型的试用状态。
+
+<a id="alibaba-livetranslate"></a>
+
+### 在桌面端配置 LiveTranslate 同声传译
+
+使用阿里同声字幕时，优先试「**LiveTranslate（同声传译）**」。这个实验模式使用 `qwen3.8-livetranslate-flash-realtime`，在同一音频会话中返回原文和译文，只显示文字，不播放译音。目前支持**北京地域、自动识别源语言、中文或英文翻译目标**。已有 ASR + MT 配置保持不变，Android 暂无选择入口。
+
+1. 打开[北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace)和 [API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key)，也可以在 Mimi 的阿里设置中点击「**获取业务空间 ID**」「**获取 API Key**」。复制现有业务空间 ID 和同一空间的 Key。若看到 `llm-xxx.cn-beijing.maas.aliyuncs.com` 这样的 API Host，ID 只填 `llm-xxx`；已保存的匹配 Key 可以复用。
+2. 停止字幕，在「**设置 → 语音与翻译 → Alibaba Cloud → 识别与翻译**」选择「**LiveTranslate（同声传译）**」，填入业务空间 ID、API Key，保存并选用该配置。
+3. 识别语言选「**自动识别**」，翻译选「**中文或英文**」，播放一小段非敏感样本，再开启「**实时字幕**」，试完后停止。「现有 ASR + MT」仍可选，切回后会恢复已保存的独立文字翻译服务。
+
+若提示无权限，检查业务空间中该模型的「模型调用」权限，以及 Key 的自定义模型范围和 IP 限制。**API 调用可能收费**，开始前查看试用余量、有效期和付费状态。「原文」只隐藏译文，仍可能产生翻译用量。连接检查不代表字幕质量或长会话稳定性已经验证。
+
+官方依据：[LiveTranslate 接入与协议](https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime) · [地域与业务空间域名](https://help.aliyun.com/zh/model-studio/regions) · [业务空间与模型权限](https://help.aliyun.com/zh/model-studio/permission-management-overview) · [API Key 权限](https://help.aliyun.com/zh/model-studio/get-api-key) · [模型计费](https://help.aliyun.com/zh/model-studio/model-pricing) · [试用额度](https://help.aliyun.com/zh/model-studio/new-free-quota)
 
 <a id="volcano-engine"></a>
 

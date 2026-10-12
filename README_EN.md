@@ -40,6 +40,8 @@ For Google Gemini, use a stable network connection. Check your available quota, 
 
 For activation links, credential instructions, and the models Mimi currently uses, see the **[provider setup guide](docs/provider-setup.md)**.
 
+Alibaba simultaneous interpretation is optional on desktop; ASR + MT remains the default. See [LiveTranslate setup](docs/provider-setup.md#alibaba-livetranslate) for the Beijing workspace ID, API key, and settings steps.
+
 1. Open Settings → Speech & Translation, add a configuration, enter the requested provider credentials, and save.
 2. Choose the recognition and translation languages.
 3. Play something and turn on Live Subtitles under Subtitles. On macOS 14.2+, capturing All Applications or a selected application supports System Audio Recording Only; existing screen grants are reused. Older macOS versions require Screen & System Audio Recording.

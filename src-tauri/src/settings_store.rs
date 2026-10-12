@@ -401,6 +401,11 @@ fn keyring_operation_error(error: keyring_core::Error) -> SecretStoreError {
 /// Keyed credentials. Production uses a private local file; the native adapter
 /// exists only for one-time legacy import and focused compatibility tests.
 pub trait SecretStore: Send + Sync {
+    #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+    fn is_read_only(&self) -> bool {
+        false
+    }
+
     fn load(&self, service: &str, account: &str) -> Result<Option<String>, SecretStoreError>;
     /// Availability only; production reads the local credential document.
     fn contains(&self, service: &str, account: &str) -> Result<bool, SecretStoreError> {
@@ -792,6 +797,94 @@ impl SettingsStore {
             false,
             DEVELOPMENT_APPLICATION_IDENTIFIER,
         ))
+    }
+
+    /// A bounded manual experiment may reuse only a completed development
+    /// store. Normalization is in memory and all persistence paths are detached.
+    #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+    pub(crate) fn load_for_read_only_manual_probe(
+        directory: PathBuf,
+    ) -> Result<Self, &'static str> {
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+        fn read_existing<T: serde::de::DeserializeOwned>(file: &Path) -> Result<T, &'static str> {
+            const MAX_BYTES: u64 = 64 * 1024;
+            let reject = || "saved_development_settings_required";
+            let metadata = std::fs::symlink_metadata(file).map_err(|_| reject())?;
+            if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || metadata.len() > MAX_BYTES
+            {
+                return Err(reject());
+            }
+            let opened = OpenOptions::new()
+                .read(true)
+                .custom_flags(0x100) // macOS O_NOFOLLOW
+                .open(file)
+                .map_err(|_| reject())?;
+            let actual = opened.metadata().map_err(|_| reject())?;
+            if metadata.dev() != actual.dev() || metadata.ino() != actual.ino() {
+                return Err(reject());
+            }
+            let mut bytes = Vec::new();
+            opened
+                .take(MAX_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| reject())?;
+            if bytes.len() as u64 > MAX_BYTES {
+                return Err(reject());
+            }
+            serde_json::from_slice(&bytes).map_err(|_| reject())
+        }
+
+        let metadata = std::fs::symlink_metadata(&directory)
+            .map_err(|_| "saved_development_credentials_required")?;
+        if !directory.is_absolute()
+            || directory.file_name()
+                != Some(std::ffi::OsStr::new(DEVELOPMENT_APPLICATION_IDENTIFIER))
+            || !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+        {
+            return Err("saved_development_credentials_required");
+        }
+        let mut prefs: Preferences = read_existing(&directory.join("preferences.json"))?;
+        let catalog: ProfileCatalog = read_existing(&directory.join(PROFILE_CATALOG_FILE))?;
+        let catalog = catalog
+            .validated()
+            .map_err(|_| "saved_development_settings_required")?;
+        let secret = file_credentials::FileCredentialStore::for_read_only_manual_probe(&directory)
+            .map_err(|_| "saved_development_credentials_required")?;
+        prefs.font_size = prefs
+            .font_size
+            .clamp(*FONT_SIZE_RANGE.start(), *FONT_SIZE_RANGE.end());
+        prefs.subtitle_font_family = normalize_family_name(&prefs.subtitle_font_family)
+            .unwrap_or_default()
+            .to_owned();
+        prefs.subtitle_background_opacity = prefs.subtitle_background_opacity.min(100);
+        if !prefs.audio_input.is_available() {
+            prefs.apply_audio_preferences(Some(AudioInput::System), None);
+        }
+        if let Some(profile) = catalog
+            .profiles
+            .iter()
+            .find(|profile| profile.id == catalog.active_profile_id)
+        {
+            normalize_preferences_value(&mut prefs, profile);
+        }
+        Ok(Self {
+            prefs_path: PathBuf::new(),
+            prefs: Mutex::new(prefs),
+            catalog_path: PathBuf::new(),
+            catalog: Mutex::new(catalog),
+            catalog_write_blocked: false,
+            secret: Box::new(secret),
+            profile_keychain_service: DEVELOPMENT_PROFILE_KEYCHAIN_SERVICE,
+            migrate_legacy_alibaba: false,
+            secret_cache: Mutex::new(HashMap::new()),
+            is_ui_test: false,
+            ui_test_preferences_writable: false,
+        })
     }
 
     fn load_with_secret(
@@ -1232,6 +1325,7 @@ impl SettingsStore {
         )
     }
 
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn update_profile_options_with_model(
         &self,
@@ -1245,7 +1339,39 @@ impl SettingsStore {
         language_preset_patch: Option<crate::core::provider::ProfileLanguagePresetPatch>,
         qwen_mt_model: Option<crate::core::protocols::qwen_mt::QwenMTModel>,
     ) -> Result<ServiceProfile, String> {
-        let normalize_profile = custom_speech_languages_patch.as_ref().map(|_| profile_id);
+        self.update_profile_options_with_realtime(
+            profile_id,
+            name,
+            speech_network_proxy,
+            text_network_proxy,
+            text_translation_name,
+            speech_recognition_name,
+            custom_speech_languages_patch,
+            language_preset_patch,
+            qwen_mt_model,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_profile_options_with_realtime(
+        &self,
+        profile_id: &str,
+        name: Option<&str>,
+        speech_network_proxy: Option<ProxyConfig>,
+        text_network_proxy: Option<ProxyConfig>,
+        text_translation_name: Option<TextTranslationName>,
+        speech_recognition_name: Option<&str>,
+        custom_speech_languages_patch: Option<CustomSpeechLanguagesPatch>,
+        language_preset_patch: Option<crate::core::provider::ProfileLanguagePresetPatch>,
+        qwen_mt_model: Option<crate::core::protocols::qwen_mt::QwenMTModel>,
+        alibaba_realtime_mode: Option<crate::core::provider::AlibabaRealtimeMode>,
+        alibaba_workspace_id: Option<&str>,
+    ) -> Result<ServiceProfile, String> {
+        let normalize_profile = (custom_speech_languages_patch.is_some()
+            || alibaba_realtime_mode.is_some())
+        .then_some(profile_id);
         self.mutate_catalog_with_normalization(normalize_profile, |catalog| {
             let current = catalog
                 .profiles
@@ -1253,6 +1379,15 @@ impl SettingsStore {
                 .find(|profile| profile.id == profile_id)
                 .ok_or_else(|| PROFILE_NOT_FOUND.to_string())?;
             let mut updated = current.clone();
+            if alibaba_realtime_mode.is_some() || alibaba_workspace_id.is_some() {
+                let workspace = alibaba_workspace_id.unwrap_or(&current.alibaba_workspace_id);
+                updated
+                    .set_alibaba_realtime(
+                        alibaba_realtime_mode.unwrap_or(current.alibaba_realtime_mode),
+                        workspace,
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
             if let Some(model) = qwen_mt_model {
                 if current.provider != ProviderKind::AlibabaCloud {
                     return Err("provider-mismatch".into());
@@ -2680,7 +2815,9 @@ impl SettingsStore {
         } else {
             prefs.target_language
         };
-        let capabilities = if provider.is_custom_speech() {
+        let capabilities = if provider.is_custom_speech()
+            || profile.alibaba_realtime_mode != crate::core::provider::AlibabaRealtimeMode::Disabled
+        {
             profile.capabilities(TargetLanguage::Original)
         } else {
             provider.capabilities()
@@ -2697,6 +2834,7 @@ impl SettingsStore {
             normalized.target_language,
             normalized.translation_mode,
         )
+        .with_alibaba_realtime(profile.alibaba_realtime_mode, &profile.alibaba_workspace_id)
         .with_network_proxy(
             profile
                 .speech_network_proxy
@@ -2902,7 +3040,9 @@ impl SettingsStore {
             ProviderCredentials::api_key(decoded.alibaba_key().unwrap_or_default())
         };
         let prefs = self.preferences();
-        let capabilities = if provider.is_custom_speech() {
+        let capabilities = if provider.is_custom_speech()
+            || profile.alibaba_realtime_mode != crate::core::provider::AlibabaRealtimeMode::Disabled
+        {
             profile.capabilities(TargetLanguage::Original)
         } else {
             provider.capabilities()
@@ -2919,6 +3059,7 @@ impl SettingsStore {
             TargetLanguage::Original,
             normalized.translation_mode,
         )
+        .with_alibaba_realtime(profile.alibaba_realtime_mode, &profile.alibaba_workspace_id)
         .with_network_proxy(
             profile
                 .speech_network_proxy
@@ -3116,6 +3257,7 @@ impl SettingsStore {
             prefs.translation_mode,
         )
         .with_qwen_mt_model(profile.qwen_mt_model)
+        .with_alibaba_realtime(profile.alibaba_realtime_mode, &profile.alibaba_workspace_id)
         .with_stage_network_proxies(
             profile
                 .speech_network_proxy
@@ -3146,6 +3288,10 @@ impl SettingsStore {
     }
 
     fn persist_preferences_value(&self, prefs: &Preferences) -> Result<(), String> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.secret.is_read_only() {
+            return Err(PREFERENCES_UNAVAILABLE.to_string());
+        }
         if (self.is_ui_test && !self.ui_test_preferences_writable)
             || self.prefs_path.as_os_str().is_empty()
         {
@@ -3209,6 +3355,10 @@ impl SettingsStore {
     }
 
     fn persist_catalog_value(&self, catalog: &ProfileCatalog) -> Result<(), String> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.secret.is_read_only() {
+            return Err(PROFILE_CATALOG_UNAVAILABLE.to_string());
+        }
         if self.catalog_write_blocked {
             return Err(PROFILE_CATALOG_UNAVAILABLE.to_string());
         }
@@ -3673,8 +3823,313 @@ mod animation_switch_tests {
     }
 }
 
+#[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+mod read_only_manual_probe_tests {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    fn fixture() -> (tempfile::TempDir, PathBuf) {
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = temporary.path().join(DEVELOPMENT_APPLICATION_IDENTIFIER);
+        let credentials_directory = directory.join("credentials");
+        std::fs::create_dir_all(&credentials_directory).unwrap();
+        std::fs::set_permissions(
+            &credentials_directory,
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let prefs = Preferences {
+            source_language: SourceLanguage::English,
+            translation_mode: TranslationMode::HighQuality,
+            font_size: 90.0,
+            subtitle_font_family: "  Synthetic Font  ".into(),
+            subtitle_background_opacity: 200,
+            ..Preferences::default()
+        };
+        let profile = ServiceProfile::alibaba_default();
+        for (name, bytes) in [
+            ("preferences.json", serde_json::to_vec(&prefs).unwrap()),
+            (
+                PROFILE_CATALOG_FILE,
+                serde_json::to_vec(&ProfileCatalog::legacy_alibaba()).unwrap(),
+            ),
+            ("credentials-file-mode-complete", b"1\n".to_vec()),
+            (
+                "credentials/credentials.json",
+                serde_json::to_vec(&serde_json::json!({
+                    "schemaVersion": 1,
+                    "entries": {
+                        DEVELOPMENT_PROFILE_KEYCHAIN_SERVICE: {
+                            (credential_account(&profile)): "synthetic-read-only-key"
+                        }
+                    },
+                    "pendingImport": [],
+                    "pendingCleanup": []
+                }))
+                .unwrap(),
+            ),
+        ] {
+            let file = directory.join(name);
+            std::fs::write(&file, bytes).unwrap();
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        (temporary, directory)
+    }
+
+    fn snapshot(directory: &Path) -> Vec<(Vec<u8>, u32, u64, i64, i64)> {
+        [
+            "preferences.json",
+            PROFILE_CATALOG_FILE,
+            "credentials-file-mode-complete",
+            "credentials/credentials.json",
+        ]
+        .into_iter()
+        .map(|name| {
+            let file = directory.join(name);
+            let metadata = std::fs::symlink_metadata(&file).unwrap();
+            (
+                std::fs::read(file).unwrap(),
+                metadata.mode(),
+                metadata.ino(),
+                metadata.mtime(),
+                metadata.mtime_nsec(),
+            )
+        })
+        .collect()
+    }
+
+    #[test]
+    fn normalization_and_configuration_read_never_write_back() {
+        let (_temporary, directory) = fixture();
+        let before = snapshot(&directory);
+        let store = SettingsStore::load_for_read_only_manual_probe(directory.clone()).unwrap();
+        let prefs = store.preferences();
+        assert_eq!(prefs.translation_mode, TranslationMode::Turbo);
+        assert_eq!(prefs.font_size, 20.0);
+        assert_eq!(prefs.subtitle_font_family, "Synthetic Font");
+        assert_eq!(prefs.subtitle_background_opacity, 100);
+        let profile = store.active_profile().unwrap();
+        let configuration = store.configuration_for_profile_probe(&profile).unwrap();
+        assert!(configuration.credentials.alibaba_key() == Some("synthetic-read-only-key"));
+        assert!(store
+            .save_preferences(|prefs| prefs.font_size = 19.0)
+            .is_err());
+        assert!(store.update_profile(&profile.id, "Changed").is_err());
+        assert!(store
+            .save_api_key(&profile.id, "synthetic-replacement")
+            .is_err());
+        assert!(store.delete_api_key(&profile.id).is_err());
+        assert!(store.secret.migrate_legacy().is_err());
+        assert_eq!(snapshot(&directory), before);
+    }
+
+    #[test]
+    fn missing_required_files_fail_closed_without_creating_them() {
+        for missing in [
+            "preferences.json",
+            PROFILE_CATALOG_FILE,
+            "credentials-file-mode-complete",
+            "credentials/credentials.json",
+        ] {
+            let (_temporary, directory) = fixture();
+            let removed = directory.join(missing);
+            std::fs::remove_file(&removed).unwrap();
+            assert!(SettingsStore::load_for_read_only_manual_probe(directory).is_err());
+            assert!(!removed.exists());
+        }
+    }
+
+    #[test]
+    fn unsafe_namespace_symlinks_and_permissions_are_rejected_without_repairs() {
+        let (_temporary, directory) = fixture();
+        let other = directory.with_file_name("app.yuxino.mimi");
+        std::fs::rename(&directory, &other).unwrap();
+        assert!(SettingsStore::load_for_read_only_manual_probe(other.clone()).is_err());
+        std::os::unix::fs::symlink(&other, &directory).unwrap();
+        assert!(SettingsStore::load_for_read_only_manual_probe(directory).is_err());
+
+        for name in [
+            "preferences.json",
+            PROFILE_CATALOG_FILE,
+            "credentials-file-mode-complete",
+            "credentials/credentials.json",
+        ] {
+            let (_temporary, directory) = fixture();
+            let file = directory.join(name);
+            let moved = directory.join("synthetic-moved-file");
+            std::fs::rename(&file, &moved).unwrap();
+            std::os::unix::fs::symlink(moved, file).unwrap();
+            assert!(SettingsStore::load_for_read_only_manual_probe(directory).is_err());
+        }
+        let (_temporary, directory) = fixture();
+        let credentials = directory.join("credentials");
+        std::fs::set_permissions(&credentials, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(SettingsStore::load_for_read_only_manual_probe(directory).is_err());
+        assert_eq!(
+            std::fs::metadata(credentials).unwrap().mode() & 0o7777,
+            0o755
+        );
+    }
+
+    #[test]
+    fn disappearance_after_loading_never_reopens_import_or_creates_credentials() {
+        for missing in [
+            "credentials-file-mode-complete",
+            "credentials/credentials.json",
+        ] {
+            let (_temporary, directory) = fixture();
+            let store = SettingsStore::load_for_read_only_manual_probe(directory.clone()).unwrap();
+            let removed = directory.join(missing);
+            std::fs::remove_file(&removed).unwrap();
+            assert_eq!(
+                store.secret.pending_imports(),
+                Err(SecretStoreError::Unavailable)
+            );
+            assert!(store
+                .configuration_for_profile_probe(&store.active_profile().unwrap())
+                .is_err());
+            assert!(store.secret.migrate_legacy().is_err());
+            assert!(!removed.exists());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn alibaba_realtime_metadata_switch_reuses_key_and_preserves_text_destination() {
+        use crate::core::provider::AlibabaRealtimeMode;
+        let directory = tempfile::tempdir().unwrap();
+        let fake = FakeSecretStore::default();
+        let store = fresh_store(directory.path(), &fake);
+        let profile = store
+            .create_profile(ProviderKind::AlibabaCloud, "Synthetic")
+            .unwrap();
+        store
+            .save_credentials(
+                &profile.id,
+                &translation_request(
+                    TextTranslation::DeepL,
+                    "synthetic-asr",
+                    "",
+                    "synthetic-text",
+                ),
+            )
+            .unwrap();
+        let speech_before = fake.value(PROFILE_KEYCHAIN_SERVICE, &credential_account(&profile));
+        let text_before = fake.value(
+            PROFILE_KEYCHAIN_SERVICE,
+            &SettingsStore::destination_account(&profile),
+        );
+        let selected = store
+            .update_profile_options_with_realtime(
+                &profile.id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(AlibabaRealtimeMode::LiveTranslate),
+                Some("synthetic-workspace"),
+            )
+            .unwrap();
+        let configuration = store.configuration().unwrap();
+        assert_eq!(
+            configuration.alibaba_realtime_mode,
+            AlibabaRealtimeMode::LiveTranslate
+        );
+        assert_eq!(configuration.alibaba_workspace_id, "synthetic-workspace");
+        assert_eq!(configuration.source_language, SourceLanguage::Automatic);
+        assert_eq!(
+            configuration.credentials.alibaba_key(),
+            Some("synthetic-asr")
+        );
+        assert_eq!(selected.text_translation, Some(TextTranslation::DeepL));
+        assert_eq!(
+            store
+                .configuration_for_speech_draft_probe(
+                    &selected,
+                    &ProviderCredentials::api_key(""),
+                    true,
+                )
+                .unwrap()
+                .alibaba_realtime_mode,
+            AlibabaRealtimeMode::LiveTranslate
+        );
+        assert_eq!(
+            store
+                .configuration_for_speech_probe(&selected)
+                .unwrap()
+                .alibaba_realtime_mode,
+            AlibabaRealtimeMode::LiveTranslate
+        );
+        store
+            .update_profile_options_with_realtime(
+                &profile.id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(AlibabaRealtimeMode::Disabled),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            store.profile(&profile.id).unwrap().text_translation(),
+            TextTranslation::DeepL
+        );
+        assert_eq!(
+            fake.value(PROFILE_KEYCHAIN_SERVICE, &credential_account(&profile)),
+            speech_before
+        );
+        assert_eq!(
+            fake.value(
+                PROFILE_KEYCHAIN_SERVICE,
+                &SettingsStore::destination_account(&profile)
+            ),
+            text_before
+        );
+    }
+
+    #[test]
+    fn alibaba_realtime_missing_workspace_does_not_commit_partial_profile_changes() {
+        use crate::core::provider::AlibabaRealtimeMode;
+        let directory = tempfile::tempdir().unwrap();
+        let fake = FakeSecretStore::default();
+        let store = fresh_store(directory.path(), &fake);
+        let profile = store
+            .create_profile(ProviderKind::AlibabaCloud, "Synthetic")
+            .unwrap();
+        let before = std::fs::read(directory.path().join(PROFILE_CATALOG_FILE)).unwrap();
+        assert!(store
+            .update_profile_options_with_realtime(
+                &profile.id,
+                Some("Changed"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(AlibabaRealtimeMode::LiveTranslate),
+                Some(""),
+            )
+            .is_err());
+        assert_eq!(
+            std::fs::read(directory.path().join(PROFILE_CATALOG_FILE)).unwrap(),
+            before
+        );
+        assert_eq!(store.profile(&profile.id).unwrap(), profile);
+    }
+
     fn fresh_store(directory: &Path, fake: &FakeSecretStore) -> SettingsStore {
         SettingsStore::load_with_secret(
             directory.into(),

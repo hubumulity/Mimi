@@ -6,7 +6,10 @@ use crate::core::credentials::{
 use crate::core::models::{SourceLanguage, TargetLanguage, TranslationMode};
 use crate::core::network_proxy::{ProxyConfig, ProxyConfigError};
 use crate::core::protocols::qwen_mt::QwenMTModel;
-use crate::core::provider::{ProviderCapabilities, ProviderKind, TextTranslation};
+use crate::core::provider::{
+    alibaba_workspace_id_is_valid, AlibabaRealtimeMode, ProviderCapabilities, ProviderKind,
+    TextTranslation,
+};
 use std::fmt;
 use thiserror::Error;
 
@@ -47,6 +50,10 @@ pub enum LiveTranslationConfigurationError {
     UnsupportedTargetLanguage,
     #[error("The selected service does not support this translation mode.")]
     UnsupportedTranslationMode,
+    #[error("The Alibaba realtime workspace ID is missing or invalid.")]
+    InvalidAlibabaWorkspaceId,
+    #[error("Experimental realtime routes require an Alibaba Cloud profile.")]
+    UnsupportedAlibabaRealtime,
     #[error("{0}")]
     NetworkProxy(#[from] ProxyConfigError),
 }
@@ -56,6 +63,10 @@ pub enum LiveTranslationConfigurationError {
 pub struct LiveTranslationConfiguration {
     pub provider: ProviderKind,
     pub qwen_mt_model: QwenMTModel,
+    #[serde(default)]
+    pub alibaba_realtime_mode: AlibabaRealtimeMode,
+    #[serde(default)]
+    pub alibaba_workspace_id: String,
     pub credentials: ProviderCredentials,
     pub text_credentials: Option<TextTranslationCredentials>,
     pub source_language: SourceLanguage,
@@ -72,6 +83,7 @@ impl fmt::Debug for LiveTranslationConfiguration {
             .debug_struct("LiveTranslationConfiguration")
             .field("provider", &self.provider)
             .field("qwen_mt_model", &self.qwen_mt_model)
+            .field("alibaba_realtime_mode", &self.alibaba_realtime_mode)
             .field("credentials", &"[REDACTED]")
             .field("text_credentials", &"[REDACTED]")
             .field("source_language", &self.source_language)
@@ -91,6 +103,11 @@ impl LiveTranslationConfiguration {
             audio3::Audio3ASREndpoint, gemini_live::GeminiLiveEndpoint,
             openai_realtime::OpenAIRealtimeEndpoint, xai_realtime::XAIRealtimeEndpoint,
         };
+        if self.provider == ProviderKind::AlibabaCloud {
+            if let Some(model) = self.alibaba_realtime_mode.model_name() {
+                return vec![model.to_owned()];
+            }
+        }
         let speech = match self.provider {
             ProviderKind::AlibabaCloud | ProviderKind::DeepLX => Audio3ASREndpoint::MODEL,
             ProviderKind::OpenAIRealtime => OpenAIRealtimeEndpoint::MODEL,
@@ -179,6 +196,8 @@ impl LiveTranslationConfiguration {
         Self {
             provider,
             qwen_mt_model: Default::default(),
+            alibaba_realtime_mode: Default::default(),
+            alibaba_workspace_id: String::new(),
             credentials: ProviderCredentials::api_key(api_key),
             text_credentials: None,
             source_language,
@@ -199,6 +218,8 @@ impl LiveTranslationConfiguration {
         Self {
             provider,
             qwen_mt_model: Default::default(),
+            alibaba_realtime_mode: Default::default(),
+            alibaba_workspace_id: String::new(),
             credentials,
             text_credentials: None,
             source_language,
@@ -226,6 +247,16 @@ impl LiveTranslationConfiguration {
         self
     }
 
+    pub fn with_alibaba_realtime(
+        mut self,
+        mode: AlibabaRealtimeMode,
+        workspace_id: impl Into<String>,
+    ) -> Self {
+        self.alibaba_realtime_mode = mode;
+        self.alibaba_workspace_id = workspace_id.into();
+        self
+    }
+
     pub fn with_text_credentials(mut self, credentials: TextTranslationCredentials) -> Self {
         self.text_credentials = Some(credentials);
         self
@@ -239,6 +270,11 @@ impl LiveTranslationConfiguration {
     }
 
     pub fn capabilities(&self) -> ProviderCapabilities {
+        if self.provider == ProviderKind::AlibabaCloud
+            && self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled
+        {
+            return self.alibaba_realtime_mode.capabilities();
+        }
         let route = self.text_credentials.as_ref().map_or_else(
             || match self.credentials {
                 ProviderCredentials::DeepL { .. } => TextTranslation::DeepL,
@@ -256,6 +292,15 @@ impl LiveTranslationConfiguration {
 
     /// Returns a trimmed, validated copy of the configuration.
     pub fn validated(&self) -> Result<Self, LiveTranslationConfigurationError> {
+        if self.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled {
+            if self.provider != ProviderKind::AlibabaCloud {
+                return Err(LiveTranslationConfigurationError::UnsupportedAlibabaRealtime);
+            }
+            let workspace = self.alibaba_workspace_id.trim();
+            if !alibaba_workspace_id_is_valid(workspace) {
+                return Err(LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId);
+            }
+        }
         let network_proxy = if self.provider == ProviderKind::AppleSpeech {
             ProxyConfig {
                 mode: crate::core::network_proxy::ProxyMode::Direct,
@@ -314,6 +359,8 @@ impl LiveTranslationConfiguration {
         Ok(Self {
             provider: self.provider,
             qwen_mt_model: self.qwen_mt_model,
+            alibaba_realtime_mode: self.alibaba_realtime_mode,
+            alibaba_workspace_id: self.alibaba_workspace_id.trim().to_string(),
             credentials,
             text_credentials,
             source_language: self.source_language,
@@ -327,6 +374,40 @@ impl LiveTranslationConfiguration {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn experimental_realtime_configuration_requires_workspace_and_has_one_model() {
+        use super::*;
+        let config = LiveTranslationConfiguration::for_provider(
+            ProviderKind::AlibabaCloud,
+            "synthetic-key",
+            SourceLanguage::Automatic,
+            TargetLanguage::English,
+            TranslationMode::Turbo,
+        );
+        assert_eq!(config.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
+        let mode = AlibabaRealtimeMode::LiveTranslate;
+        assert_eq!(
+            config
+                .clone()
+                .with_alibaba_realtime(mode, "")
+                .validated()
+                .unwrap_err(),
+            LiveTranslationConfigurationError::InvalidAlibabaWorkspaceId
+        );
+        let active = config.clone().with_alibaba_realtime(mode, "test-workspace");
+        assert_eq!(
+            active.model_names(),
+            vec![mode.model_name().unwrap().to_string()]
+        );
+        assert!(active.validated().is_ok());
+        let mut unsupported = active;
+        unsupported.source_language = SourceLanguage::English;
+        assert_eq!(
+            unsupported.validated().unwrap_err(),
+            LiveTranslationConfigurationError::UnsupportedSourceLanguage
+        );
+    }
+
     #[test]
     fn model_names_follow_selected_route_and_never_include_secrets_or_legacy_modes() {
         use super::*;
@@ -381,6 +462,8 @@ mod tests {
             "textNetworkProxy": {"mode": "direct", "url": null}
         });
         let config: LiveTranslationConfiguration = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(config.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
+        assert!(config.alibaba_workspace_id.is_empty());
         let config = config.validated().unwrap();
         let (speech, text) = config.network_endpoints().unwrap();
         assert!(speech.starts_with("wss://"));

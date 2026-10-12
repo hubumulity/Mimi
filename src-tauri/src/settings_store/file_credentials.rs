@@ -48,8 +48,24 @@ pub(super) struct FileCredentialStore {
     initial_unavailable: bool,
     legacy: Box<dyn SecretStore>,
     access: Mutex<()>,
+    #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+    read_only: bool,
 }
 impl FileCredentialStore {
+    #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+    pub(super) fn for_read_only_manual_probe(directory: &Path) -> Result<Self, SecretStoreError> {
+        let mut store = Self::for_app(
+            directory,
+            super::DEVELOPMENT_PROFILE_KEYCHAIN_SERVICE,
+            false,
+        );
+        store.read_only = true;
+        // Validate the existing document without creating files, repairing
+        // permissions, or entering a native-store migration path.
+        store.read()?;
+        Ok(store)
+    }
+
     pub(super) fn for_app(directory: &Path, service: &str, import_alibaba: bool) -> Self {
         let (profiles, initial_unavailable) = match fs::read(directory.join(PROFILE_CATALOG_FILE)) {
             Ok(bytes) => match serde_json::from_slice::<ProfileCatalog>(&bytes)
@@ -123,6 +139,8 @@ impl FileCredentialStore {
             },
             legacy,
             access: Mutex::new(()),
+            #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+            read_only: false,
         }
     }
     fn read(&self) -> Result<Document, SecretStoreError> {
@@ -133,10 +151,34 @@ impl FileCredentialStore {
         // when a credential file disappears or an older copy is restored.
         let import_complete = fs::symlink_metadata(&self.complete_path).is_ok();
         let directory = self.path.parent().ok_or(SecretStoreError::Unavailable)?;
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.read_only {
+            use std::os::unix::fs::MetadataExt;
+            let marker = fs::symlink_metadata(&self.complete_path)
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            let metadata =
+                fs::symlink_metadata(directory).map_err(|_| SecretStoreError::Unavailable)?;
+            if !marker.is_file()
+                || marker.file_type().is_symlink()
+                || !metadata.is_dir()
+                || metadata.file_type().is_symlink()
+                || metadata.uid() != current_uid()
+                || metadata.mode() & 0o7777 != 0o700
+            {
+                return Err(SecretStoreError::Unavailable);
+            }
+        } else {
+            private_directory(directory).map_err(|_| SecretStoreError::Unavailable)?;
+        }
+        #[cfg(not(all(test, feature = "development-debugger", target_os = "macos")))]
         private_directory(directory).map_err(|_| SecretStoreError::Unavailable)?;
         let metadata = match fs::symlink_metadata(&self.path) {
             Ok(value) => value,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+                if self.read_only {
+                    return Err(SecretStoreError::Unavailable);
+                }
                 if self.initial_unavailable {
                     return Err(SecretStoreError::Unavailable);
                 }
@@ -262,6 +304,10 @@ impl FileCredentialStore {
                     ) && slot.account == LEGACY_KEYCHAIN_ACCOUNT)))
     }
     fn mark_complete(&self) -> Result<(), SecretStoreError> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.read_only {
+            return Err(SecretStoreError::Unavailable);
+        }
         if fs::symlink_metadata(&self.complete_path).is_ok() {
             return Ok(());
         }
@@ -282,6 +328,10 @@ impl FileCredentialStore {
         Ok(())
     }
     fn write(&self, document: &Document) -> Result<(), SecretStoreError> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.read_only {
+            return Err(SecretStoreError::Unavailable);
+        }
         let parent = self.path.parent().ok_or(SecretStoreError::Unavailable)?;
         let bytes = serde_json::to_vec(document).map_err(|_| SecretStoreError::Unavailable)?;
         if bytes.len() as u64 > MAX_BYTES {
@@ -305,6 +355,10 @@ impl FileCredentialStore {
         account: &str,
         value: Option<String>,
     ) -> Result<(), SecretStoreError> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.read_only {
+            return Err(SecretStoreError::Unavailable);
+        }
         let _access = self
             .access
             .lock()
@@ -355,6 +409,11 @@ impl FileCredentialStore {
     }
 }
 impl SecretStore for FileCredentialStore {
+    #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+    fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
     fn uses_local_file(&self) -> bool {
         true
     }
@@ -367,6 +426,10 @@ impl SecretStore for FileCredentialStore {
             .map(|document| document.pending_import.len() + document.pending_cleanup.len())
     }
     fn migrate_legacy(&self) -> Result<(), SecretStoreError> {
+        #[cfg(all(test, feature = "development-debugger", target_os = "macos"))]
+        if self.read_only {
+            return Err(SecretStoreError::Unavailable);
+        }
         // Hold only this synchronous storage guard; no async lock or preferences
         // guard survives native authorization. Successful slots are checkpointed.
         let _access = self

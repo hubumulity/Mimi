@@ -1,11 +1,11 @@
-//! Live-translate and realtime-ASR WebSocket protocols for DashScope's shared
-//! endpoint. Authentication uses a Bearer API key; the URL has no Workspace
-//! ID component.
+//! DashScope realtime protocols. Legacy ASR uses the unified endpoint;
+//! optional 3.8 audio translation models use a Beijing workspace-specific host.
 
 use crate::core::models::{SourceLanguage, TargetLanguage, UtteranceRole};
+use crate::core::provider::AlibabaRealtimeMode;
 use base64::Engine;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -19,6 +19,8 @@ pub enum LiveTranslateProtocolError {
     MissingEventType,
     #[error("The live translation service does not support this language selection.")]
     UnsupportedLanguage,
+    #[error("Enter the Beijing Model Studio workspace ID for this realtime model.")]
+    MissingWorkspace,
 }
 
 /// DashScope unified realtime WebSocket endpoint. The old MaaS host put the
@@ -46,6 +48,38 @@ impl LiveTranslateEndpoint {
             url: realtime_url(Self::MODEL)?,
         })
     }
+
+    /// New 3.8 models require a regional, workspace-specific host. Never
+    /// interpolate a URL or a hostname supplied by a profile.
+    pub fn for_mode(
+        mode: AlibabaRealtimeMode,
+        workspace_id: &str,
+    ) -> Result<Self, LiveTranslateProtocolError> {
+        let workspace = workspace_id.trim();
+        if workspace.is_empty() {
+            return Err(LiveTranslateProtocolError::MissingWorkspace);
+        }
+        if workspace.len() > 63
+            || !workspace
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || !workspace.as_bytes()[0].is_ascii_alphanumeric()
+            || !workspace.as_bytes()[workspace.len() - 1].is_ascii_alphanumeric()
+        {
+            return Err(LiveTranslateProtocolError::InvalidEndpoint);
+        }
+        let model = match mode {
+            AlibabaRealtimeMode::LiveTranslate => "qwen3.8-livetranslate-flash-realtime",
+            AlibabaRealtimeMode::Disabled => {
+                return Err(LiveTranslateProtocolError::InvalidEndpoint)
+            }
+        };
+        let url = url::Url::parse(&format!(
+            "wss://{workspace}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model={model}"
+        ))
+        .map_err(|_| LiveTranslateProtocolError::InvalidEndpoint)?;
+        Ok(Self { url })
+    }
 }
 
 fn next_event_id() -> String {
@@ -57,6 +91,49 @@ fn next_event_id() -> String {
 pub enum LiveTranslateRequestEncoder {}
 
 impl LiveTranslateRequestEncoder {
+    /// Minimal audio-only 3.8 integration. Source recognition is automatic;
+    /// original mode retains recognition while discarding model responses.
+    pub fn session_update_for_mode(
+        mode: AlibabaRealtimeMode,
+        source_language: SourceLanguage,
+        target_language: TargetLanguage,
+        hotwords: &BTreeMap<String, String>,
+        event_id: Option<&str>,
+    ) -> Result<Value, LiveTranslateProtocolError> {
+        if source_language != SourceLanguage::Automatic
+            || !matches!(
+                target_language,
+                TargetLanguage::Original
+                    | TargetLanguage::SimplifiedChinese
+                    | TargetLanguage::English
+            )
+        {
+            return Err(LiveTranslateProtocolError::UnsupportedLanguage);
+        }
+        let session = match mode {
+            AlibabaRealtimeMode::LiveTranslate => {
+                let target = if target_language == TargetLanguage::Original {
+                    "en"
+                } else {
+                    target_language.raw_value()
+                };
+                let mut translation = json!({"language": target});
+                if !hotwords.is_empty() {
+                    translation["corpus"] = json!({"phrases": hotwords});
+                }
+                // LiveTranslate 3.8 fixes input to mono 16 kHz PCM;
+                // its audio.input schema documents only turn detection.
+                json!({"output_modalities": ["text"], "translation": translation})
+            }
+            AlibabaRealtimeMode::Disabled => {
+                return Self::session_update(source_language, target_language, hotwords, event_id)
+            }
+        };
+        Ok(
+            json!({"event_id": event_id.unwrap_or(&next_event_id()), "type": "session.update", "session": session}),
+        )
+    }
+
     pub fn session_update(
         source_language: SourceLanguage,
         target_language: TargetLanguage,
@@ -425,9 +502,450 @@ fn item_id_of(json: &Value) -> Option<String> {
         .map(String::from)
 }
 
+/// Stateful 3.8 wire adapter. Delta fragments are bounded before retention;
+/// text.done is a preview until the enclosing response finishes successfully.
+pub struct AlibabaRealtimeEventDecoder {
+    mode: AlibabaRealtimeMode,
+    source: BTreeMap<String, String>,
+    translation: BTreeMap<String, String>,
+    response_for_item: BTreeMap<String, String>,
+    order: VecDeque<String>,
+    discarded: VecDeque<String>,
+    // Response IDs also survive a content clear as discarded identities, even
+    // when no output item had arrived before that boundary.
+    active_responses: BTreeSet<String>,
+}
+
+type IdentifiedEvent = (LiveTranslateServerEvent, LiveTranslateEventIdentity);
+const MAX_REALTIME_ITEMS: usize = mimi_core::live_pair_aligner::MAX_TRACKED_ITEMS;
+
+impl AlibabaRealtimeEventDecoder {
+    pub fn new(mode: AlibabaRealtimeMode) -> Self {
+        Self {
+            mode,
+            source: BTreeMap::new(),
+            translation: BTreeMap::new(),
+            response_for_item: BTreeMap::new(),
+            order: VecDeque::new(),
+            discarded: VecDeque::new(),
+            active_responses: BTreeSet::new(),
+        }
+    }
+
+    pub fn clear_content(&mut self) {
+        let ids: Vec<_> = self
+            .order
+            .iter()
+            .chain(self.active_responses.iter())
+            .cloned()
+            .collect();
+        for id in ids {
+            self.discard(id);
+        }
+        self.source.clear();
+        self.translation.clear();
+        self.response_for_item.clear();
+        self.order.clear();
+        self.active_responses.clear();
+    }
+
+    fn discard(&mut self, id: String) {
+        if !self.discarded.contains(&id) {
+            self.discarded.push_back(id);
+        }
+        while self.discarded.len() > MAX_REALTIME_ITEMS {
+            self.discarded.pop_front();
+        }
+    }
+
+    fn track(&mut self, id: &str) {
+        if !self.order.iter().any(|known| known == id) {
+            self.order.push_back(id.to_string());
+        }
+        while self.order.len() > MAX_REALTIME_ITEMS {
+            if let Some(old) = self.order.pop_front() {
+                self.source.remove(&old);
+                self.translation.remove(&old);
+                self.response_for_item.remove(&old);
+                self.discard(old);
+            }
+        }
+    }
+
+    pub fn decode(
+        &mut self,
+        wire: &str,
+    ) -> Result<Vec<IdentifiedEvent>, LiveTranslateProtocolError> {
+        if self.mode == AlibabaRealtimeMode::Disabled {
+            return LiveTranslateServerEvent::decode_with_identity(wire).map(|event| vec![event]);
+        }
+        let json: Value =
+            serde_json::from_str(wire).map_err(|_| LiveTranslateProtocolError::InvalidJSON)?;
+        let kind = json
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or(LiveTranslateProtocolError::MissingEventType)?;
+        // Keep upstream error bodies out of app diagnostics and user messages.
+        if matches!(
+            kind,
+            "error" | "conversation.item.input_audio_transcription.failed"
+        ) {
+            return Ok(vec![(
+                LiveTranslateServerEvent::Error {
+                    code: "alibaba_realtime_provider_error".into(),
+                    message: "The Alibaba realtime service rejected the request.".into(),
+                },
+                LiveTranslateEventIdentity::default(),
+            )]);
+        }
+        let identity = LiveTranslateEventIdentity {
+            item_id: item_id_of(&json),
+            previous_item_id: json
+                .get("previous_item_id")
+                .and_then(Value::as_str)
+                .map(String::from),
+        };
+        let response_id = json
+            .get("response_id")
+            .or_else(|| json.pointer("/response/id"))
+            .and_then(Value::as_str);
+        for text in [
+            identity.item_id.as_deref(),
+            identity.previous_item_id.as_deref(),
+            response_id,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !crate::core::models::subtitle_text_within_limit(text) {
+                return Err(LiveTranslateProtocolError::InvalidJSON);
+            }
+        }
+        let lifecycle = matches!(
+            kind,
+            "session.created" | "session.updated" | "session.finished"
+        );
+        if !lifecycle
+            && (identity
+                .item_id
+                .as_ref()
+                .is_some_and(|id| self.discarded.contains(id))
+                || response_id.is_some_and(|id| self.discarded.iter().any(|old| old == id)))
+        {
+            return Ok(Vec::new());
+        }
+        if let Some(id) = identity.item_id.as_deref() {
+            self.track(id);
+        }
+        match kind {
+            "response.created" => {
+                if let Some(id) = response_id {
+                    self.active_responses.insert(id.to_string());
+                    while self.active_responses.len() > MAX_REALTIME_ITEMS {
+                        self.active_responses.pop_first();
+                    }
+                }
+            }
+            "conversation.item.input_audio_transcription.delta" => {
+                let id = identity
+                    .item_id
+                    .as_deref()
+                    .ok_or(LiveTranslateProtocolError::InvalidJSON)?;
+                let delta = json
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .ok_or(LiveTranslateProtocolError::InvalidJSON)?;
+                let mut text = self.source.get(id).cloned().unwrap_or_default();
+                text.push_str(delta);
+                check_realtime_text(&text)?;
+                self.source.insert(id.to_string(), text.clone());
+                return Ok(vec![(
+                    LiveTranslateServerEvent::SourceDraft {
+                        text,
+                        language: language_of(&json)?,
+                    },
+                    identity,
+                )]);
+            }
+            "conversation.item.input_audio_transcription.completed" => {
+                if let Some(id) = identity.item_id.as_deref() {
+                    self.source.remove(id);
+                }
+            }
+            "response.text.delta" | "response.text.done" => {
+                let id = identity
+                    .item_id
+                    .as_deref()
+                    .ok_or(LiveTranslateProtocolError::InvalidJSON)?;
+                let text = if kind == "response.text.done" {
+                    json.get("text")
+                        .and_then(Value::as_str)
+                        .ok_or(LiveTranslateProtocolError::InvalidJSON)?
+                        .to_string()
+                } else {
+                    let delta = json
+                        .get("delta")
+                        .and_then(Value::as_str)
+                        .ok_or(LiveTranslateProtocolError::InvalidJSON)?;
+                    let mut text = self.translation.get(id).cloned().unwrap_or_default();
+                    text.push_str(delta);
+                    text
+                };
+                check_realtime_text(&text)?;
+                self.translation.insert(id.to_string(), text.clone());
+                if let Some(response) = response_id {
+                    self.response_for_item
+                        .insert(id.to_string(), response.to_string());
+                }
+                return Ok(vec![(
+                    LiveTranslateServerEvent::TranslationDraft(text),
+                    identity,
+                )]);
+            }
+            "response.done" => {
+                return self.finish_response(&json, response_id);
+            }
+            _ => {}
+        }
+        LiveTranslateServerEvent::decode_value_with_identity(&json).map(|event| vec![event])
+    }
+
+    fn finish_response(
+        &mut self,
+        json: &Value,
+        response_id: Option<&str>,
+    ) -> Result<Vec<IdentifiedEvent>, LiveTranslateProtocolError> {
+        let response = json
+            .get("response")
+            .ok_or(LiveTranslateProtocolError::InvalidJSON)?;
+        let completed = response.get("status").and_then(Value::as_str) == Some("completed");
+        if let Some(id) = response_id {
+            self.active_responses.remove(id);
+        }
+        let mut outputs = BTreeMap::new();
+        if let Some(items) = response.get("output").and_then(Value::as_array) {
+            if items.len() > MAX_REALTIME_ITEMS {
+                return Err(LiveTranslateProtocolError::InvalidJSON);
+            }
+            for item in items {
+                let Some(id) = item.get("id").and_then(Value::as_str) else {
+                    continue;
+                };
+                check_realtime_text(id)?;
+                let mut text = String::new();
+                if let Some(parts) = item.get("content").and_then(Value::as_array) {
+                    for part in parts {
+                        if let Some(fragment) = part.get("text").and_then(Value::as_str) {
+                            text.push_str(fragment);
+                            check_realtime_text(&text)?;
+                        }
+                    }
+                }
+                outputs.insert(id.to_string(), text);
+            }
+        }
+        if let Some(response_id) = response_id {
+            for (item, known_response) in &self.response_for_item {
+                if known_response == response_id {
+                    outputs.entry(item.clone()).or_default();
+                }
+            }
+        }
+        let mut events = Vec::new();
+        for (id, full_text) in outputs {
+            let staged = self.translation.remove(&id).unwrap_or_default();
+            self.response_for_item.remove(&id);
+            if self.discarded.contains(&id) {
+                continue;
+            }
+            let text = if full_text.is_empty() {
+                staged
+            } else {
+                full_text
+            };
+            if completed && !text.trim().is_empty() {
+                check_realtime_text(&text)?;
+                events.push((
+                    LiveTranslateServerEvent::TranslationFinal(text.trim().into()),
+                    LiveTranslateEventIdentity {
+                        item_id: Some(id.clone()),
+                        previous_item_id: None,
+                    },
+                ));
+            } else if !completed {
+                events.push((
+                    LiveTranslateServerEvent::TranslationDraft(String::new()),
+                    LiveTranslateEventIdentity {
+                        item_id: Some(id.clone()),
+                        previous_item_id: None,
+                    },
+                ));
+            }
+            self.discard(id);
+        }
+        if response.get("status").and_then(Value::as_str) == Some("failed") {
+            events.push((
+                LiveTranslateServerEvent::Error {
+                    code: "alibaba_realtime_response_failed".into(),
+                    message: "The Alibaba realtime response failed.".into(),
+                },
+                LiveTranslateEventIdentity::default(),
+            ));
+        }
+        Ok(events)
+    }
+}
+
+fn check_realtime_text(text: &str) -> Result<(), LiveTranslateProtocolError> {
+    if crate::core::models::subtitle_text_within_limit(text) {
+        Ok(())
+    } else {
+        Err(LiveTranslateProtocolError::InvalidJSON)
+    }
+}
+
+fn language_of(json: &Value) -> Result<Option<String>, LiveTranslateProtocolError> {
+    let language = json.get("language").and_then(Value::as_str);
+    if let Some(language) = language {
+        check_realtime_text(language)?;
+    }
+    Ok(language.map(String::from))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_models_require_a_valid_beijing_workspace_host() {
+        let mode = AlibabaRealtimeMode::LiveTranslate;
+        assert_eq!(
+            LiveTranslateEndpoint::for_mode(mode, "").err(),
+            Some(LiveTranslateProtocolError::MissingWorkspace)
+        );
+        for invalid in [
+            "https://example.com",
+            "other.workspace",
+            "bad_id",
+            "-workspace",
+            "workspace-",
+            "test@host",
+        ] {
+            assert!(LiveTranslateEndpoint::for_mode(mode, invalid).is_err());
+        }
+        let endpoint = LiveTranslateEndpoint::for_mode(mode, "synthetic-workspace").unwrap();
+        assert_eq!(
+            endpoint.url.host_str(),
+            Some("synthetic-workspace.cn-beijing.maas.aliyuncs.com")
+        );
+        assert_eq!(
+            endpoint
+                .url
+                .query_pairs()
+                .find(|(key, _)| key == "model")
+                .unwrap()
+                .1,
+            mode.model_name().unwrap()
+        );
+    }
+
+    #[test]
+    fn livetranslate_requests_only_text_with_automatic_source_recognition() {
+        let update = LiveTranslateRequestEncoder::session_update_for_mode(
+            AlibabaRealtimeMode::LiveTranslate,
+            SourceLanguage::Automatic,
+            TargetLanguage::SimplifiedChinese,
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
+        let session = &update["session"];
+        assert_eq!(session["output_modalities"], json!(["text"]));
+        assert!(session.get("modalities").is_none());
+        assert!(session.get("input_audio_transcription").is_none());
+        assert!(session.get("audio").is_none());
+        assert_eq!(session["translation"]["language"], "zh");
+    }
+
+    #[test]
+    fn livetranslate_source_deltas_append() {
+        let mut live = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        live.decode(r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":"Hello"}"#).unwrap();
+        let events = live.decode(r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":" world"}"#).unwrap();
+        assert!(
+            matches!(&events[0].0, LiveTranslateServerEvent::SourceDraft {text,..} if text == "Hello world")
+        );
+    }
+
+    #[test]
+    fn text_done_waits_for_successful_response_done_and_deduplicates() {
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        decoder.decode(r#"{"type":"response.text.delta","item_id":"out","response_id":"response","delta":"你"}"#).unwrap();
+        let delta = decoder.decode(r#"{"type":"response.text.delta","item_id":"out","response_id":"response","delta":"好"}"#).unwrap();
+        assert_eq!(
+            delta[0].0,
+            LiveTranslateServerEvent::TranslationDraft("你好".into())
+        );
+        let text_done = decoder.decode(r#"{"type":"response.text.done","item_id":"out","response_id":"response","text":"你好。"}"#).unwrap();
+        assert_eq!(
+            text_done[0].0,
+            LiveTranslateServerEvent::TranslationDraft("你好。".into())
+        );
+        let wire = r#"{"type":"response.done","response":{"id":"response","status":"completed","output":[]}}"#;
+        let finals = decoder.decode(wire).unwrap();
+        assert_eq!(
+            finals[0].0,
+            LiveTranslateServerEvent::TranslationFinal("你好。".into())
+        );
+        assert!(decoder.decode(wire).unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelled_and_failed_responses_never_confirm_translation() {
+        for status in ["cancelled", "incomplete", "failed"] {
+            let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+            decoder.decode(r#"{"type":"response.text.done","item_id":"out","response_id":"response","text":"Incomplete preview"}"#).unwrap();
+            let wire = json!({"type":"response.done","response":{"id":"response","status":status,"output":[]}}).to_string();
+            assert!(!decoder
+                .decode(&wire)
+                .unwrap()
+                .iter()
+                .any(|(event, _)| matches!(event, LiveTranslateServerEvent::TranslationFinal(_))));
+        }
+    }
+
+    #[test]
+    fn clear_and_safety_limits_cannot_restore_old_text_or_error_bodies() {
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        decoder.decode(r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"old","delta":"Old source"}"#).unwrap();
+        decoder.clear_content();
+        assert!(decoder.decode(r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"old","transcript":"Old source."}"#).unwrap().is_empty());
+        assert_eq!(
+            decoder
+                .decode(r#"{"type":"session.finished","item_id":"old"}"#)
+                .unwrap()[0]
+                .0,
+            LiveTranslateServerEvent::SessionFinished
+        );
+        let huge = json!({"type":"response.text.delta","item_id":"out","delta":"x".repeat(crate::core::models::MAX_SUBTITLE_TEXT_BYTES + 1)}).to_string();
+        assert!(decoder.decode(&huge).is_err());
+        assert!(!decoder.translation.contains_key("out"));
+        let error = decoder.decode(r#"{"type":"error","error":{"code":"private value","message":"private source or credential"}}"#).unwrap();
+        assert!(
+            matches!(&error[0].0, LiveTranslateServerEvent::Error {code,message} if code == "alibaba_realtime_provider_error" && !message.contains("private"))
+        );
+    }
+
+    #[test]
+    fn clear_rejects_late_items_from_a_previously_created_response() {
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        decoder
+            .decode(r#"{"type":"response.created","response":{"id":"old-response"}}"#)
+            .unwrap();
+        decoder.clear_content();
+        let late = decoder.decode(r#"{"type":"response.text.delta","item_id":"late-item","response_id":"old-response","delta":"Obsolete translation"}"#).unwrap();
+        assert!(late.is_empty());
+    }
 
     #[test]
     fn shared_pairing_identity_and_language_are_bounded_before_retention() {

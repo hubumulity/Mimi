@@ -21,7 +21,7 @@ use crate::core::diagnostics::TranslationLatency;
 use crate::core::models::TranslationMode;
 use crate::core::preview_pacing::MTRequestBudget;
 use crate::core::protocols::qwen_mt::{QwenMTClientError, QwenMTModel};
-use crate::core::provider::ProviderKind;
+use crate::core::provider::{AlibabaRealtimeMode, ProviderKind};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -140,6 +140,21 @@ impl TranslationClient {
         let credentials = configuration
             .credentials
             .validated_for(configuration.provider)?;
+        if configuration.provider == ProviderKind::AlibabaCloud
+            && configuration.alibaba_realtime_mode != AlibabaRealtimeMode::Disabled
+        {
+            return LiveTranslateClient::new_with_mode(
+                direct_api_key(&credentials)?,
+                configuration.source_language,
+                configuration.target_language,
+                BTreeMap::new(),
+                events,
+                configuration.alibaba_realtime_mode,
+                &configuration.alibaba_workspace_id,
+            )
+            .map(Self::LowLatency)
+            .map_err(TranslationClientError::Live);
+        }
         match configuration.provider {
             ProviderKind::CustomDashScopeASR
             | ProviderKind::CustomOpenAIASR
@@ -485,12 +500,16 @@ impl TranslationClient {
     }
 
     pub async fn finish(&self) {
-        let recognition =
-            Duration::from_millis(mimi_core::translation_policy::RECOGNITION_FINISH_TIMEOUT_MS);
         let realtime =
             Duration::from_millis(mimi_core::translation_policy::REALTIME_FINISH_TIMEOUT_MS);
         match self {
-            Self::LowLatency(client) => client.finish(recognition).await,
+            Self::LowLatency(client) => {
+                client
+                    .finish(Duration::from_millis(
+                        mimi_core::translation_policy::PROVIDER_FINISH_TIMEOUT_MS,
+                    ))
+                    .await
+            }
             Self::HighQuality(client) => client.finish().await,
             Self::OpenAIRealtime(client) => client.finish(realtime).await,
             Self::GeminiLive(client) => {
@@ -935,6 +954,40 @@ mod tests {
                 TranslationClient::HighQuality(_)
             ));
         }
+    }
+
+    #[test]
+    fn explicitly_selected_alibaba_realtime_routes_use_the_shared_client() {
+        let mode = AlibabaRealtimeMode::LiveTranslate;
+        let configuration = LiveTranslationConfiguration::for_provider(
+            ProviderKind::AlibabaCloud,
+            "synthetic-key",
+            SourceLanguage::Automatic,
+            TargetLanguage::SimplifiedChinese,
+            TranslationMode::Turbo,
+        )
+        .with_alibaba_realtime(mode, "synthetic-workspace")
+        .validated()
+        .unwrap();
+        let (events, _receiver) = provider_event_channel();
+        let TranslationClient::LowLatency(client) =
+            TranslationClient::new_without_network(&configuration, events).unwrap()
+        else {
+            panic!("explicit realtime mode must select the portable realtime client");
+        };
+        let endpoint = client.network_endpoint();
+        assert_eq!(
+            endpoint.host_str(),
+            Some("synthetic-workspace.cn-beijing.maas.aliyuncs.com")
+        );
+        assert_eq!(
+            endpoint
+                .query_pairs()
+                .find(|(key, _)| key == "model")
+                .unwrap()
+                .1,
+            mode.model_name().unwrap()
+        );
     }
 
     #[test]

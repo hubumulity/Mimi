@@ -169,7 +169,10 @@ pub async fn check_speech_service(
     let started = Instant::now();
     initialize_probe_tls();
     let result = match configuration.provider {
-        ProviderKind::AlibabaCloud | ProviderKind::DeepLX => {
+        ProviderKind::AlibabaCloud | ProviderKind::DeepLX
+            if configuration.alibaba_realtime_mode
+                == crate::core::provider::AlibabaRealtimeMode::Disabled =>
+        {
             probe_alibaba(configuration, include_translation).await
         }
         ProviderKind::CustomDashScopeASR
@@ -186,6 +189,25 @@ pub async fn check_speech_service(
         }
     };
     timed_diagnostic(result, started)
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn selected_alibaba_realtime_probe_validates_its_workspace_before_network() {
+    use crate::core::provider::AlibabaRealtimeMode;
+    let configuration = LiveTranslationConfiguration::with_credentials(
+        ProviderKind::AlibabaCloud,
+        ProviderCredentials::api_key("synthetic-key"),
+        SourceLanguage::Automatic,
+        TargetLanguage::SimplifiedChinese,
+        crate::core::models::TranslationMode::Turbo,
+    )
+    .with_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, "");
+    let result = check_speech_service(&configuration, false).await;
+    assert_eq!(
+        result.reason,
+        Some(ConnectionCheckReason::InvalidConfiguration)
+    );
 }
 
 fn timed_diagnostic(

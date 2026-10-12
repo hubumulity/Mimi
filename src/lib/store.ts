@@ -566,6 +566,14 @@ export const useStore = create<StoreState>()((set, get) => ({
       const profile = current.profiles.find(profile => profile.id === profileId);
       if (profile?.provider !== "alibabaCloud" || !["lite", "flash", "plus"].includes(options.qwenMtModel)) throw new Error("provider-mismatch");
     }
+    if (options?.alibabaRealtimeMode !== undefined || options?.alibabaWorkspaceId !== undefined) {
+      const profile = current.profiles.find(profile => profile.id === profileId);
+      if (profile?.provider !== "alibabaCloud") throw new Error("provider-mismatch");
+      const mode = options.alibabaRealtimeMode ?? profile.alibabaRealtimeMode ?? "disabled";
+      const workspace = (options.alibabaWorkspaceId ?? profile.alibabaWorkspaceId ?? "").trim();
+      if (!["disabled", "liveTranslate"].includes(mode) || workspace.length > 63
+        || (workspace !== "" && !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(workspace)) || (mode !== "disabled" && workspace === "")) throw new Error("alibaba-realtime-invalid");
+    }
     const declaration = options?.customSpeechSourceLanguages ?? null;
     if (hasDeclaration) {
       const profile = current.profiles.find(profile => profile.id === profileId);
@@ -594,14 +602,20 @@ export const useStore = create<StoreState>()((set, get) => ({
             else delete textTranslationNames[textTranslationName.route];
           }
           return { ...profile, ...(name === undefined ? {} : { name: name.trim() }), ...proxies, textTranslationNames,
+            ...(options?.alibabaWorkspaceId === undefined ? {} : { alibabaWorkspaceId: options.alibabaWorkspaceId.trim() }),
             ...(hasDeclaration ? { customSpeechSourceLanguages: declaration === null ? null : SOURCE_LANGUAGE_CODES.filter(code => declaration.includes(code)) } : {}),
             ...(speechRecognitionName === undefined ? {} : { speechRecognitionName: speechRecognitionName.trim() || undefined }) };
         })() : profile,
       ),
     };
-    if (hasDeclaration && current.activeProfileId === profileId) {
+    if ((hasDeclaration || options?.alibabaRealtimeMode !== undefined) && current.activeProfileId === profileId) {
+      if (options?.alibabaRealtimeMode !== undefined) snapshot.languageCapabilities = undefined;
       const sources = sourceLanguagesForSettings(snapshot);
       if (!sources.includes(snapshot.sourceLanguage)) snapshot.sourceLanguage = sources[0]!;
+      if (options?.alibabaRealtimeMode !== undefined) {
+        const targets = targetLanguagesForSettings(snapshot);
+        if (!targets.includes(snapshot.targetLanguage)) snapshot.targetLanguage = targets[0]!;
+      }
     }
     set({ settings: snapshot });
     return snapshot;

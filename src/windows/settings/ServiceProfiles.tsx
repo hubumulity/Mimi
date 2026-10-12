@@ -6,7 +6,7 @@ import { Tooltip } from "../../components/Tooltip";
 import { Icon } from "../../components/Icon";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { I18N, providerDisplayName } from "../../lib/i18n";
-import { SERVICE_PROVIDERS, credentialStateForTarget, isCustomSpeechProvider, isStandaloneAsrProvider, subtitlePreferencesChanged, textTranslationForProfile } from "../../lib/providerCapabilities";
+import { SERVICE_PROVIDERS, credentialStateForTarget, isCustomSpeechProvider, isStandaloneAsrProvider, subtitlePreferencesChanged, textTranslationForProfile, usesAlibabaRealtime } from "../../lib/providerCapabilities";
 import { DEFAULT_NETWORK_PROXY, networkProxyConfigKey } from "../../lib/networkProxy";
 import {
   buildProviderCredentials,
@@ -59,6 +59,7 @@ import { AppleSpeechSettings } from "./AppleSpeechSettings";
 import { useAppleSpeechSupport } from "./useAppleSpeechSupport";
 import { TencentSetupHelp } from "./TencentSetupHelp";
 import { profileCopyName } from "../../lib/profileCopyName";
+import { AlibabaRealtimeSettings } from "./AlibabaRealtimeSettings";
 import { QwenMTModelSettings } from "./QwenMTModelSettings";
 
 const CONNECTION_CHECK_TIMEOUT_MS = 30_000;
@@ -131,7 +132,7 @@ export function ServiceProfiles({
   const creationInFlight = useRef(false);
   const mutationInFlight = useRef(false);
   const proxyKeys = useMemo(() => Object.fromEntries(settings.profiles.map(profile => {
-    const speech = networkProxyConfigKey(profile.speechNetworkProxy ?? settings.networkProxy ?? DEFAULT_NETWORK_PROXY);
+    const speech = JSON.stringify([networkProxyConfigKey(profile.speechNetworkProxy ?? settings.networkProxy ?? DEFAULT_NETWORK_PROXY), profile.alibabaRealtimeMode ?? "disabled", profile.alibabaWorkspaceId ?? ""]);
     const text = networkProxyConfigKey(profile.textNetworkProxy ?? settings.networkProxy ?? DEFAULT_NETWORK_PROXY);
     return [profile.id, { speech, text, combined: JSON.stringify([speech, text]) }];
   })), [settings.profiles, settings.networkProxy]);
@@ -264,7 +265,7 @@ export function ServiceProfiles({
   }, [appleResourcesRequest, appleResourcesProfileId, handledAppleResourcesRequest, pendingAction, selectedProfile?.id,
     selectedProfile?.provider, settings.activeProfileId, showsEditor, visible]);
 
-  const hasIndependentTextProxy = !!selectedProfile && (isStandaloneAsrProvider(selectedProfile.provider) || ["alibabaCloud", "deepLX"].includes(selectedProfile.provider));
+  const hasIndependentTextProxy = !!selectedProfile && !usesAlibabaRealtime(selectedProfile) && (isStandaloneAsrProvider(selectedProfile.provider) || ["alibabaCloud", "deepLX"].includes(selectedProfile.provider));
   const hasRemoteTextProxy = hasIndependentTextProxy && selectedProfile && textTranslationForProfile(selectedProfile) !== "apple";
 
   const SelectedCredentialEditor = selectedProfile?.provider === "appleSpeech" ? AppleSpeechSettings : selectedProfile && isCustomSpeechProvider(selectedProfile.provider) ? CustomSpeechCredentialEditor : selectedProfile && ["alibabaCloud", "deepLX"].includes(selectedProfile.provider) ? AlibabaCredentialEditor : CredentialEditor;
@@ -542,7 +543,7 @@ export function ServiceProfiles({
   const renderConnectionCheck = (profile: ServiceProfile, stage?: ConnectionCheckStage, draft?: ProviderCredentialsInput | null, sourceLanguage?: SourceLanguage) => {
     const key = stage ?? "combined";
     const outcome = diagnostics[key];
-    const context = JSON.stringify([profile.provider, textTranslationForProfile(profile), sourceLanguage ?? settings.sourceLanguage,
+    const context = JSON.stringify([profile.provider, textTranslationForProfile(profile), profile.alibabaRealtimeMode ?? "disabled", profile.alibabaWorkspaceId ?? "", sourceLanguage ?? settings.sourceLanguage,
       stage === "speech" ? null : settings.targetLanguage]);
     return <DraftConnectionCheck key={`${profile.id}:${key}`} draft={draft} context={context}
       outcome={outcome?.profileId === profile.id ? outcome : undefined}
@@ -633,6 +634,20 @@ export function ServiceProfiles({
               placeholder={I18N.settings.profileNamePlaceholder} disabled={mutationsDisabled}
               onSave={name => handleRename(selectedProfile.id, name)} />
           </div>
+          {selectedProfile.provider === "alibabaCloud" && <AlibabaRealtimeSettings
+            key={`${selectedProfile.id}:${selectedProfile.alibabaRealtimeMode ?? "disabled"}:${selectedProfile.alibabaWorkspaceId ?? ""}`}
+            profile={selectedProfile} disabled={mutationsDisabled}
+            onSave={async (mode, workspaceId, savedMessage) => {
+              if (mutationInFlight.current || mutationsDisabled) throw new Error("profile-change-requires-stop");
+              mutationInFlight.current = true;
+              setPendingAction("save-model");
+              const notify = beginToast();
+              try {
+                await trackProfileOperation(() => updateProfile(selectedProfile.id, undefined, { alibabaRealtimeMode: mode, alibabaWorkspaceId: workspaceId }));
+                notify(savedMessage);
+                invalidateProfileCheck(selectedProfile.id);
+              } finally { mutationInFlight.current = false; setPendingAction(null); }
+            }} />}
           <div className="service-detail__connection">
             <SelectedCredentialEditor
               support={apple.support} settings={settings} requiresStop={requiresStop} loading={apple.loading} failed={apple.failed} sourceLanguage={settings.sourceLanguage} targetLanguage={settings.targetLanguage}

@@ -124,7 +124,12 @@ export function activeServiceProfile(
   );
 }
 
+export function usesAlibabaRealtime(profile: ServiceProfile): boolean {
+  return profile.provider === "alibabaCloud" && profile.alibabaRealtimeMode === "liveTranslate";
+}
+
 export function textTranslationForProfile(profile: ServiceProfile): TextTranslation {
+  if (usesAlibabaRealtime(profile)) return "followService";
   return profile.textTranslation ?? (profile.provider === "deepLX" ? "deepLX" : "followService");
 }
 
@@ -162,6 +167,7 @@ export function capabilitiesForProfile(
   profile: ServiceProfile,
   targetLanguage: TargetLanguage = "zh",
 ): ProviderCapabilities {
+  if (usesAlibabaRealtime(profile)) return { sourceLanguages: ["auto"], targetLanguages: ["original", "zh", "en"], translationModes: ["turbo"] };
   if (textTranslationForProfile(profile) === "apple" && (isStandaloneAsrProvider(profile.provider) || ["alibabaCloud", "deepLX"].includes(profile.provider))) {
     // Only the native runtime can certify Apple's catalog. An unavailable or
     // not-yet-loaded catalog must not borrow a cloud provider's language list.
@@ -203,6 +209,9 @@ function capabilitiesForSettings(
     : target === "original"
       ? { ...PROVIDER_CAPABILITIES.alibabaCloud, sourceLanguages: ALIBABA_RECOGNITION_SOURCES }
       : PROVIDER_CAPABILITIES.alibabaCloud;
+  // The experimental route has a deliberately fixed catalog. Do not reuse
+  // an ASR + MT snapshot stamped before the mode switch.
+  if (profile && usesAlibabaRealtime(profile)) return fallback;
   const native = settings.languageCapabilities;
   // A profile can retain its ID while changing providers or text destinations.
   // Never borrow options stamped for a different route/target or stale profile.

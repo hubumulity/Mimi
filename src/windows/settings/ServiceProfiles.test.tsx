@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { diagnosticCopy, profileErrorMessage } from "../../lib/connectionDiagnostics";
 import { speechLanguageGuidance, targetLanguageOptionLabel } from "../../lib/speechLanguageGuidance";
 import { I18N, providerDisplayName, setStoredUiLanguage } from "../../lib/i18n";
-import { getAppleSpeechSupport, prepareAppleSpeechLanguage, profileCredentialEditorState, profileRevealCredential, testProfileConnection } from "../../lib/ipc";
+import { openAlibabaSetupPage, getAppleSpeechSupport, prepareAppleSpeechLanguage, profileCredentialEditorState, profileRevealCredential, testProfileConnection } from "../../lib/ipc";
 import { SERVICE_PROVIDERS, sourceLanguagesForSettings, targetLanguagesForSettings } from "../../lib/providerCapabilities";
 import { SOURCE_LANGUAGE_DISPLAY_NAMES, TARGET_LANGUAGE_DISPLAY_NAMES } from "../../lib/types";
 import type { AppleSpeechSupport, ServiceProfile, SettingsSnapshot } from "../../lib/types";
@@ -18,7 +18,7 @@ const actions = vi.hoisted(() => ({
 }));
 const boot = vi.hoisted(() => ({ initializationStatus: "ready" as "ready" | "loading" | "error", initializationError: null as "timeout" | "unavailable" | null, init: vi.fn(), nativeSettings: null as SettingsSnapshot | null }));
 vi.mock("../../lib/store", () => ({ useStore: (select: (state: typeof actions & typeof boot & { settings: { windowsAudioSource?: string }; session: { isActive: boolean; isPaused: boolean } }) => unknown) => select({ ...actions, ...boot, settings: boot.nativeSettings ?? { windowsAudioSource: "" }, session: { isActive: false, isPaused: false } }) }));
-vi.mock("../../lib/ipc", () => ({ isTauri: false, getAppleSpeechSupport: vi.fn(), prepareAppleSpeechLanguage: vi.fn(), testProfileConnection: vi.fn(), profileRevealCredential: vi.fn(), profileCredentialEditorState: vi.fn(), setOverlayPointerCursor: vi.fn() }));
+vi.mock("../../lib/ipc", () => ({ isTauri: false, openAlibabaSetupPage: vi.fn(), getAppleSpeechSupport: vi.fn(), prepareAppleSpeechLanguage: vi.fn(), testProfileConnection: vi.fn(), profileRevealCredential: vi.fn(), profileCredentialEditorState: vi.fn(), setOverlayPointerCursor: vi.fn() }));
 
 const profile: ServiceProfile = { id: "synthetic", name: "Alibaba", provider: "alibabaCloud", credentialState: "unavailable" };
 const settings: SettingsSnapshot = {
@@ -37,6 +37,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla Linux");
   for (const action of Object.values(actions)) action.mockReset();
+  vi.mocked(openAlibabaSetupPage).mockReset().mockResolvedValue(undefined);
   vi.mocked(testProfileConnection).mockReset();
   vi.mocked(profileRevealCredential).mockReset();
   vi.mocked(profileCredentialEditorState).mockReset().mockResolvedValue({ savedFields: ["apiKey"] });
@@ -1069,7 +1070,7 @@ it.each(["credential_service_unavailable", "credential_store_access_denied", "cr
     expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe("synthetic-asr");
     expect(host.querySelector<HTMLInputElement>('input[id$="-token"]')!.value).toBe("synthetic-token");
     expect(host.querySelector<HTMLInputElement>('.service-stage--translation input[id$="-endpoint"]')!.value).toBe("https://example.com/translate");
-    expect(host.querySelector('[role="combobox"]')!.textContent).toBe(I18N.settings.textTranslationCustom);
+    expect(host.querySelector('.service-stage--translation [role="combobox"]')!.textContent).toBe(I18N.settings.textTranslationCustom);
     expect(host.querySelector("select")).toBeNull();
     expect(host.querySelector<HTMLButtonElement>('.credential-form button[type="submit"]')!.disabled).toBe(false);
   }
@@ -1874,4 +1875,80 @@ it.each([true, false])("defers current-configuration navigation until a pending 
     await act(async () => navigate(2));
     expect(host.querySelector(".service-detail h2")?.textContent).toBe(current.name);
   }
+});
+
+
+it("shows LiveTranslate as the single integrated opt-in mode and hides independent MT", async () => {
+  const mode = "liveTranslate";
+  const realtime: ServiceProfile = { ...profile, credentialState: "present", speechCredentialState: "present", alibabaRealtimeMode: mode, alibabaWorkspaceId: "test-workspace", textTranslation: "deepLX" };
+  await render({ ...settings, profiles: [realtime] });
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  expect(host.querySelector(".alibaba-realtime-settings")?.textContent).toContain("LiveTranslate");
+  expect(host.querySelector(".service-stage--translation")).toBeNull();
+  expect(host.querySelector(".service-proxies")?.textContent).not.toContain(I18N.settings.textTranslationLabel);
+  expect(host.querySelector<HTMLInputElement>(`#profile-workspace-${profile.id}`)?.value).toBe("test-workspace");
+  expect(actions.updateProfile).not.toHaveBeenCalled();
+});
+
+it("requires an explicit workspace before saving an experimental mode", async () => {
+  const ready = { ...profile, credentialState: "present" as const };
+  await render({ ...settings, profiles: [ready] });
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  const select = host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings [role="combobox"]')!;
+  await act(async () => select.click());
+  const live = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(node => node.querySelector(".mimi-select__label")?.textContent === "LiveTranslate (simultaneous)")!;
+  await act(async () => live.click());
+  const save = [...host.querySelectorAll<HTMLButtonElement>('.alibaba-realtime-settings button')].find(node => node.textContent === "Save")!;
+  expect(save.disabled).toBe(true);
+  expect(actions.updateProfile).not.toHaveBeenCalled();
+  const workspace = host.querySelector<HTMLInputElement>(`#profile-workspace-${profile.id}`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(workspace, "test-workspace");
+    workspace.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  actions.updateProfile.mockResolvedValue({ ...settings, profiles: [{ ...ready, alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "test-workspace" }] });
+  await act(async () => save.click());
+  expect(actions.updateProfile).toHaveBeenCalledExactlyOnceWith(profile.id, undefined, { alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "test-workspace" });
+});
+
+
+it("retains a failed realtime workspace edit for retry and hides provider errors", async () => {
+  const realtime: ServiceProfile = { ...profile, credentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "saved-workspace" };
+  await render({ ...settings, profiles: [realtime] });
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await change(`#profile-workspace-${profile.id}`, "edited-workspace");
+  actions.updateProfile.mockRejectedValueOnce(new Error("private-provider-detail"));
+  const save = () => [...host.querySelectorAll<HTMLButtonElement>('.alibaba-realtime-settings button')].find(node => node.textContent === "Save")!;
+  await act(async () => save().click());
+  expect(host.querySelector<HTMLInputElement>(`#profile-workspace-${profile.id}`)?.value).toBe("edited-workspace");
+  expect(host.querySelector('.alibaba-realtime-settings [role="alert"]')?.textContent).toContain("Check the workspace ID");
+  expect(document.body.textContent).not.toContain("private-provider-detail");
+  actions.updateProfile.mockResolvedValue({ ...settings, profiles: [{ ...realtime, alibabaWorkspaceId: "edited-workspace" }] });
+  await act(async () => save().click());
+  expect(actions.updateProfile).toHaveBeenCalledTimes(2);
+});
+
+it.each([false, true])("blocks realtime mode edits during active or paused subtitles (paused=%s)", async paused => {
+  const realtime: ServiceProfile = { ...profile, credentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "saved-workspace" };
+  await act(async () => root.render(<ServiceProfiles settings={{ ...settings, profiles: [realtime] }} sessionIsActive={!paused} sessionIsPaused={paused} profileEditorRequest={1} />));
+  expect(host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings [role="combobox"]')?.disabled).toBe(true);
+  expect(host.querySelector<HTMLInputElement>(`#profile-workspace-${profile.id}`)?.disabled).toBe(true);
+  expect(actions.updateProfile).not.toHaveBeenCalled();
+});
+
+
+it("keeps Alibaba configuration links next to their controls without provider requests", async () => {
+  const realtime: ServiceProfile = { ...profile, credentialState: "present", speechCredentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "saved-workspace" };
+  await render({ ...settings, profiles: [realtime] });
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  expect(openAlibabaSetupPage).not.toHaveBeenCalled();
+  await act(async () => host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings .settings-field:not(.service-stage__selector) .alibaba-setup-link')!.click());
+  expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("workspace");
+  await act(async () => host.querySelector<HTMLButtonElement>('.service-stage__heading .alibaba-setup-link')!.click());
+  expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("apiKey");
+  await act(async () => host.querySelector<HTMLButtonElement>('.alibaba-realtime-settings .service-stage__selector .alibaba-setup-link')!.click());
+  expect(openAlibabaSetupPage).toHaveBeenLastCalledWith("guide");
+  expect(testProfileConnection).not.toHaveBeenCalled();
+  expect(actions.updateProfile).not.toHaveBeenCalled();
+  expect(actions.saveProfileCredentials).not.toHaveBeenCalled();
 });

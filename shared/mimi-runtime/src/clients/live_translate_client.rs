@@ -1,12 +1,13 @@
-//! Live-translate WebSocket client (`qwen3.5-livetranslate-flash-realtime`).
+//! Shared DashScope live translation client.
 
 use crate::clients::provider_events::ProviderEventSender;
 use crate::core::diagnostics::{milliseconds, TranslationLatency, TranslationLatencyKind};
 use crate::core::models::{SourceLanguage, TargetLanguage, UtteranceRole};
 use crate::core::protocols::live_translate::{
-    LiveTranslateEndpoint, LiveTranslateEventIdentity, LiveTranslateRequestEncoder,
-    LiveTranslateServerEvent,
+    AlibabaRealtimeEventDecoder, LiveTranslateEndpoint, LiveTranslateEventIdentity,
+    LiveTranslateRequestEncoder, LiveTranslateServerEvent,
 };
+use crate::core::provider::AlibabaRealtimeMode;
 use crate::pipeline_log;
 use futures_util::{SinkExt, StreamExt};
 use std::collections::BTreeMap;
@@ -49,6 +50,10 @@ pub enum LiveTranslateClientError {
     SessionSetupRejected,
     #[error("The live translation transport failed.")]
     TransportFailure,
+    #[error("Enter the Beijing Model Studio workspace ID for this realtime model.")]
+    MissingWorkspace,
+    #[error("The Alibaba realtime configuration is not supported.")]
+    InvalidConfiguration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,8 +67,10 @@ type Sink = futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpSt
 type Stream = futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 struct Inner {
+    translates_audio: bool,
     content_lock: Mutex<()>,
     aligner: Mutex<LiveTranslatePairAligner>,
+    decoder: Mutex<AlibabaRealtimeEventDecoder>,
     sink: Mutex<Option<Sink>>,
     received_session_finished: AtomicBool,
     pong_notify: Notify,
@@ -132,6 +139,7 @@ pub struct LiveTranslateClient {
     source_language: SourceLanguage,
     target_language: TargetLanguage,
     hotwords: BTreeMap<String, String>,
+    mode: AlibabaRealtimeMode,
     events: ProviderEventSender,
 }
 
@@ -147,6 +155,7 @@ impl LiveTranslateClient {
     pub async fn clear_content(&self) -> u64 {
         let _content = self.inner.content_lock.lock().await;
         self.inner.aligner.lock().await.clear_content();
+        self.inner.decoder.lock().await.clear_content();
         self.inner.translation_latency.lock().unwrap().value = None;
         self.events.advance_content_revision()
     }
@@ -167,6 +176,62 @@ impl LiveTranslateClient {
         hotwords: BTreeMap<String, String>,
         events: ProviderEventSender,
     ) -> Result<Self, LiveTranslateClientError> {
+        Self::build(
+            api_key,
+            source_language,
+            target_language,
+            hotwords,
+            events,
+            AlibabaRealtimeMode::Disabled,
+            LiveTranslateEndpoint::new()
+                .map_err(|_| LiveTranslateClientError::InvalidConfiguration)?,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_mode(
+        api_key: &str,
+        source_language: SourceLanguage,
+        target_language: TargetLanguage,
+        hotwords: BTreeMap<String, String>,
+        events: ProviderEventSender,
+        mode: AlibabaRealtimeMode,
+        workspace_id: &str,
+    ) -> Result<Self, LiveTranslateClientError> {
+        // Validate before opening a socket, including language capabilities.
+        LiveTranslateRequestEncoder::session_update_for_mode(
+            mode,
+            source_language,
+            target_language,
+            &hotwords,
+            None,
+        )
+        .map_err(|_| LiveTranslateClientError::InvalidConfiguration)?;
+        let endpoint = LiveTranslateEndpoint::for_mode(mode, workspace_id).map_err(|error| match error {
+            crate::core::protocols::live_translate::LiveTranslateProtocolError::MissingWorkspace => LiveTranslateClientError::MissingWorkspace,
+            _ => LiveTranslateClientError::InvalidConfiguration,
+        })?;
+        Self::build(
+            api_key,
+            source_language,
+            target_language,
+            hotwords,
+            events,
+            mode,
+            endpoint,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        api_key: &str,
+        source_language: SourceLanguage,
+        target_language: TargetLanguage,
+        hotwords: BTreeMap<String, String>,
+        events: ProviderEventSender,
+        mode: AlibabaRealtimeMode,
+        endpoint: LiveTranslateEndpoint,
+    ) -> Result<Self, LiveTranslateClientError> {
         let trimmed_key = api_key.trim();
         if trimmed_key.is_empty() {
             return Err(LiveTranslateClientError::MissingAPIKey);
@@ -174,20 +239,22 @@ impl LiveTranslateClient {
         Ok(Self {
             network: super::provider_network::ProviderNetwork::default(),
             inner: Arc::new(Inner {
+                translates_audio: target_language.translates_audio(),
                 content_lock: Mutex::new(()),
                 aligner: Mutex::new(LiveTranslatePairAligner::default()),
+                decoder: Mutex::new(AlibabaRealtimeEventDecoder::new(mode)),
                 sink: Mutex::new(None),
                 received_session_finished: AtomicBool::new(false),
                 pong_notify: Notify::new(),
                 receive_task: Mutex::new(None),
                 translation_latency: Default::default(),
             }),
-            endpoint: LiveTranslateEndpoint::new()
-                .map_err(|_| LiveTranslateClientError::MissingAPIKey)?,
+            endpoint,
             api_key: trimmed_key.to_string(),
             source_language,
             target_language,
             hotwords,
+            mode,
             events,
         })
     }
@@ -236,15 +303,26 @@ impl LiveTranslateClient {
             self.events.clone(),
             setup_tx,
             latency_generation,
+            self.target_language,
         ));
         *self.inner.receive_task.lock().await = Some(task);
 
-        let update = LiveTranslateRequestEncoder::session_update(
-            self.source_language,
-            self.target_language,
-            &self.hotwords,
-            None,
-        )
+        let update = if self.mode == AlibabaRealtimeMode::Disabled {
+            LiveTranslateRequestEncoder::session_update(
+                self.source_language,
+                self.target_language,
+                &self.hotwords,
+                None,
+            )
+        } else {
+            LiveTranslateRequestEncoder::session_update_for_mode(
+                self.mode,
+                self.source_language,
+                self.target_language,
+                &self.hotwords,
+                None,
+            )
+        }
         .expect("session.update encoding cannot fail");
         let setup = async {
             self.send_text(update.to_string()).await?;
@@ -493,6 +571,7 @@ async fn receive_loop(
     events: ProviderEventSender,
     setup: watch::Sender<SetupState>,
     latency_generation: u64,
+    target_language: TargetLanguage,
 ) {
     {
         let _content = inner.content_lock.lock().await;
@@ -501,13 +580,12 @@ async fn receive_loop(
             latency_generation,
             ..Default::default()
         };
+        inner.decoder.lock().await.clear_content();
     }
     while let Some(message) = stream.next().await {
-        let decoded = match message {
-            Ok(Message::Text(text)) => LiveTranslateServerEvent::decode_with_identity(&text),
-            Ok(Message::Binary(data)) => {
-                LiveTranslateServerEvent::decode_with_identity(&String::from_utf8_lossy(&data))
-            }
+        let wire = match message {
+            Ok(Message::Text(text)) => text.to_string(),
+            Ok(Message::Binary(data)) => String::from_utf8_lossy(&data).into_owned(),
             Ok(Message::Pong(_)) => {
                 inner.pong_notify.notify_waiters();
                 continue;
@@ -523,7 +601,10 @@ async fn receive_loop(
             }
         };
 
-        let (event, identity) = match decoded {
+        let revision = events.content_revision();
+        let _content = inner.content_lock.lock().await;
+        let decoded = inner.decoder.lock().await.decode(&wire);
+        let decoded = match decoded {
             Ok(decoded) => decoded,
             Err(_) => {
                 fail_receive_loop(
@@ -535,16 +616,22 @@ async fn receive_loop(
                 return;
             }
         };
-        let revision = events.content_revision();
-        let _content = inner.content_lock.lock().await;
-        if revision != events.content_revision()
-            && crate::clients::provider_events::is_content_event(&event)
-        {
-            continue;
-        }
-        for event in inner.aligner.lock().await.observe(&event, &identity) {
-            if !emit_server_event(&inner, &events, &setup, event) {
-                return;
+        for (event, identity) in decoded {
+            if (revision != events.content_revision()
+                && crate::clients::provider_events::is_content_event(&event))
+                || (!target_language.translates_audio()
+                    && matches!(
+                        event,
+                        LiveTranslateServerEvent::TranslationDraft(_)
+                            | LiveTranslateServerEvent::TranslationFinal(_)
+                    ))
+            {
+                continue;
+            }
+            for event in inner.aligner.lock().await.observe(&event, &identity) {
+                if !emit_server_event(&inner, &events, &setup, event) {
+                    return;
+                }
             }
         }
     }
@@ -593,6 +680,7 @@ fn emit_server_event(
             }
     );
     if source_final_arrived
+        && inner.translates_audio
         && events
             .send(LiveTranslateServerEvent::TranslationStarted)
             .is_err()
@@ -797,6 +885,43 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    fn livetranslate_wire_pairs_actual_item_identity_after_response_success() {
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        let mut aligner = LiveTranslatePairAligner::default();
+        let mut published = Vec::new();
+        for wire in [
+            r#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":"Hello."}"#,
+            r#"{"type":"conversation.item.created","previous_item_id":"source","item":{"id":"out","role":"assistant"}}"#,
+            r#"{"type":"response.text.delta","item_id":"out","response_id":"response","delta":"你好。"}"#,
+            r#"{"type":"response.text.done","item_id":"out","response_id":"response","text":"你好。"}"#,
+            r#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"source","transcript":"Hello."}"#,
+        ] {
+            for (event, identity) in decoder.decode(wire).unwrap() {
+                published.extend(aligner.observe(&event, &identity));
+            }
+        }
+        assert!(!published.iter().any(|event| matches!(
+            event,
+            LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
+        )));
+        for (event, identity) in decoder.decode(r#"{"type":"response.done","response":{"id":"response","status":"completed","output":[]}}"#).unwrap() {
+            published.extend(aligner.observe(&event, &identity));
+        }
+        let pairs: Vec<_> = published
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
+                )
+            })
+            .collect();
+        assert!(
+            matches!(pairs.as_slice(), [LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {utterance_id,source,translation,..}] if utterance_id == "source" && source == "Hello." && translation == "你好。")
+        );
+    }
+
+    #[test]
     fn interrupted_send_timings_distinguish_lock_wait_from_socket_wait() {
         let start = Instant::now();
         let mut timing = SendTiming::new(start);
@@ -827,8 +952,12 @@ mod tests {
 
     fn test_inner() -> Inner {
         Inner {
+            translates_audio: true,
             content_lock: Mutex::new(()),
             aligner: Mutex::new(LiveTranslatePairAligner::default()),
+            decoder: Mutex::new(AlibabaRealtimeEventDecoder::new(
+                AlibabaRealtimeMode::Disabled,
+            )),
             sink: Mutex::new(None),
             received_session_finished: AtomicBool::new(false),
             pong_notify: Notify::new(),

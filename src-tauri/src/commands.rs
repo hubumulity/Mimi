@@ -54,6 +54,8 @@ pub struct ServiceProfilePayload {
     pub name: String,
     pub provider: ProviderKind,
     pub qwen_mt_model: crate::core::protocols::qwen_mt::QwenMTModel,
+    pub alibaba_realtime_mode: crate::core::provider::AlibabaRealtimeMode,
+    pub alibaba_workspace_id: String,
     pub language_preset: Option<crate::core::provider::ProfileLanguagePreset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speech_recognition_name: Option<String>,
@@ -87,6 +89,8 @@ impl ServiceProfilePayload {
             name: profile.name,
             provider: profile.provider,
             qwen_mt_model: profile.qwen_mt_model,
+            alibaba_realtime_mode: profile.alibaba_realtime_mode,
+            alibaba_workspace_id: profile.alibaba_workspace_id,
             language_preset: profile.language_preset,
             speech_recognition_name: profile.speech_recognition_name,
             credential_state,
@@ -108,6 +112,8 @@ impl ServiceProfilePayload {
             name: profile.name,
             provider: profile.provider,
             qwen_mt_model: profile.qwen_mt_model,
+            alibaba_realtime_mode: profile.alibaba_realtime_mode,
+            alibaba_workspace_id: profile.alibaba_workspace_id,
             language_preset: profile.language_preset,
             speech_recognition_name: profile.speech_recognition_name,
             credential_state: CredentialState::Unavailable,
@@ -588,6 +594,7 @@ mod tests {
             "profile_credential_editor_state",
             "profile_duplicate",
             "open_tencent_setup_page",
+            "open_alibaba_setup_page",
         ] {
             assert!(include_str!("lib.rs").contains(&format!("commands::{command},")));
             let permissions = include_str!("../permissions/app.toml");
@@ -605,6 +612,30 @@ mod tests {
                 .iter()
                 .any(|permission| permission == "app-settings"));
             assert_eq!(capability["windows"], serde_json::json!(["settings"]));
+        }
+    }
+
+    #[test]
+    fn alibaba_setup_pages_reject_arbitrary_urls() {
+        for (value, expected) in [
+            (
+                "guide",
+                "https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime",
+            ),
+            (
+                "apiKey",
+                "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
+            ),
+            (
+                "workspace",
+                "https://bailian.console.aliyun.com/cn-beijing/settings/workspace",
+            ),
+        ] {
+            let page: AlibabaSetupPage = serde_json::from_value(serde_json::json!(value)).unwrap();
+            assert_eq!(page.url(), expected);
+        }
+        for value in ["https://example.com", "file:///tmp/test", "ApiKey", ""] {
+            assert!(serde_json::from_value::<AlibabaSetupPage>(serde_json::json!(value)).is_err());
         }
     }
 
@@ -952,6 +983,8 @@ mod tests {
             credential_storage: "keychain",
             profiles: vec![ServiceProfilePayload {
                 qwen_mt_model: Default::default(),
+                alibaba_realtime_mode: Default::default(),
+                alibaba_workspace_id: String::new(),
                 language_preset: None,
                 speech_network_proxy: None,
                 text_network_proxy: None,
@@ -1601,6 +1634,40 @@ pub fn app_open_releases(app: AppHandle) -> Result<(), String> {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum AlibabaSetupPage {
+    Guide,
+    ApiKey,
+    Workspace,
+}
+
+impl AlibabaSetupPage {
+    fn url(self) -> &'static str {
+        match self {
+            Self::Guide => {
+                "https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime"
+            }
+            Self::ApiKey => "https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key",
+            Self::Workspace => "https://bailian.console.aliyun.com/cn-beijing/settings/workspace",
+        }
+    }
+}
+
+/// Only explicit user actions open one of the fixed official setup pages.
+#[tauri::command]
+pub fn open_alibaba_setup_page(app: AppHandle, page: AlibabaSetupPage) -> Result<(), String> {
+    app.opener()
+        .open_url(page.url(), None::<&str>)
+        .map_err(|_| {
+            tracing::warn!(
+                label = "system_opener_failed",
+                "Alibaba setup page open failed"
+            );
+            "Could not open the Alibaba Cloud setup page.".to_string()
+        })
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TencentSetupPage {
     Account,
     ApiKey,
@@ -2105,16 +2172,23 @@ pub async fn profile_update(
     custom_speech_languages_patch: Option<CustomSpeechLanguagesPatch>,
     language_preset_patch: Option<crate::core::provider::ProfileLanguagePresetPatch>,
     qwen_mt_model: Option<crate::core::protocols::qwen_mt::QwenMTModel>,
+    alibaba_realtime_mode: Option<crate::core::provider::AlibabaRealtimeMode>,
+    alibaba_workspace_id: Option<String>,
 ) -> Result<SettingsSnapshotPayload, String> {
     let _lifecycle = state.session.settings_mutation_guard(true).await?;
     ensure_profile_mutation_allowed(state.session.has_active_session())?;
     let previous_profile = state.settings.active_profile()?;
     let changes_active_speech_route = previous_profile.id == profile_id
-        && speech_network_proxy
+        && (speech_network_proxy
             .as_ref()
-            .is_some_and(|proxy| previous_profile.speech_network_proxy.as_ref() != Some(proxy));
+            .is_some_and(|proxy| previous_profile.speech_network_proxy.as_ref() != Some(proxy))
+            || alibaba_realtime_mode
+                .is_some_and(|mode| previous_profile.alibaba_realtime_mode != mode)
+            || alibaba_workspace_id.as_ref().is_some_and(|workspace| {
+                previous_profile.alibaba_workspace_id != workspace.trim()
+            }));
     let configuration_failure = state.session.configuration_failure_snapshot();
-    state.settings.update_profile_options_with_model(
+    state.settings.update_profile_options_with_realtime(
         &profile_id,
         name.as_deref(),
         speech_network_proxy,
@@ -2124,6 +2198,8 @@ pub async fn profile_update(
         custom_speech_languages_patch,
         language_preset_patch,
         qwen_mt_model,
+        alibaba_realtime_mode,
+        alibaba_workspace_id.as_deref(),
     )?;
     state
         .session

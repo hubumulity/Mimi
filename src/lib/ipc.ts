@@ -78,6 +78,11 @@ export function sessionStart(): Promise<void> {
   return invoke("session_start");
 }
 
+export type AlibabaSetupPage = "guide" | "apiKey" | "workspace";
+export function openAlibabaSetupPage(page: AlibabaSetupPage): Promise<void> {
+  return invoke("open_alibaba_setup_page", { page });
+}
+
 export type TencentSetupPage = "account" | "apiKey" | "asr";
 export function openTencentSetupPage(page: TencentSetupPage): Promise<void> {
   return invoke("open_tencent_setup_page", { page });

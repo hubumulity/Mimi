@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { AlibabaSetupLink } from "./AlibabaSetupLink";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ConfigInput, type ConfigInputElement } from "./ConfigInput";
 import { SettingsHelp } from "./SettingsHelp";
@@ -6,7 +7,7 @@ import { CredentialStorageHelp } from "./CredentialStorageHelp";
 import { Icon } from "../../components/Icon";
 import { I18N } from "../../lib/i18n";
 import { credentialUnavailableHelp } from "../../lib/connectionDiagnostics";
-import { isChatCompletionsTranslation, textTranslationForProfile } from "../../lib/providerCapabilities";
+import { isChatCompletionsTranslation, textTranslationForProfile, usesAlibabaRealtime } from "../../lib/providerCapabilities";
 import { CHATMOCK_DEFAULT_ENDPOINT, buildAlibabaTranslationCredentials, deepLXEndpointIsValid, emptyCredentialDraft, openAICompatibleModelIsValid } from "../../lib/providerCredentials";
 import type { ProviderCredentialsInput, ServiceProfile, SourceLanguage, TargetLanguage, TextTranslation } from "../../lib/types";
 import { DestructiveConfirmation } from "./DestructiveConfirmation";
@@ -44,6 +45,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
   confirmingDelete: boolean;
   onCancelDelete: () => void;
 }) {
+  const integratedRealtime = usesAlibabaRealtime(profile);
   const savedTranslation = textTranslationForProfile(profile);
   const [translationDraft, setTranslationDraft] = useState<TextTranslation | null>(null);
   const translation = translationDraft ?? savedTranslation;
@@ -59,7 +61,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
   const [revealEpoch, setRevealEpoch] = useState(0);
   const [clearTranslationToken, setClearTranslationToken] = useState(false);
   const recognitionState = useCredentialEditorState(profile.id, undefined, visible && !textOnly, revealEpoch);
-  const translationState = useCredentialEditorState(profile.id, savedTranslation === "followService" ? undefined : savedTranslation, visible && savedTranslation !== "followService" && !nativeTranslation && translation === savedTranslation, revealEpoch);
+  const translationState = useCredentialEditorState(profile.id, savedTranslation === "followService" ? undefined : savedTranslation, visible && !integratedRealtime && savedTranslation !== "followService" && !nativeTranslation && translation === savedTranslation, revealEpoch);
   const endpointValue = editedFields.endpoint ? draft.endpoint : translationState.state?.endpoint ?? draft.endpoint;
   const modelValue = editedFields.model ? draft.model : translationState.state?.model ?? draft.model;
   const endpointChanged = editedFields.endpoint && draft.endpoint.trim() !== (translationState.state?.endpoint ?? "");
@@ -70,7 +72,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
   const endpointRef = useRef<ConfigInputElement>(null);
   const modelRef = useRef<ConfigInputElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
-  const saved = (textOnly ? profile.textCredentialState : profile.credentialState) === "present" || (textOnly && (savedTranslation === "followService" || savedTranslation === "apple"));
+  const saved = (textOnly ? profile.textCredentialState : integratedRealtime ? profile.speechCredentialState ?? profile.credentialState : profile.credentialState) === "present" || (textOnly && (savedTranslation === "followService" || savedTranslation === "apple"));
   // Replacement drafts and saved-value previews must never carry across
   // routes, including a destination changed by another window.
   if (draftTranslation !== translation) {
@@ -81,7 +83,9 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
     setModelInvalid(false);
     setClearTranslationToken(false);
   }
-  const credentials = buildAlibabaTranslationCredentials(profile, { ...draft, endpoint: endpointDraft, model: modelDraft }, translation, clearTranslationToken);
+  const credentials: ProviderCredentialsInput | null = integratedRealtime
+    ? draft.apiKey.trim() ? { kind: "apiKey", apiKey: draft.apiKey.trim() } : null
+    : buildAlibabaTranslationCredentials(profile, { ...draft, endpoint: endpointDraft, model: modelDraft }, translation, clearTranslationToken);
   const dirty = !saved || editingKey || translation !== savedTranslation || endpointChanged || !!draft.token || modelChanged || clearTranslationToken;
   const compatible = isChatCompletionsTranslation(translation);
   const keepsSavedDestination = saved && translation === savedTranslation;
@@ -180,24 +184,25 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
     { value: "openAICompatible", label: I18N.settings.textTranslationOpenAICompatible, icon: <ProviderIcon provider="openAICompatible" size={32} /> },
   ].map(option => option.value === "followService" ? option : { ...option, label: textTranslationDisplayName(profile, option.value as TextTranslation) });
   const nativeGuideId = `${inputId}-apple-translation-guide`;
-  const translationCheck = !(textOnly && translation === "followService") && !(nativeTranslation && (targetLanguage === "original" || sourceLanguage === targetLanguage))
+  const translationCheck = !integratedRealtime && !(textOnly && translation === "followService") && !(nativeTranslation && (targetLanguage === "original" || sourceLanguage === targetLanguage))
     ? textConnectionCheck?.(textCheckDraft) : null;
 
   const stages = <>
     {!textOnly && <section className="service-stage" aria-labelledby={`${inputId}-recognition-title`}>
       <header className="service-stage__heading">
-        <h3 id={`${inputId}-recognition-title`}>{I18N.settings.speechRecognition}</h3>
+        <h3 id={`${inputId}-recognition-title`}>{integratedRealtime ? I18N.settings.voiceTranslation : I18N.settings.speechRecognition}</h3>
+        {profile.provider === "alibabaCloud" && saved && !editingKey && <div className="service-stage__actions"><AlibabaSetupLink page="apiKey" disabled={disabled || busy} /></div>}
       </header>
       <div className="settings-field service-stage__selector">
         <span>{I18N.settings.serviceProvider}</span>
         <span className="service-stage__provider"><ProviderIcon provider="alibabaCloud" size={32} />Alibaba Cloud</span>
       </div>
       {(!saved || editingKey) && <div className="settings-field">
-        <label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>
+        <span className="service-stage__field-label alibaba-setup-field-label"><label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>{profile.provider === "alibabaCloud" && <AlibabaSetupLink page="apiKey" disabled={disabled || busy} />}</span>
         <SavedCredentialInput key={`${profile.id}:${revealEpoch}`} profileId={profile.id} field={profile.provider === "deepLX" ? "asrApiKey" : "apiKey"} label={I18N.settings.apiKey} hasSavedValue={recognitionState.state?.savedFields.includes(profile.provider === "deepLX" ? "asrApiKey" : "apiKey") ?? false} active={visible && !busy && !confirmingDelete} id={`${inputId}-apiKey`} type="password" autoComplete="new-password" spellCheck={false} disabled={disabled} value={draft.apiKey} placeholder={I18N.settings.apiKeyPlaceholder} aria-describedby={noteId} onValueChange={(value) => { setEditingKey(true); setDraft((current) => ({ ...current, apiKey: value })); }} />
       </div>}
     </section>}
-    <section className="service-stage service-stage--translation" aria-labelledby={`${inputId}-translation-title`}>
+    {!integratedRealtime && <section className="service-stage service-stage--translation" aria-labelledby={`${inputId}-translation-title`}>
       <header className="service-stage__heading">
         <div className="service-stage__name-help"><h3 id={`${inputId}-translation-title`}>{I18N.settings.textTranslationLabel}</h3><SettingsHelp text={translationHelp} label={I18N.settings.helpLabel} /></div>
         {nativeTranslation
@@ -243,7 +248,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
           </button>
         </span>}
       </div>}
-    </section>
+    </section>}
   </>;
 
   return <div className="credential-panel" aria-busy={busy}>
