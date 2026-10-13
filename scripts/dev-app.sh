@@ -24,12 +24,14 @@ BUNDLE_IDENTIFIER="app.yuxino.mimi.dev"
 RELEASE_BUNDLE_IDENTIFIER="app.yuxino.mimi"
 MODE="live"
 SHOULD_LAUNCH=1
+WATCH=0
 EVIDENCE_WORKSPACE=""
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/dev-app.sh [--ui-only] [--no-launch] [--evidence-workspace NAME]
+Usage: ./scripts/dev-app.sh [--watch] [--ui-only] [--no-launch] [--evidence-workspace NAME]
 
+  --watch     Keep the signed native app open; React/CSS changes update immediately.
   --ui-only   Open local UI fixtures without credentials, network, or audio capture.
   --no-launch Build and install the canonical development app without opening it.
   --evidence-workspace NAME  Select a private dev evidence batch; recordings remain off until explicitly enabled.
@@ -44,6 +46,9 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --watch)
+      WATCH=1
+      ;;
     --ui-only)
       MODE="ui-only"
       ;;
@@ -75,6 +80,24 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: scripts/dev-app.sh is the stable macOS launcher." >&2
   echo "Use npm run tauri:dev on Windows." >&2
   exit 2
+fi
+
+if [[ "$WATCH" == "1" ]]; then
+  if [[ "$SHOULD_LAUNCH" != "1" ]]; then
+    echo "error: --watch requires launching the app; omit --no-launch." >&2
+    exit 2
+  fi
+  WATCH_ARGS=()
+  [[ "$MODE" == "ui-only" ]] && WATCH_ARGS+=(--ui-only)
+  [[ -n "$EVIDENCE_WORKSPACE" ]] && WATCH_ARGS+=(--evidence-workspace "$EVIDENCE_WORKSPACE")
+  if [[ ${#WATCH_ARGS[@]} -gt 0 ]]; then
+    exec node "$SCRIPT_DIR/dev-app-watch.mjs" "${WATCH_ARGS[@]}"
+  fi
+  exec node "$SCRIPT_DIR/dev-app-watch.mjs"
+fi
+
+if [[ "${MIMI_DEV_WATCH:-0}" == "1" ]]; then
+  DEV_TAURI_CONFIG="$PROJECT_DIR/src-tauri/tauri.watch.conf.json"
 fi
 
 APP_VERSION="$(/usr/bin/plutil -extract version raw "$RELEASE_TAURI_CONFIG")"
@@ -316,7 +339,9 @@ else
   export MIMI_DEBUG_TREE_STATE="clean"
 fi
 
-npm run build:dev
+if [[ "${MIMI_DEV_WATCH:-0}" != "1" ]]; then
+  npm run build:dev
+fi
 TAURI_CONFIG="$(<"$DEV_TAURI_CONFIG")" cargo build --profile local-dev \
   --locked \
   --features tauri/custom-protocol,devtools,development-debugger \

@@ -31,6 +31,8 @@ export default defineConfig(({ command, mode }) => {
   const productionAdapter = `${normalizePath(__dirname)}/src/lib/productionDevelopmentTools.ts`;
   return {
     plugins: [react()],
+    envDir: false,
+    optimizeDeps: { entries: ["index.html"] },
     define: { __MIMI_DEVELOPMENT_BUILD__: JSON.stringify(developmentBuild) },
     resolve: {
       alias: developmentBuild ? [] : [
@@ -61,7 +63,14 @@ export default defineConfig(({ command, mode }) => {
         : undefined,
       watch: {
         // 3. tell vite to ignore watching `src-tauri`
-        ignored: ["**/src-tauri/**"],
+        ignored: [
+          "**/src-tauri/**",
+          "**/shared/target/**",
+          "**/.cargo-home/**",
+          "**/.npm-cache/**",
+          "**/android/**/build/**",
+          "**/android/.gradle/**",
+        ],
       },
     },
   };

@@ -21,10 +21,20 @@ not version labels. Keychain continuity is a separate concern below.
 Rules:
 
 - Use `./scripts/dev-app.sh` for normal local testing. Do not run `tauri dev`, a
-  bare `target/*/mimi` executable, or a copy at a disposable path. The launcher
-  uses the incremental `local-dev` Cargo profile and `npm run build:dev` (embedded
+  bare `target/*/mimi` executable, or a copy at a disposable path. Add `--watch`
+  for daily React/CSS iteration (`--watch --ui-only` for credential-free fixtures).
+  It keeps the signed native app and serves hot updates from this checkout on
+  `127.0.0.1:1420`, without reading `.env` or writing `dist`. An occupied port
+  fails before installation; stop that preview before switching worktrees.
+  Ctrl-C stops its own Vite server. Rust/Swift, permissions and Tauri config
+  changes require rerunning the launcher; frontend reload cannot replace them.
+  Without `--watch`, the launcher uses `npm run build:dev` (embedded
   frontend with source maps, without minification or a repeated type/icon check).
-  `./scripts/check.sh` still runs all checks and the production frontend build.
+  Both use the incremental `local-dev` Cargo profile. During edits, use
+  `./scripts/check.sh --quick frontend [src/files...]`, `--quick desktop [filter]`
+  or `--quick shared`; show the preview first. `./scripts/check.sh` still runs
+  all checks and the production frontend build for cross-layer, build/signing,
+  dependency changes and release preparation; CI retains platform coverage.
   The first `local-dev` build creates a separate cache; later builds reuse it.
   `CARGO_TARGET_DIR` selects both the binary and temporary bundle location.
   A fresh cache builds the existing SpeexDSP echo-cancellation dependency and
@@ -443,7 +453,9 @@ Reviewed text inventories hash and compare the canonical LF representation:
 Windows CRLF checkout alone must not invalidate the JNI license inventory, while
 actual lockfile or notice edits must still fail the packaging gate.
 
-Run `./scripts/check.sh`. For signing changes, additionally build with
+Use checks proportional to the changed area while iterating; use the complete
+`./scripts/check.sh` for cross-layer, build/signing, dependency changes or release
+preparation. For signing changes, additionally build with
 `./scripts/package-app.sh`, verify the bundle, and compare its designated
 requirement with any app that would be replaced. Before a commit, inspect the
 diff for credentials, recordings, subtitle content, personal paths, build

@@ -46,6 +46,8 @@ pub enum TencentCloudProtocolError {
     InvalidJSON,
     #[error("Tencent Cloud realtime translation returned an event without {0}.")]
     MissingEventField(&'static str),
+    #[error("Tencent Cloud realtime translation returned invalid sentence timing.")]
+    InvalidSentenceTiming,
 }
 
 /// A signed, single-use Tencent Cloud endpoint.
@@ -254,6 +256,15 @@ impl TencentCloudRequestEncoder {
     }
 }
 
+/// Provider sentence identity and its position in the current audio stream.
+/// Only this bounded metadata is retained after a sentence is confirmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TencentCloudSentence {
+    pub id: String,
+    pub start_time_ms: u64,
+    pub end_time_ms: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TencentCloudServerEvent {
     SessionReady,
@@ -262,6 +273,7 @@ pub enum TencentCloudServerEvent {
         target_text: String,
         source_language: String,
         sentence_end: bool,
+        sentence: TencentCloudSentence,
     },
     SessionFinished,
     ProviderError {
@@ -304,11 +316,32 @@ impl TencentCloudServerEvent {
             let sentence_end = result.get("sentence_end").and_then(Value::as_bool).ok_or(
                 TencentCloudProtocolError::MissingEventField("result.sentence_end"),
             )?;
+            let id = value
+                .get("sentence_id")
+                .and_then(Value::as_str)
+                .filter(|id| {
+                    !id.trim().is_empty() && id.len() <= 128 && !id.chars().any(char::is_control)
+                })
+                .ok_or(TencentCloudProtocolError::MissingEventField("sentence_id"))?;
+            let start_time_ms = result.get("start_time").and_then(Value::as_u64).ok_or(
+                TencentCloudProtocolError::MissingEventField("result.start_time"),
+            )?;
+            let end_time_ms = result.get("end_time").and_then(Value::as_u64).ok_or(
+                TencentCloudProtocolError::MissingEventField("result.end_time"),
+            )?;
+            if end_time_ms < start_time_ms {
+                return Err(TencentCloudProtocolError::InvalidSentenceTiming);
+            }
             return Ok(Self::Transcript {
                 source_text,
                 target_text,
                 source_language,
                 sentence_end,
+                sentence: TencentCloudSentence {
+                    id: id.to_string(),
+                    start_time_ms,
+                    end_time_ms,
+                },
             });
         }
 
@@ -568,6 +601,7 @@ mod tests {
                         target_text,
                         source_language,
                         sentence_end,
+                        sentence,
                     },
                     kind,
                 ) => {
@@ -577,6 +611,15 @@ mod tests {
                                 && (source_text.trim().is_empty() || target_text.trim().is_empty())
                         );
                     } else {
+                        assert_eq!(sentence.id, case["sentence"]["id"].as_str().unwrap());
+                        assert_eq!(
+                            sentence.start_time_ms,
+                            case["sentence"]["startTimeMs"].as_u64().unwrap()
+                        );
+                        assert_eq!(
+                            sentence.end_time_ms,
+                            case["sentence"]["endTimeMs"].as_u64().unwrap()
+                        );
                         assert_eq!(sentence_end, kind == "finalPair");
                         assert_eq!(source_text.trim(), expected["source"].as_str().unwrap());
                         assert_eq!(
@@ -618,11 +661,16 @@ mod tests {
                 target_text: "こんにちは".into(),
                 source_language: "zh".into(),
                 sentence_end: false,
+                sentence: TencentCloudSentence {
+                    id: "s".into(),
+                    start_time_ms: 0,
+                    end_time_ms: 800
+                },
             }
         );
 
         let final_sentence = TencentCloudServerEvent::decode(
-            r#"{"code":0,"result":{"source":"zh","target":"ja","source_text":"你好。","target_text":"こんにちは。","sentence_end":true}}"#,
+            r#"{"code":0,"sentence_id":"s","result":{"source":"zh","target":"ja","source_text":"你好。","target_text":"こんにちは。","start_time":0,"end_time":1000,"sentence_end":true}}"#,
         )
         .unwrap();
         assert!(matches!(
@@ -659,6 +707,45 @@ mod tests {
         assert_eq!(
             TencentCloudServerEvent::decode_value(&value).unwrap_err(),
             TencentCloudProtocolError::ResponseTooLarge
+        );
+    }
+
+    #[test]
+    fn sentence_identity_and_timing_are_required_and_bounded() {
+        let valid = json!({
+            "code": 0,
+            "sentence_id": "synthetic-sentence",
+            "result": {
+                "source": "en", "target": "zh",
+                "source_text": "Synthetic source", "target_text": "合成译文",
+                "start_time": 100, "end_time": 800, "sentence_end": false
+            }
+        });
+        assert!(TencentCloudServerEvent::decode_value(&valid).is_ok());
+        for value in [
+            Value::Null,
+            json!(0),
+            json!(""),
+            json!(" "),
+            json!("id\n"),
+            json!("x".repeat(129)),
+        ] {
+            let mut frame = valid.clone();
+            frame["sentence_id"] = value;
+            assert!(TencentCloudServerEvent::decode_value(&frame).is_err());
+        }
+        for field in ["start_time", "end_time"] {
+            for value in [Value::Null, json!(-1), json!(0.5), json!("100")] {
+                let mut frame = valid.clone();
+                frame["result"][field] = value;
+                assert!(TencentCloudServerEvent::decode_value(&frame).is_err());
+            }
+        }
+        let mut backwards = valid;
+        backwards["result"]["end_time"] = json!(99);
+        assert_eq!(
+            TencentCloudServerEvent::decode_value(&backwards),
+            Err(TencentCloudProtocolError::InvalidSentenceTiming)
         );
     }
 }

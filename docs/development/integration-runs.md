@@ -4,6 +4,39 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-13：自定义文本翻译关闭思考与阿里延迟对比
+
+- 测试源为 main `41c323ad` 加本次共享协议改动；
+  `translation_thinking.rs` SHA-256 为
+  `b559435f841327019880a9da7da4a9d5eef45c815dcbc62e8d292be4eb13963b`。
+  按官方主机和已核实模型发送关闭参数，无界面开关；未知主机／模型、
+  强制思考模型不加不兼容参数，不更换模型，也不失败后回退到思考模式。
+  内置 Qwen-MT 和 Grok Voice 原有非思考请求保持原样。
+- 49 个共享合成用例覆盖关闭字段、区域／工作空间地址、日期快照、
+  相似域名、代理地址和强制思考排除项。直接 Rust 契约检查通过；
+  Android Debug／Release 各 200／200，其中新增实际 JNI 文本检查通过
+  本地 CONNECT／TLS 服务逐条抓取同一套 49 用例的真实 HTTP JSON。
+  shared fmt、严格 clippy、架构／原生打包规则和完整共享测试通过：
+  runtime 736 passed／1 ignored，JNI crate 5／5。完整 `./scripts/check.sh`
+  也通过，包括桌面 Rust、前端 lint／测试／类型／生产构建及差异检查。
+- 经本轮速度比较授权，仅读取已初始化的本机 Dev 私有文件凭据，沿用
+  已保存的网络路由，对官方阿里 `qwen3.5-flash` 发固定公开短句，en→zh。
+  两组使用同一个共享 Rust 请求构造器和 HTTP 客户端；基线仅移除
+  `enable_thinking`，改动组为 `false`。先预热一对，再交替调整组别顺序。
+  6 组成功配对的整句 HTTP 完成中位数为 21,234.5 ms／483 ms，减少
+  97.73%。基线均返回非空思考内容，关闭组思考字符数均为零。
+- 第 7 组关闭请求 672 ms 成功，基线请求失败；原 harness 未区分
+  超时与网络错误，不能把原因写成已确认超时。随后停止，第 8 组未执行；
+  失败和未配对样本保留但不纳入成功配对中位数。服务比较使用 30 秒
+  截止，以观察基线完成时间；6 个成功基线均超过产品的 8 秒期限，
+  因而不能表述为旧版 Mimi 实际成功显示字幕需要 21 秒。
+- 私有 `mimi-translation-thinking-20261013` 证据批次保留统计 JSON、
+  无正文的 timing log、临时 harness 源码与自动检查记录。没有复制密钥、
+  更改保存配置、采集音频、替换正在运行的 Dev App 或发布安装包。
+  本次证明协议和单个阿里模型的 HTTP 延迟；未验证端到端字幕延迟、
+  翻译质量或其他服务的实测提速。后续如需原生效果，使用同一公开样本
+  和准确构建另行测播放→识别→翻译→可见字幕，不能沿用 HTTP 数字。
+
 ## 2026-10-13：可选阿里实时模型的首个短样本
 
 - 基于远端 main `b04e394b` 的隔离候选，默认 Audio3 ASR → MT-lite Turbo
@@ -2837,3 +2870,46 @@
 - Read back all 17 public assets, matching GitHub digests and `SHA256SUMS.txt`; independently verified five updater signatures, exact Latest manifest routing and bilingual notes. Both macOS architectures retained the installed formal app's complete signing requirement and their four public files match the locally source-verified packages. GitHub's native Contributors avatar for `@yuxino` was visible.
 - Public Android APK is non-debuggable `1.5.24` / `10524`, uses the same release certificate as v1.5.23, and passed four-ABI shared JNI and 16 KB alignment checks. Website PR #40 deployed successfully; all eight live locales show the concise recommendation and eight v1.5.24 download links.
 - This run verifies distribution, not additional speech quality or installed-updater acceptance. Earlier physical-device, API 29, split-screen, native Intel and manual Windows/Linux speech limits remain. The user's further report of frequent Ali draft meaning changes is pending a separate shared PC/Android investigation; this release does not establish that interim semantic revisions are eliminated.
+
+## 2026-10-13 — Fast signed local UI iteration
+
+- Source: `b04e394b` plus the development-workflow changes in this entry's
+  commit; no subtitle, provider or capture implementation changes. Watch mode
+  uses the signed canonical `local-dev` app, the development identifier and a
+  loopback Vite `frontendDist`. Keeping `tauri/custom-protocol` preserves the
+  existing native dependency cache and bundle Dock-icon path.
+- Actual UI-only settings loaded from `127.0.0.1:1420` and native navigation
+  was available. Temporary React text and CSS font-size edits appeared directly
+  in the native window on the next observation. PID and designated requirement
+  stayed unchanged; the signed bundle and build binary had the same Mach-O UUID.
+  Both source edits and their temporary backups were restored/removed.
+- First watch rebuild on the existing cache: Cargo 14.12 s, signed install
+  15.18 s (launch correctly stopped at a conflicting live test app). After the
+  user approved its normal exit, the next native compilation took 0.47 s and
+  launched successfully. Frontend edits thereafter needed no Rust build, signing
+  or application restart. These warm runs do not predict cold build duration.
+- Canonical `scripts/check.sh` passed in 123.55 s: shared Rust/JNI, native Swift,
+  signing/install recovery, desktop tests, 2,043 frontend tests and production
+  output guards. Subsequent quick-path refinement passed argument safety and
+  the same 181 related frontend tests in 8.18 s including typecheck and selected
+  lint; CSS-only typecheck/diff took 0.30 s. Timings are single local samples.
+  Content-cached full-project lint took 6.28 s initially and 1.02 s on the next
+  unchanged run. Focused desktop checks compile through `cargo test`, avoiding
+  a redundant separate `cargo check` pass.
+- Vite port-collision rejection, failed-installer cleanup, and SIGINT server
+  cleanup passed without touching another server. Dependency scanning is
+  restricted to the app entry, with generated reports/caches ignored; `.env`
+  loading is disabled. Checker self-tests run in full checks/CI while production
+  builds retain the actual output guard. No behavioral regression was removed.
+- After rebasing onto upstream `a95bcb63` (Baidu protocol fix), shared architecture,
+  strict Clippy and Rust/JNI adapter tests passed again in 32.69 s, including
+  720 shared-runtime tests and five native adapter tests. The upstream business
+  change is preserved; this task does not claim new provider acceptance.
+- Remaining scope: no Windows/Linux native hot-preview acceptance, no cold-cache
+  timing, Android JVM run or new provider/audio session. The local JNI checks
+  above exercise Rust adapters, not Java native calls; actual JVM coverage remains
+  an additional gate for portable behavior changes and runs in Android CI.
+  Rust/Swift, permission and native
+  configuration edits still require an incremental signed rebuild. The user's
+  durable instruction is preview first and proportional checks; pure copy/style
+  edits do not require unrelated state matrices or repeated full local suites.

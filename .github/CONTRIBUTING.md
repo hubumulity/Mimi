@@ -25,7 +25,7 @@ git clone https://github.com/yuxino/mimi.git
 cd mimi
 npm ci
 npm run tauri:dev        # Windows / Linux
-./scripts/dev-app.sh     # macOS
+./scripts/dev-app.sh --watch  # macOS: signed app + React/CSS hot reload
 ```
 
 macOS 可通过 `brew install cmake` 安装 CMake；Xcode Command Line Tools 提供编译器和 libclang。Windows 需要 Visual Studio 的 C++ 桌面开发工具、CMake 和 LLVM；若 bindgen 无法找到 `libclang.dll`，将 `LIBCLANG_PATH` 设为 LLVM 的 `bin` 目录。
@@ -35,6 +35,14 @@ On macOS, install CMake with `brew install cmake`; Xcode Command Line Tools supp
 开发版和正式版都在设置中添加、编辑服务配置，并将凭据存入各自的私有本地文件。两边目录独立，开发版不读取 `.env`。启动和隔离规则见[开发凭据](../docs/development/local-dev-credentials.md)。
 
 Development and production both use editable service configurations and private local credential files in separate app directories. Development does not read `.env`. See [development credentials](../docs/development/local-dev-credentials.md) for launch and isolation rules.
+
+macOS 日常界面开发可用 `npm run dev:ui` 启动无凭据的热更新预览，或 `npm run dev:app` 使用独立开发配置。保存 React/CSS 后原生窗口自动更新；Rust、Swift、权限或 Tauri 配置改动需停止预览并重新运行。原生离线验收仍用 `./scripts/dev-app.sh`。首次原生编译需要建立缓存。
+
+On macOS, `npm run dev:ui` opens credential-free fixtures with hot reload;
+`npm run dev:app` uses the separate development configuration. React/CSS edits
+update the native windows on save. Restart the preview after Rust, Swift,
+permission or Tauri configuration changes. Use `./scripts/dev-app.sh` for offline
+native acceptance. The first native build still needs to populate its cache.
 
 Windows 安装包需在 Windows 上构建 / Build Windows installers on Windows:
 
@@ -55,15 +63,32 @@ For Linux dependencies, building, and isolated audio/keyring/UI checks, see the 
 Before UI changes, read [UI consistency and feedback](../docs/development/ui-guidelines.md). When fixing a repeated pattern, audit its sibling controls on other pages and check success, failure, modal and late-result paths.
 
 ```bash
+./scripts/check.sh --quick frontend src/windows/settings/ConfigInput.tsx
+./scripts/check.sh --quick desktop settings_store
+./scripts/check.sh --quick shared
 ./scripts/check.sh
 ./scripts/package-app.sh
 ```
 
-界面改动还需要在 macOS 通过 `./scripts/dev-app.sh` 启动固定身份的应用（Windows 使用 `npm run tauri:dev`），检查设置窗、托盘面板和字幕浮窗的普通、空白、错误、暂停、收起、翻译中和长字幕状态。涉及延迟或流式管线的改动应使用所改服务商的真实会话（独立 Dev 配置中的本机私有凭据文件）验证并记录测量结果。
+开发中只运行相关范围的检查，先展示可用预览。前端可用 `npm run test:watch -- 文件名` 持续运行定向测试。无文件参数的前端快速检查会跑全部前端测试；跨层、构建、签名、依赖或发行准备使用完整 `./scripts/check.sh`，跨平台检查留给 CI。打包仅在需要安装包时运行。
+
+While iterating, check only the affected area and show the working preview first.
+Use `npm run test:watch -- filename` for continuous focused frontend tests.
+Without file arguments the quick frontend check runs the full frontend suite.
+Use the complete `./scripts/check.sh` for cross-layer, build, signing, dependency
+changes or release preparation. CI retains platform coverage. Package only when
+an installer is needed.
+
+界面改动在 macOS 通过 `./scripts/dev-app.sh --watch` 查看实际结果（Windows 使用 `npm run tauri:dev`）。共享控件或交互变化需要检查相关页面、成功和失败状态；纯文案或样式改动验证实际显示与受影响布局即可。涉及延迟或流式管线的改动应使用所改服务商的真实会话（独立 Dev 配置中的本机私有凭据文件）验证并记录测量结果。
 
 macOS 调试或打包前请阅读 [`docs/development/common-regressions.md`](../docs/development/common-regressions.md)。日常验证一律使用 `/Applications/mimi-dev.app`。替换正式版前必须比较完整签名要求；旧临时签名版本迁移到固定签名仍可能需要重新授权一次。公开发布请遵循[固定签名流程](../docs/development/macos-release-signing.md)。
 
-For UI changes, launch the stable app identity with `./scripts/dev-app.sh` on macOS (`npm run tauri:dev` on Windows) and inspect the settings window, tray panel, and overlay in normal, empty, error, paused, collapsed, translating, and long-subtitle states. Latency- or streaming-sensitive changes should be verified against a real session for the changed provider, using the independent development app’s saved local credential file, and include measured results.
+For UI changes, inspect the signed `./scripts/dev-app.sh --watch` preview on
+macOS (`npm run tauri:dev` on Windows). Shared controls and changed interactions
+need their related surfaces and success/failure states; pure copy/style edits
+need the actual visible result and affected layout. Latency- or streaming-sensitive
+changes still need a real session for the changed provider, using the independent
+development app's saved local credential file, with measured results.
 
 Before macOS testing or packaging, read [`docs/development/common-regressions.md`](../docs/development/common-regressions.md). Routine testing belongs in `/Applications/mimi-dev.app`. Compare complete designated requirements before replacing the formal app; migration from old ad-hoc releases may require one new grant. Follow the [fixed-signing release workflow](../docs/development/macos-release-signing.md) for public artifacts.
 

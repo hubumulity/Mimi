@@ -99,6 +99,8 @@ pub struct ProviderEventReceiver {
     translation_pending: Option<SequencedEvent>,
     last_delivered_sequence: u64,
     last_source_final: Option<(u64, u64)>,
+    // Revision scopes final freezing across content clears.
+    last_identified_final: Option<(u64, u64, String)>,
     content_revision: Arc<AtomicU64>,
 }
 
@@ -144,6 +146,7 @@ fn provider_event_channel_with_capacity(
             translation_pending: None,
             last_delivered_sequence: 0,
             last_source_final: None,
+            last_identified_final: None,
             content_revision,
         },
     )
@@ -337,6 +340,7 @@ impl ProviderEventSender {
             match &event.event {
                 LiveTranslateServerEvent::SourceDraft { .. }
                 | LiveTranslateServerEvent::SourceUtteranceDraft { .. }
+                | LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { .. }
                 | LiveTranslateServerEvent::TranslationDraft(_)
                 | LiveTranslateServerEvent::UtteranceText {
                     is_final: false, ..
@@ -347,7 +351,8 @@ impl ProviderEventSender {
         );
         let result = match &event.event {
             LiveTranslateServerEvent::SourceDraft { .. }
-            | LiveTranslateServerEvent::SourceUtteranceDraft { .. } => {
+            | LiveTranslateServerEvent::SourceUtteranceDraft { .. }
+            | LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { .. } => {
                 if self.inner.source_draft.receiver_count() == 0 {
                     self.debug_event(
                         &event.event,
@@ -586,6 +591,10 @@ impl ProviderEventReceiver {
 
     fn take_reliable_event(&mut self, event: SequencedEvent) -> ProviderEvent {
         match &event.event {
+            LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { utterance_id, .. } => {
+                self.last_identified_final =
+                    Some((event.sequence, event.content_revision, utterance_id.clone()));
+            }
             LiveTranslateServerEvent::SourceUtteranceFinal { utterance_id, .. }
             | LiveTranslateServerEvent::SubtitleConfirmedPair {
                 source_utterance_id: Some(utterance_id),
@@ -607,6 +616,7 @@ impl ProviderEventReceiver {
                 | LiveTranslateServerEvent::SubtitlePreviewCleared
                 | LiveTranslateServerEvent::TranslationStarted
                 | LiveTranslateServerEvent::TranslationDeferred(_)
+                | LiveTranslateServerEvent::UtteranceRegistered { .. }
         ) {
             self.last_delivered_sequence = self.last_delivered_sequence.max(event.sequence);
         }
@@ -650,6 +660,22 @@ impl ProviderEventReceiver {
     }
 
     fn source_draft_is_obsolete(&self, event: &SequencedEvent) -> bool {
+        if let (
+            LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { utterance_id, .. },
+            Some((sequence, revision, final_id)),
+        ) = (&event.event, &self.last_identified_final)
+        {
+            if event.content_revision == *revision {
+                if utterance_id == final_id {
+                    return true;
+                }
+                // A queued complete preview for another registered sentence
+                // survives an older final. The reducer knows the actual order.
+                if *sequence == self.last_delivered_sequence {
+                    return false;
+                }
+            }
+        }
         if event.sequence > self.last_delivered_sequence {
             return false;
         }
@@ -691,6 +717,142 @@ fn overflow_event() -> LiveTranslateServerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn identified_preview(id: &str, text: &str) -> LiveTranslateServerEvent {
+        LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair {
+            utterance_id: id.into(),
+            source: text.into(),
+            translation: format!("Synthetic translation {text}"),
+            language: Some("en".into()),
+        }
+    }
+
+    fn identified_final(id: &str, text: &str) -> LiveTranslateServerEvent {
+        LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: id.into(),
+            source: text.into(),
+            translation: format!("Synthetic translation {text}"),
+            language: Some("en".into()),
+        }
+    }
+
+    #[test]
+    fn registration_preserves_a_queued_complete_preview_without_a_draft_barrier() {
+        let (sender, mut receiver) = provider_event_channel();
+        let preview = identified_preview("A", "Synthetic source");
+        sender.send(preview.clone()).unwrap();
+        let registration = LiveTranslateServerEvent::UtteranceRegistered {
+            utterance_id: "A".into(),
+        };
+        sender.send(registration.clone()).unwrap();
+        assert_eq!(receiver.try_recv().unwrap(), registration);
+        assert_eq!(receiver.try_recv().unwrap(), preview);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn registered_newer_complete_preview_survives_a_queued_late_final() {
+        let (sender, mut receiver) = provider_event_channel();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        for id in ["A", "B"] {
+            sender
+                .send(LiveTranslateServerEvent::UtteranceRegistered {
+                    utterance_id: id.into(),
+                })
+                .unwrap();
+        }
+        sender.send(identified_preview("A", "Synthetic A")).unwrap();
+        let newer = identified_preview("B", "Synthetic B");
+        sender.send(newer.clone()).unwrap();
+        sender
+            .send(identified_final("A", "Synthetic A final"))
+            .unwrap();
+        while let Ok(event) = receiver.try_recv() {
+            controller.handle(event);
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic A final"
+        );
+        assert_eq!(controller.state.subtitles.source.text, "Synthetic B");
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Synthetic translation Synthetic B"
+        );
+        assert!(!controller.state.subtitles.source.is_final);
+    }
+
+    #[test]
+    fn complete_preview_flood_leaves_the_reliable_final_lane_available_and_frozen() {
+        let (sender, mut receiver) = provider_event_channel_with_capacity(1);
+        for index in 0..1_000 {
+            sender
+                .send(identified_preview("A", &format!("Synthetic draft {index}")))
+                .unwrap();
+        }
+        let final_event = identified_final("A", "Synthetic final");
+        sender.send(final_event.clone()).unwrap();
+        assert_eq!(receiver.try_recv().unwrap(), final_event);
+        assert!(receiver.try_recv().is_err());
+        sender
+            .send(identified_preview("A", "Synthetic late draft"))
+            .unwrap();
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn distinct_registered_sentences_preserve_identical_final_text_without_drafts() {
+        let (sender, mut receiver) = provider_event_channel();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        for id in ["A", "B"] {
+            sender
+                .send(LiveTranslateServerEvent::UtteranceRegistered {
+                    utterance_id: id.into(),
+                })
+                .unwrap();
+            sender
+                .send(identified_final(id, "Synthetic repeated sentence"))
+                .unwrap();
+        }
+        while let Ok(event) = receiver.try_recv() {
+            controller.handle(event);
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 2);
+        assert_eq!(
+            controller.state.subtitles.source.utterance_id.as_deref(),
+            Some("B")
+        );
+        let expected = controller.state.clone();
+        sender
+            .send(identified_final("A", "Synthetic repeated sentence"))
+            .unwrap();
+        controller.handle(receiver.try_recv().unwrap());
+        assert_eq!(controller.state, expected);
+    }
+
+    #[test]
+    fn complete_preview_and_registration_follow_content_revision_admission() {
+        let (sender, mut receiver) = provider_event_channel();
+        sender
+            .send(LiveTranslateServerEvent::UtteranceRegistered {
+                utterance_id: "old".into(),
+            })
+            .unwrap();
+        sender
+            .send(identified_preview("old", "Synthetic old"))
+            .unwrap();
+        sender.advance_content_revision();
+        let registration = LiveTranslateServerEvent::UtteranceRegistered {
+            utterance_id: "new".into(),
+        };
+        let preview = identified_preview("new", "Synthetic new");
+        sender.send(registration.clone()).unwrap();
+        sender.send(preview.clone()).unwrap();
+        assert_eq!(receiver.try_recv().unwrap(), registration);
+        assert_eq!(receiver.try_recv().unwrap(), preview);
+        assert!(receiver.try_recv().is_err());
+    }
 
     #[test]
     fn finish_drain_uses_the_same_revision_admission_and_keeps_reliable_tail_events() {

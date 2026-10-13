@@ -550,6 +550,7 @@ fn generation_accepts_event(
                     LiveTranslateServerEvent::SubtitleFinalPair { .. }
                         | LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
                         | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
+                        | LiveTranslateServerEvent::UtteranceRegistered { .. }
                 )))
 }
 
@@ -6329,6 +6330,21 @@ mod lifecycle_tests {
             NO_GENERATION,
             generation,
             &dashscope_pair
+        ));
+        let registration = LiveTranslateServerEvent::UtteranceRegistered {
+            utterance_id: "tencent-sentence".into(),
+        };
+        assert!(generation_accepts_event(
+            NO_GENERATION,
+            generation,
+            generation,
+            &registration
+        ));
+        assert!(!generation_accepts_event(
+            generation + 1,
+            NO_GENERATION,
+            generation,
+            &registration
         ));
     }
 

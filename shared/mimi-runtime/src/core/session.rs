@@ -166,6 +166,7 @@ impl SourceSessionController {
                 LiveTranslateServerEvent::SubtitleFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
+                    | LiveTranslateServerEvent::UtteranceRegistered { .. }
             )
         {
             return;
@@ -174,6 +175,42 @@ impl SourceSessionController {
         match event {
             LiveTranslateServerEvent::SessionCreated => {}
             LiveTranslateServerEvent::SessionUpdated => self.did_connect(),
+            LiveTranslateServerEvent::UtteranceRegistered { utterance_id } => {
+                self.subtitle_reducer
+                    .register_source_identity(&utterance_id);
+            }
+            LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair {
+                utterance_id,
+                source,
+                translation,
+                language,
+            } => {
+                // Publish one snapshot after both lines have been replaced.
+                for (role, text) in [
+                    (UtteranceRole::Source, source),
+                    (UtteranceRole::Translation, translation),
+                ] {
+                    self.subtitle_reducer.apply(
+                        crate::core::models::SubtitleEvent::UtteranceText {
+                            utterance_id: utterance_id.clone(),
+                            role,
+                            text,
+                            is_final: false,
+                        },
+                    );
+                }
+                if self
+                    .subtitle_reducer
+                    .snapshot
+                    .source
+                    .utterance_id
+                    .as_deref()
+                    == Some(&utterance_id)
+                    && !self.subtitle_reducer.snapshot.source.is_final
+                {
+                    self.update_detected_language(language.as_deref());
+                }
+            }
             LiveTranslateServerEvent::SourceDraft { text, language } => {
                 self.update_detected_language(language.as_deref());
                 self.subtitle_reducer
@@ -830,6 +867,103 @@ mod tests {
         let pending = controller.state.clone();
         controller.handle(pair("A", "Older sentence", "en"));
         assert_eq!(controller.state, pending);
+    }
+
+    #[test]
+    fn registered_complete_previews_keep_late_finals_out_of_the_current_pair() {
+        let mut controller = SourceSessionController::default();
+        let before = controller.state.clone();
+        for id in ["A", "B"] {
+            controller.handle(LiveTranslateServerEvent::UtteranceRegistered {
+                utterance_id: id.into(),
+            });
+        }
+        assert_eq!(controller.state, before);
+        let preview = |source: &str, translation: &str| {
+            LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair {
+                utterance_id: "B".into(),
+                source: source.into(),
+                translation: translation.into(),
+                language: Some("ko".into()),
+            }
+        };
+        controller.handle(preview("Synthetic B", "Synthetic translated B"));
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: "A".into(),
+            source: "Synthetic A".into(),
+            translation: "Synthetic translated A".into(),
+            language: Some("en".into()),
+        });
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(controller.state.subtitles.history[0].source, "Synthetic A");
+        assert_eq!(controller.state.subtitles.source.text, "Synthetic B");
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Synthetic translated B"
+        );
+        let current = controller
+            .state
+            .subtitles
+            .realtime_preview
+            .as_ref()
+            .unwrap();
+        assert_eq!(current.source.text, "Synthetic B");
+        assert_eq!(current.translation.text, "Synthetic translated B");
+        assert_eq!(
+            current.source.utterance_id,
+            current.translation.utterance_id
+        );
+        assert_eq!(
+            controller.state.detected_language.as_ref().unwrap().code,
+            "ko"
+        );
+        controller.handle(preview(
+            "Synthetic B revised",
+            "Synthetic translation revised",
+        ));
+        assert_eq!(
+            controller.state.subtitles.source.text,
+            "Synthetic B revised"
+        );
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Synthetic translation revised"
+        );
+        let revised = controller
+            .state
+            .subtitles
+            .realtime_preview
+            .as_ref()
+            .unwrap();
+        assert_eq!(revised.source.text, "Synthetic B revised");
+        assert_eq!(revised.translation.text, "Synthetic translation revised");
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: "B".into(),
+            source: "Synthetic B final".into(),
+            translation: "Synthetic translation final".into(),
+            language: Some("ko".into()),
+        });
+        let confirmed = controller.state.clone();
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair {
+            utterance_id: "B".into(),
+            source: "Obsolete source".into(),
+            translation: "Obsolete translation".into(),
+            language: Some("en".into()),
+        });
+        assert_eq!(controller.state, confirmed);
+        controller.clear_subtitles();
+        let cleared = controller.state.clone();
+        controller.handle(LiveTranslateServerEvent::UtteranceRegistered {
+            utterance_id: "B".into(),
+        });
+        controller.handle(preview("Cleared source", "Cleared translation"));
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: "B".into(),
+            source: "Cleared source".into(),
+            translation: "Cleared translation".into(),
+            language: Some("en".into()),
+        });
+        assert_eq!(controller.state, cleared);
     }
 
     #[test]

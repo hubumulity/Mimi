@@ -108,6 +108,26 @@ Preserve these product constraints:
 
 ## Verification
 
+### Fast local iteration
+
+- Show a working preview before running complete acceptance. On macOS use
+  `./scripts/dev-app.sh --watch` (or `--watch --ui-only` for fixtures) so React/CSS
+  edits update the same signed native app without rebuilding Rust or restarting
+  its session. Rust/Swift, Tauri configuration and permission changes still need
+  an incremental signed rebuild. Do not automatically restart an active session.
+- During edits run `./scripts/check.sh --quick frontend [src/files...]`,
+  `--quick desktop [test-filter]`, or `--quick shared` for the affected area.
+  Do not put unrelated packaging, release scripts or a repeated full suite in
+  the preview path. Check in proportion to the changed behavior: frontend-only
+  changes need frontend checks and affected native interactions; adapter changes
+  need focused Rust checks; shared rules still need direct Rust and actual JNI.
+  Use the no-argument canonical check for changes spanning these layers, build /
+  signing / dependency changes, or release preparation. CI retains platform
+  coverage. Report focused and complete verification separately.
+- Remove tests only when their behavior is obsolete or covered equivalently
+  elsewhere. Prefer behavioral regressions over assertions that merely repeat
+  implementation details; do not add tests for trivial copy/style edits.
+
 Follow [the integration learning loop](docs/development/integration-learning-loop.md)
 for native integration and subtitle-quality work. Reuse comparable samples, trace
 the earliest evidenced failure, repair that boundary, and rerun the same case.
@@ -122,7 +142,7 @@ When an error recurs, strengthen its concrete prevention rule or automated check
 Keep private media, transcripts and credentials outside Git. This maintenance
 rule does not authorize new capture, paid batches, recording or publication.
 
-Run the repository check from the repository root:
+For complete verification, run from the repository root:
 
 ```bash
 ./scripts/check.sh
@@ -132,7 +152,7 @@ It runs `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, and the f
 
 Additional checks by change type:
 
-- UI changes: on macOS run `./scripts/dev-app.sh` and inspect the settings window, native tray menu, and overlay in normal, empty, error, paused, collapsed, translating, and long-subtitle states. This launches a signed bundle from one canonical path so macOS does not treat every rebuild as a new app and repeat privacy prompts. Use `./scripts/dev-app.sh --ui-only` for credential-free UI smoke tests; UI-test mode must not access provider networks or start any audio capture. On Windows, use `npm run tauri:dev`.
+- UI changes: on macOS use the signed `./scripts/dev-app.sh --watch` preview and inspect the affected interaction. For a shared control or changed flow, review its settings, native tray and overlay siblings and the relevant normal, empty, error, paused, collapsed, translating or long-subtitle states. A pure copy/style edit needs its actual visible result and affected layout, not the entire unrelated state matrix. Use the ordinary embedded `./scripts/dev-app.sh` when accepting offline bundle behavior. Add `--ui-only` for credential-free fixtures; UI-test mode must not access provider networks or start audio capture. On Windows, use `npm run tauri:dev`.
 - Latency or streaming changes: measure against a real session for the affected provider (authorized saved local-file credentials) and report timing diagnostics as well as correctness tests.
 - Packaging or signing changes: read `docs/development/common-regressions.md`, run `./scripts/package-app.sh`, and verify the resulting app opens without replacing an installed app of a different designated requirement. Windows packaging is verified on a Windows machine (or CI). Never commit `dist/`, `src-tauri/target/`, or signing identities.
 

@@ -14,6 +14,16 @@ cd "$PROJECT_DIR"
 export CARGO_HOME="${CARGO_HOME:-$PROJECT_DIR/.cargo-home}"
 export npm_config_cache="${npm_config_cache:-$PROJECT_DIR/.npm-cache}"
 
+if [[ $# -gt 0 ]]; then
+  if [[ "$1" == "--quick" ]]; then
+    shift
+    exec bash "$SCRIPT_DIR/check-quick.sh" "$@"
+  fi
+  echo "Usage: ./scripts/check.sh [--quick frontend [src/files...] | --quick desktop [test-filter] | --quick shared]" >&2
+  exit 2
+fi
+
+bash "$SCRIPT_DIR/check-quick-test.sh"
 bash "$SCRIPT_DIR/dev-app-launch-test.sh"
 bash "$SCRIPT_DIR/check-apple-translation.sh"
 
@@ -61,6 +71,9 @@ npm run test
 
 echo "==> updater release manifest tests"
 node --test scripts/updater-manifest.node.mjs
+
+echo "==> production debugger checker tests"
+node --test scripts/check-production-debugger.node.mjs
 
 echo "==> frontend typecheck and build"
 npm run build

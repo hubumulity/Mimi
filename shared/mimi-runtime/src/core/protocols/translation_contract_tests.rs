@@ -15,6 +15,8 @@ fn contract() -> Value {
     assert_eq!(value["schemaVersion"], 1);
     for name in [
         "requests",
+        "endpointRequests",
+        "thinkingRequestOptions",
         "detectedSourceRequests",
         "endpoints",
         "responses",
@@ -68,10 +70,14 @@ fn shared_request_contracts() {
         let actual = match case["provider"].as_str().unwrap() {
             "deepL" => deepl::request(text, source, target).map_err(|_| ()),
             "deepLX" => deeplx::request(text, source, target).map_err(|_| ()),
-            "openaiCompatible" => {
-                openai_compatible::request(text, source, target, case["model"].as_str().unwrap())
-                    .map_err(|_| ())
-            }
+            "openaiCompatible" => openai_compatible::request(
+                text,
+                source,
+                target,
+                case["model"].as_str().unwrap(),
+                &openai_compatible::endpoint("https://example.com/v1").unwrap(),
+            )
+            .map_err(|_| ()),
             _ => panic!("unknown provider in {id}"),
         };
         if case["expected"].is_null() {
@@ -79,6 +85,52 @@ fn shared_request_contracts() {
         } else {
             assert_eq!(actual.unwrap(), case["expected"], "{id}");
         }
+    }
+}
+
+/// Endpoint-specific request fields belong to the shared runtime, which the
+/// Android engine reaches through JNI, so only the Rust adapter reads these.
+#[test]
+fn shared_endpoint_request_contracts() {
+    for case in contract()["endpointRequests"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        assert_eq!(case["provider"], "openaiCompatible", "{id}");
+        let actual = openai_compatible::request(
+            case["text"].as_str().unwrap(),
+            serde_json::from_value(case["source"].clone()).unwrap(),
+            serde_json::from_value(case["target"].clone()).unwrap(),
+            case["model"].as_str().unwrap(),
+            &openai_compatible::endpoint(case["endpoint"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(actual, case["expected"], "{id}");
+    }
+}
+
+#[test]
+fn shared_thinking_options_preserve_the_rest_of_the_request() {
+    for case in contract()["thinkingRequestOptions"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let request = |address| {
+            openai_compatible::request(
+                "Synthetic source.",
+                SourceLanguage::English,
+                TargetLanguage::SimplifiedChinese,
+                case["model"].as_str().unwrap(),
+                &openai_compatible::endpoint(address).unwrap(),
+            )
+            .unwrap()
+        };
+        let mut expected = request("https://example.com/v1");
+        expected
+            .as_object_mut()
+            .unwrap()
+            .extend(case["expected"].as_object().unwrap().clone());
+        assert_eq!(
+            request(case["endpoint"].as_str().unwrap()),
+            expected,
+            "{id}"
+        );
     }
 }
 
