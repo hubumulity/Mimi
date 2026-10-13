@@ -90,6 +90,8 @@ Index-Translate は文字翻訳のみを行います。Alibaba Cloud と組み�
 
 [@EmmetZ](https://github.com/EmmetZ) さんは、[Wayland で字幕ウィンドウの移動に操作パネルが追従しない問題](https://github.com/yuxino/Mimi/pull/242)を修正してくださいました。
 
+[@wangmian0](https://github.com/wangmian0) さんは、[DeepSeek によるリアルタイム字幕翻訳の思考モードを無効化](https://github.com/yuxino/Mimi/pull/270)してくださいました。
+
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
   <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
@@ -97,6 +99,7 @@ Index-Translate は文字翻訳のみを行います。Alibaba Cloud と組み�
   <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
 </p>
 
 [すべての貢献者を見る](https://github.com/yuxino/mimi/graphs/contributors)

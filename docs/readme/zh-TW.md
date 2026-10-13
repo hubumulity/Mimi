@@ -89,6 +89,8 @@ Index-Translate 只負責文字翻譯。搭配阿里雲時，仍需設定語音�
 
 感謝 [@EmmetZ](https://github.com/EmmetZ) 修復 [Wayland 下字幕浮窗與控制元件未同步移動的問題](https://github.com/yuxino/Mimi/pull/242)。
 
+感謝 [@wangmian0](https://github.com/wangmian0) 為 [DeepSeek 即時字幕翻譯關閉思考模式](https://github.com/yuxino/Mimi/pull/270)。
+
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
   <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
@@ -96,6 +98,7 @@ Index-Translate 只負責文字翻譯。搭配阿里雲時，仍需設定語音�
   <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
 </p>
 
 [檢視所有貢獻者](https://github.com/yuxino/mimi/graphs/contributors)

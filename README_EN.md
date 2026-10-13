@@ -90,6 +90,8 @@ Thanks also to [@Chtholly000](https://github.com/Chtholly000) for improving [Gem
 
 Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [overlay controls not following the subtitle window on Wayland](https://github.com/yuxino/Mimi/pull/242).
 
+Thanks to [@wangmian0](https://github.com/wangmian0) for [disabling thinking mode in DeepSeek live subtitle translation](https://github.com/yuxino/Mimi/pull/270).
+
 <p>
   <a href="https://github.com/yuxino"><img src="docs/assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
   <a href="https://github.com/LLLin000"><img src="docs/assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
@@ -97,6 +99,7 @@ Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [overlay controls not 
   <a href="https://github.com/Chtholly000"><img src="docs/assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
   <a href="https://github.com/inhome"><img src="docs/assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="docs/assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="docs/assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
 </p>
 
 [All contributors](https://github.com/yuxino/mimi/graphs/contributors)
