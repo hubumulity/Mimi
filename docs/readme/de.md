@@ -89,6 +89,8 @@ Danke auch an [@Chtholly000](https://github.com/Chtholly000) für die Verbesseru
 
 Danke an [@EmmetZ](https://github.com/EmmetZ) für die [Korrektur der Untertitelsteuerung, die unter Wayland dem Untertitelfenster nicht folgte](https://github.com/yuxino/Mimi/pull/242).
 
+Danke an [@wangmian0](https://github.com/wangmian0) für die [Deaktivierung des Denkmodus von DeepSeek bei der Live-Untertitelübersetzung](https://github.com/yuxino/Mimi/pull/270).
+
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
   <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
@@ -96,6 +98,7 @@ Danke an [@EmmetZ](https://github.com/EmmetZ) für die [Korrektur der Untertitel
   <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
 </p>
 
 [Alle Mitwirkenden](https://github.com/yuxino/mimi/graphs/contributors)

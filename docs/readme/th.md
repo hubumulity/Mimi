@@ -90,6 +90,8 @@ Index-Translate ใช้แปลข้อความเท่านั้น 
 
 ขอบคุณ [@EmmetZ](https://github.com/EmmetZ) ที่แก้ไข [ตัวควบคุมที่ไม่ตามหน้าต่างคำบรรยายบน Wayland](https://github.com/yuxino/Mimi/pull/242)
 
+ขอบคุณ [@wangmian0](https://github.com/wangmian0) ที่ [ปิดโหมดคิดของ DeepSeek สำหรับการแปลคำบรรยายสด](https://github.com/yuxino/Mimi/pull/270)
+
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
   <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
@@ -97,6 +99,7 @@ Index-Translate ใช้แปลข้อความเท่านั้น 
   <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
 </p>
 
 [ผู้ร่วมพัฒนาทั้งหมด](https://github.com/yuxino/mimi/graphs/contributors)
