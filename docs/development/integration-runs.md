@@ -2913,3 +2913,21 @@
   configuration edits still require an incremental signed rebuild. The user's
   durable instruction is preview first and proportional checks; pure copy/style
   edits do not require unrelated state matrices or repeated full local suites.
+
+## 2026-10-13：Silero VAD 宿主与意群候选离线研究
+
+- 产品基线 `5257f7e6`，实验源码／结果 `16239082`，Apple M5、macOS arm64、
+  Python 3.9 离线推理；不是 signed dev、MT 服务或原生字幕验收。
+- 固定 Silero 16 kHz 权重 1.23 MiB；直接 ONNX Runtime 1.19.2 对照
+  sherpa-onnx 1.13.8，相同窗口和迟滞。复用 FLEURS 日／英、Sintel 音效和
+  数字静音共四段、106.3 秒、3,324 个不同帧；主轮一次预热、三次计时。
+  两宿主活动判定差异 0，复位重复一致；每帧 P99 为 0.117–0.143 ms。
+- 英语的 250/400/600 ms 停顿阈值分别产生 7/4/1 个已确认结束点；600 ms
+  尾段在 EOF 仍活动，不能用等停顿保证更新期限。250/600 ms 轮并行执行，
+  只作边界敏感性证据，不比较其计时。
+- 19 项离线策略／工具测试、7 项 CI scope 测试及共享架构检查通过。
+  没有生产源码变化，未运行完整 canonical、Rust/JNI、新服务或原生测试。
+  不能据此声称翻译正确性或屏幕回改已改善，也未测安装包增量。
+- 代码、可复现命令、数值和图表见
+  [研究报告](2026-10-13-mt-stability-research.md)；音频与正文保留在原私有
+  归档。下一项为共享 Rust 接入后同 MT／同真人样本的回改、延迟和语义 A/B。

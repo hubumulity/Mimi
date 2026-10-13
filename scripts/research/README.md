@@ -64,6 +64,8 @@ sources, Unicode bounds, abbreviations, decimals and sentence-tail negation have
 explicit cases. The prototype contains no MT model, translation-quality scorer,
 target-text merger, audio-to-ASR timestamp alignment, or product adapter.
 Its `paused` input must come from a correctly aligned signal before product use.
+The dedicated `mt-stability-research` CI job runs these standard-library tests
+without models, audio, third-party Python dependencies or provider credentials.
 
 ```bash
 python3 -B scripts/research/mt-research-test.py

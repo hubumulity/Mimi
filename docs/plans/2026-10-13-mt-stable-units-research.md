@@ -3,6 +3,9 @@
 状态：研究中的 Draft PR。目标是减少 MT 预览回改，同时保持正确性和有界延迟。
 本轮实验不改变默认字幕行为；实际效果必须由同输入对照决定。
 
+首轮离线模型、参数敏感性与候选状态机结果见
+[研究报告](../development/2026-10-13-mt-stability-research.md)。
+
 ## 选型
 
 - [Silero VAD](https://github.com/snakers4/silero-vad)：小型语音活动检测模型，
