@@ -2931,3 +2931,31 @@
 - 代码、可复现命令、数值和图表见
   [研究报告](2026-10-13-mt-stability-research.md)；音频与正文保留在原私有
   归档。下一项为共享 Rust 接入后同 MT／同真人样本的回改、延迟和语义 A/B。
+
+## 2026-10-13：共享意群预览签名试用候选（暂不安装）
+
+- 实现 `a1578b83`；同步 main `f9d94a0a` 的文档后，候选来自干净提交
+  `20a9c174`。`experimental-stable-units` 仅构建时启用，桌面与 JNI
+  转发同一共享策略；默认构建和服务端直出译文路径不变。Silero 尚未接入。
+- 600 ms 稳定完整句界保留成功译文，后续仅请求尾部；2 s 允许可撤销
+  预览，既有 pacing 与 provider 延迟仍生效。纠错撤回预览；final 整句
+  翻译，预览不写历史。分句可能损失跨句上下文，final 可能改写预览。
+- 完整 canonical 首轮通过：shared runtime 762 passed / 1 ignored、
+  desktop 573 passed / 1 ignored、frontend 133 files / 2,075 tests。
+  补候选输出目录隔离后的复核中，原有 Gemini 445-draft 测试碰到 5 s
+  超时；不改测试或阈值单独重跑 84 项通过，失败用例耗时 509 ms，
+  剩余 updater / debugger / production build 检查通过。保留两次日志，
+  不将重复整套检查描述成一次全绿。
+- 启用实验 feature 的 runtime 762 passed / 1 ignored、严格 Clippy 和
+  JNI 编译检查通过。5 组新增共享 fixtures 同时通过直接 Rust 与实际
+  JVM/JNI；`SharedTranslationContractTest` 共 16 项通过。本地 HTTP
+  验证尾部请求、整句 final、纠错撤回和 clear 取消；最后修正迟到响应
+  的 HTTP 长度后，同一取消测试再次通过。没有云端请求或音频捕获。
+- canonical `dev-app.sh --build-only` 生成稳定签名 arm64 包，签名检查
+  通过，bundle 与实际 Cargo target 的 Mach-O UUID 一致。摘要见
+  [构建证据](evidence/2026-10-13-mt-stability/trial-build.json)。候选和
+  必要验证日志保留在本工作区 ignored `src-tauri/target/prepared/`；
+  一次性 shared/JVM 构建产物清理，已有全局缓存保留。
+- 用户选择“先准备好，暂时别切换”：没有安装或启动此候选，没有修改
+  当前配置。下一项是获准切换后使用独立识别 + 文字 MT，与相同真人
+  样本做 native/provider A/B；未提供新的原生效果截图或质量提升结论。
