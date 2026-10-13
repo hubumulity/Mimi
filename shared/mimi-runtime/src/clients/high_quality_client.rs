@@ -2762,7 +2762,12 @@ mod tests {
             release_rx.await.unwrap();
             // Cancellation can close the socket; ignore the expected write error.
             use tokio::io::AsyncWriteExt;
-            let _ = second.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 31\r\nConnection: close\r\n\r\n{\"code\":200,\"data\":\"obsolete\"}").await;
+            let body = r#"{"code":200,"data":"obsolete"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = second.write_all(response.as_bytes()).await;
         });
         let (sender, mut events) = provider_event_channel();
         let mut client = HighQualityTranslationClient::new_deeplx(
