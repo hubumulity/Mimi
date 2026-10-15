@@ -16,6 +16,22 @@ regressions; production capture and the text connection-check button use Rust.
 `shared/translation-contracts.json` and `shared/realtime-display-contracts.json`
 provide common synthetic wire and display cases.
 
+## Native audio target differences
+
+| Platform | Selected system-audio target | Identity |
+| --- | --- | --- |
+| macOS | Application | Existing native application selection |
+| Windows | Application on supported process-loopback versions | Live PID and creation time |
+| Linux | One playback stream through PulseAudio / PipeWire-Pulse | Opaque connection/stream-lifetime token |
+| Android | Existing platform playback capture | No Linux stream picker or desktop application selection |
+
+Linux never groups streams by application or reroutes playback. Deleted streams,
+server disconnects and app restarts require explicit reselection. A live stream
+moving outputs uses desktop capture recovery. Desktop system/microphone lanes,
+pause, target switching, confirmed subtitles and recording consent retain their
+common implementation. Discovery and capture remain native adapters, separate
+from shared provider/translation rules.
+
 ## Preventing maintenance forks
 
 A desktop business fix belongs in the shared crates, so an Android build uses
@@ -44,8 +60,8 @@ architecture tests are not a successful remote CI or Android build.
 
 ## Shared behavior
 
-Both platforms select Qwen-MT Lite, Flash or Plus through the same provider
-factory; Lite is the default. Recognition uses Audio3. The shared capability
+In Alibaba ASR + MT mode, both platforms select Qwen-MT Lite, Flash or Plus
+through the same provider factory; Lite is the default. Recognition uses Audio3. The shared capability
 normalizer retains the Lite language intersection for comparable trials; Audio3
 itself represents 30 explicit hints plus automatic detection. Plus returns
 complete translations; Lite and Flash stream. Android keeps old model/custom
@@ -127,7 +143,8 @@ Android production route.
 | Runtime recovery feedback | Shared connection/retry/timeout state in native UI | Same shared state, localized in floating subtitles; capture-no-audio guidance takes priority |
 | Apple local recognition | One language selector with runtime resource status; explicit Download and use prepares and applies a missing language, while ready languages can be applied directly; no speech API key; independent text translation keeps its own service and credentials | Not available; no Apple API or asset-management dependency |
 | Apple local text translation | Apple silicon with macOS 26+: runtime language-pair availability, explicit in-app model preparation, installed-only translation without API keys or a text proxy; pairs with Apple/custom/Alibaba recognition | Not available; Apple Translation is a native macOS adapter, not a shared HTTP provider |
-| Built-in Alibaba pipeline | Audio 3.0: 30 explicit recognition hints plus automatic detection; Qwen-MT retains its model-specific target catalog | Same Audio3 + Qwen-MT factory, models and capability normalization |
+| Alibaba modes | New profiles default to simultaneous translation (LiveTranslate), with automatic source detection and 60 represented text-translation targets. ASR + MT remains selectable; existing and copied profiles retain their mode | Same two modes and shared capabilities; new configurations default to simultaneous translation. Existing profiles migrate as ASR + MT; each profile keeps its mode, workspace and independent translator |
+| Alibaba ASR + MT pipeline | Audio 3.0: 30 explicit recognition hints plus automatic detection; Qwen-MT retains its model-specific target catalog | Same Audio3 + Qwen-MT factory, models and capability normalization |
 | Translation scheduling | Speculative drafts plus serial prioritized finals and provider recovery | Same Rust speculative preview, final priority, queues, retry/cooldown and MT budget continuity |
 | Opening MT previews | Shared opening length eligibility for the stability timer; a non-resetting maximum still permits short drafts after at least two seconds. Existing preview corrections and source finals retain their paths | Same Rust opening eligibility and wait bound; no native reading-speed toggle or separate MT scheduler |
 | Independent text HTTP bounds | HQ source fields up to 65,536 UTF-8 bytes; response bodies up to 1 MiB; decoded text uses native adapter bounds | Same shared clients and UTF-8/response bounds |
@@ -138,12 +155,13 @@ Android production route.
 | Reading long current subtitles | Bounded live tail with explicit history reading and return-to-live behavior | Normal panel follows complete glyph lines from the bottom reading edge, so a growing reference does not push an unchanged translation downward. It scrolls the complete bounded current pair and optional history inside the selected height; immersive captions keep two source and three translation lines. Captions reuses the actual normal/immersive native frame, including chrome and bounded history, measured at real window dimensions and uniformly scaled into a stable viewport. Before speech or during silence, an active overlay shows desktop's listening message with the selected typography/color/alignment |
 | Audio capture | System audio by default; explicitly selected microphone or both sources with independent lanes. OS-specific desktop capture; selected-app audio on macOS and Windows build 20348+, Linux retains output-monitor capture | Android playback-capture consent and foreground service; only apps that allow playback sharing, no microphone input or selected-app picker. Android still requires RECORD_AUDIO for playback capture |
 | Caption reading metadata | Optional sentence dividers and local confirmation time, both off by default | Same optional appearance choices; time comes from the shared final, not Kotlin arrival time; dividers stay hidden in immersion |
-| Saved service selection | Settings, tray and subtitle controls can switch during listening via reconnect; pause and confirmed subtitles persist. A recording cannot switch PCM sample rate | Existing Android selection flow; no live-switch parity claimed |
+| Saved configurations | Multiple named profiles, including the same provider | Multiple named profiles with independent encrypted credentials and translators; Add, Settings, Duplicate and Delete, with tap-to-select. Legacy provider settings migrate once; saving an edit does not switch the active profile |
+| Saved service selection | Settings, tray and subtitle controls can switch during listening via reconnect; pause and confirmed subtitles persist. A recording cannot switch PCM sample rate | Tap a saved configuration in the list to select it; switching/editing requires Stop. Order remains stable; deleting the active profile selects the first remaining entry |
 | Proxy preferences | Per-profile independent recognition/text routes; integrated realtime uses one route | Shared network transport with immutable Android platform proxy/trust snapshots; no per-stage proxy UI |
 | Gemini planned connection rotation | Prepare one replacement after GoAway, bounded old-tail drain and up to two seconds of PCM staging; shorter Gemini live preview cadence | Same Rust Gemini client, replacement-socket handoff and preview cadence |
-| Secret storage | Private local credential file; one-time OS-store migration | Android Keystore-backed encrypted preferences |
+| Secret storage | Private local credential file; one-time OS-store migration | Private profile metadata file and separate Android Keystore-backed encrypted credential revisions; legacy settings migrate only after verified durable writes |
 | Local HTTP | Existing loopback endpoint validation | Explicit per-config opt-in and Android network allowlist; includes emulator host |
-| History/recording | Optional bounded local session files and selected-input recordings; confirmed panel rows survive stop/start within the app process and keep the existing display bound | Existing optional bounded subtitle history; capture starts clear its overlay; no desktop recording/export parity claimed |
+| History/recording | Optional bounded local session files and selected-input recordings; confirmed panel rows survive stop/start within the app process and keep the existing display bound | Bounded in-memory subtitle history defaults to three confirmed captions on fresh installs; existing settings and the legacy zero default are preserved. Capture starts clear its overlay; no desktop recording/export parity claimed |
 | Development evidence | Exact dev app only; opt-in sent audio, subtitle snapshots, causal traces, saved-case playback and bounded evidence workspaces | No matching debugger or sent-audio recording claimed |
 
 These differences are current scope, not proof of live-account acceptance. When expanding a

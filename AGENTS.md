@@ -7,7 +7,7 @@ Mimi is a Tauri v2 desktop app (Rust backend + React/TypeScript frontend) that l
 Preserve these product constraints:
 
 - Capture system audio by default. Microphone capture requires explicit selection and starting a session. Allow either or both sources, with independent capture, bounded queues, recognition sessions and subtitle state. Never mix sources, silently fall back, or request microphone permission for system-only sessions. Changing selected sources requires stopping and clears the audio-recording opt-in. Preserve source identity in subtitles and recordings.
-- Subtitle history retention and selected-input audio recording are off by default. When enabled, save bounded confirmed subtitles and/or selected audio to private local session files as content arrives. Do not keep full session transcripts or PCM recordings in memory; only bounded overlay display content and size/limit metadata may remain there. New sessions and normal exit finalize the local files. Disabling an option clears its current-session content; saved sessions require explicit deletion.
+- Desktop subtitle history retention and selected-input audio recording are off by default. Android fresh installs retain three recent confirmed captions in memory; existing installations preserve their prior setting, including the legacy zero default. When enabled, save bounded confirmed subtitles and/or selected audio to private local session files as content arrives. Do not keep full session transcripts or PCM recordings in memory; only bounded overlay display content and size/limit metadata may remain there. New sessions and normal exit finalize the local files. Disabling an option clears its current-session content; saved sessions require explicit deletion.
 - Store production API credentials in a dedicated private local file, separate from preferences and profile metadata. This explicit user request supersedes the earlier OS-keychain-only rule. Native credential stores are compatibility sources for automatic one-time import and verified retirement of Mimi-owned old items; never touch them in normal snapshots, reads, saves, deletes, switching or updates after import. Delete old items only after durable local write and read-back verification; checkpoint successful slots and cleanup for retry. Use atomic writes, Unix 0700/0600 protection and private Windows ACLs. Keep keys out of environment variables, source control, diagnostics and exports. Development uses the same editable local-file design with its own app-scoped directory. Do not read `.env`, create environment-backed presets, or automatically share production configuration or credentials.
 - Keep diagnostics content-free: timing, counts, language codes, status codes, and sanitized error labels are acceptable; recognized or translated text is not.
 
@@ -34,6 +34,7 @@ Preserve these product constraints:
 - The product website lives in the separate `yuxino-labs/mimi-web`
   repository. Never add a website copy, subtree, or generated site assets to
   this application repository.
+- `shared/provider-copy.json`: shared service descriptions, setup prerequisites and Alibaba mode copy in all eight UI languages. Run `python3 -B scripts/sync-provider-copy.py` after editing; desktop TypeScript and Android resources are generated. Keep platform-specific permissions/navigation in their native resources. See `docs/development/shared-provider-copy.md`.
 - `README.md`: the Simplified Chinese entry point; `README_EN.md` is English.
   Other localized READMEs live in `docs/readme/`; contribution and security
   guides live in `.github/`.
@@ -51,6 +52,9 @@ Preserve these product constraints:
   sample comparison and regression-learning workflow. Read it before integration
   testing or investigating subtitle quality; keep verified runs and remaining
   gaps in `docs/development/integration-runs.md`.
+- `config/`: frontend tool configuration (Vite, ESLint, PostCSS, Tailwind and
+  TypeScript projects). Run the npm scripts so tools use these explicit paths.
+  The root `tsconfig.json` remains the editor discovery entry point.
 - `scripts/check.sh`: canonical automated test and strict-build entry point.
 - `scripts/package-app.sh`: release-shaped local build via `tauri build`, signed with the stable local identity; compare its identity before replacing a release, especially older ad-hoc installations.
 - `scripts/codesign-identity.sh`: honors explicit `MIMI_CODESIGN_IDENTITY`, then a per-Mac public certificate fingerprint saved after an approved local migration; otherwise it selects the exact fingerprint of the unique `mimi Local Development` identity or reports unavailable. A missing/invalid pinned identity fails closed rather than reverting to self-signing. macOS packaging and development launch fail closed rather than use ad-hoc signing.

@@ -28,10 +28,11 @@ export default defineConfig(({ command, mode }) => {
   // `vite build --mode development` intentionally keeps the local debugger.
   // A release build never resolves its UI, replay or observation modules.
   const developmentBuild = command === "serve" || mode === "development";
-  const productionAdapter = `${normalizePath(__dirname)}/src/lib/productionDevelopmentTools.ts`;
+  const productionAdapter = `${normalizePath(__dirname)}/../src/lib/productionDevelopmentTools.ts`;
   return {
     plugins: [react()],
     envDir: false,
+    css: { postcss: normalizePath(__dirname) },
     optimizeDeps: { entries: ["index.html"] },
     define: { __MIMI_DEVELOPMENT_BUILD__: JSON.stringify(developmentBuild) },
     resolve: {

@@ -6,12 +6,21 @@
 
 Links zur Freischaltung, Zugangsdaten und aktuelle Modelle findest du in der [Anleitung zur Anbietereinrichtung (Englisch)](provider-setup.md).
 
-Wähle die Oberflächensprache unter Einstellungen → Allgemein: vereinfachtes oder traditionelles Chinesisch, Englisch, Japanisch, Deutsch, Koreanisch, Französisch oder Thai. Die Systemoption folgt der Systemsprache. Ein Sprachwechsel erhält aktuelle Eingaben und den Untertitelzustand. Erkennungs- und Übersetzungssprache werden getrennt gewählt.
+Direkt zum Thema:
+
+- [Installation und Updates](#start)
+- [Untertitelanzeige](#subtitles)
+- [Audio und gespeicherte Sitzungen](#saving)
+- [Erkennungsfehler](#errors)
+
+In älteren Versionen heißt Modelle & Dienste „Sprache & Übersetzung“.
+
+<a id="start"></a>
 
 ## Installation und Updates
 
 1. Lade die macOS-DMG für Apple-Chip oder Intel, Windows x64 EXE / MSI / portable ZIP oder Linux x86_64 .deb / AppImage von der [neuesten Veröffentlichung](https://github.com/yuxino/mimi/releases/latest). Du kannst Mimi auch aus dem Quellcode bauen.
-2. Öffne Einstellungen → Sprache & Übersetzung, füge eine Konfiguration hinzu, gib die angeforderten Zugangsdaten ein und speichere. Wähle Erkennungs- und Übersetzungssprache.
+2. Öffne Einstellungen → Modelle & Dienste, füge eine Konfiguration hinzu, gib die angeforderten Zugangsdaten ein und speichere. Wähle Erkennungs- und Übersetzungssprache.
 3. Spiele Audio ab und aktiviere die Live-Untertitel unter Untertitel oder starte über das mimi-Symbol in der Menüleiste bzw. Taskleiste. Ab macOS 14.2 unterstützen alle Anwendungen und eine ausgewählte Anwendung die Berechtigung nur für Systemaudio. Bestehende Bildschirmaufnahme-Berechtigungen werden ohne zusätzliche Audio-Berechtigung weiterverwendet. macOS 13–14.1 benötigt Bildschirm- und Systemaudioaufnahme.
 
 Das mimi-Tray-Symbol verwendet das Systemmenü für Start/Stopp, Untertitelanzeige, Einstellungen und Beenden; macOS bietet zusätzlich die Dock-Anzeige. Dienste, Sprachen, Sperre und immersiven Modus stellst du in den Einstellungen ein. Unterstützte Macs können die kostenlose lokale Apple-Spracherkennung ohne API-Schlüssel nutzen. Bereite die Sprachressourcen vor und wähle die Textübersetzung separat.
@@ -50,9 +59,11 @@ Alte Betriebssystem-Zugangsdaten werden einmal importiert und erst nach Prüfung
 
 ## Dienstkonfigurationen
 
-Jede Desktop-Konfiguration kann ein Erkennungs-/Übersetzungssprachpaar speichern. Aktiviere die Konfiguration, wähle die Sprachen und öffne ihre Details unter Einstellungen → Sprache & Übersetzung. Wähle **Aktuelle Sprachen merken**. Änderungen oder Entfernen erfolgen ausdrücklich mit **Mit aktuellen Sprachen aktualisieren** oder **Gespeichertes Paar entfernen**.
+Jede Desktop-Konfiguration kann ein Erkennungs-/Übersetzungssprachpaar speichern. Aktiviere die Konfiguration, wähle die Sprachen und öffne ihre Details unter Einstellungen → Modelle & Dienste. Wähle **Aktuelle Sprachen merken**. Änderungen oder Entfernen erfolgen ausdrücklich mit **Mit aktuellen Sprachen aktualisieren** oder **Gespeichertes Paar entfernen**.
 
 Beim Wechsel oder erneuten Anwenden wird das gespeicherte Paar wiederhergestellt. Vorübergehende Sprachänderungen überschreiben es nicht. Die schwebenden Steuerelemente zeigen das Paar unter dem Konfigurationsnamen. Über die Dienstinformation oben im Untertitel öffnest du die aktuellen Konfigurationsdetails.
+
+<a id="saving"></a>
 
 ## Audio und gespeicherte Sitzungen
 
@@ -66,7 +77,11 @@ Eine neue Desktop-Sitzung behält die begrenzten bestätigten Untertitel auf dem
 
 Die Grenzen sind 10.000 bestätigte Untertitelpaare / 2 MiB Text und 64 MiB Audio. Beim Erreichen stoppt die Speicherung mit einem Hinweis. Untertitelzeiten markieren die Bestätigung; WAV lässt Pausen und Verbindungslücken aus. Beide Zeitachsen sind daher nicht direkt synchronisiert.
 
+<a id="subtitles"></a>
+
 ## Untertitelanzeige
+
+Wähle die Oberflächensprache unter Einstellungen → Allgemein: vereinfachtes oder traditionelles Chinesisch, Englisch, Japanisch, Deutsch, Koreanisch, Französisch oder Thai. Die Systemoption folgt der Systemsprache. Ein Sprachwechsel erhält aktuelle Eingaben und den Untertitelzustand. Erkennungs- und Übersetzungssprache werden getrennt gewählt.
 
 Wähle in Einstellungen eine von fünf Farben (standardmäßig Weiß) oder öffne die Systemfarbauswahl über das benutzerdefinierte Farbfeld dahinter. Systemaudio und Mikrofon haben getrennte Farben. Vorschau und schwebende Untertitel ändern sich sofort, auch im immersiven Modus. Zweisprachige Untertitel zeigen das Original dezenter als die Übersetzung.
 
@@ -76,9 +91,11 @@ Wähle Nur Übersetzung, Original + Übersetzung oder Nur Original in Einstellun
 
 Untertitel früher anzeigen zeigt veränderliche Entwürfe. Ausgeschaltet wartet die Anzeige auf bestätigte Ergebnisse; durchgehendes Sprechen kann länger dauern. Entwürfe werden dadurch nicht zu gespeicherter Historie.
 
+<a id="errors"></a>
+
 ## Erkennungsfehler
 
-Bei Erkennungsfehlern bleiben vorhandene Untertitel und der Fehlergrund sichtbar. Öffne die schwebende Steuerung für Details und Wiederherstellung. Erkannte Konfigurationsfehler bieten Sprache & Übersetzung, vorübergehende Verbindungs- oder Dienstfehler bieten Wiederholen. Das Korrigieren oder Wechseln der Konfiguration bringt die fehlgeschlagene Sitzung in den Leerlauf, ohne Audio zu starten. Aktiviere Live-Untertitel erneut, wenn du bereit bist.
+Bei Erkennungsfehlern bleiben vorhandene Untertitel und der Fehlergrund sichtbar. Öffne die schwebende Steuerung für Details und Wiederherstellung. Erkannte Konfigurationsfehler bieten Modelle & Dienste, vorübergehende Verbindungs- oder Dienstfehler bieten Wiederholen. Das Korrigieren oder Wechseln der Konfiguration bringt die fehlgeschlagene Sitzung in den Leerlauf, ohne Audio zu starten. Aktiviere Live-Untertitel erneut, wenn du bereit bist.
 
 ## Weitere Dokumentation
 

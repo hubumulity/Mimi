@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RotateCw } from "lucide-react";
+import { RotateCw, Volume1 } from "lucide-react";
 import { useApplicationAudioPicker } from "../lib/useApplicationAudioPicker";
 import { Select } from "./Select";
 import { Icon } from "./Icon";
@@ -8,7 +8,7 @@ import "./application-audio-picker.css";
 function ApplicationIcon({ dataUrl }: { dataUrl?: string | null }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   // Native enumeration supplies local PNGs. Never fetch an app-provided URL.
-  if (!dataUrl?.startsWith("data:image/png;base64,") || dataUrl === failedUrl) return <Icon name="app-window" />;
+  if (!dataUrl?.startsWith("data:image/png;base64,") || dataUrl === failedUrl) return <span className="application-audio-picker__symbol" aria-hidden="true"><Icon name="app-window" /></span>;
   return <img src={dataUrl} alt="" draggable={false} onError={() => setFailedUrl(dataUrl)} />;
 }
 
@@ -25,7 +25,8 @@ export function ApplicationAudioPicker({ disabled = false, onBusyChange, onActio
   }, [onBusyChange, picker.pending]);
   const options = picker.options.map(option => ({
     ...option,
-    icon: option.value === "" ? <Icon name="speaker" /> : <ApplicationIcon dataUrl={option.iconDataUrl} />,
+    // Volume1's artwork spans x=2..17: center the drawing, not its 24px canvas.
+    icon: option.value === "" ? <span className="application-audio-picker__symbol" aria-hidden="true"><Volume1 viewBox="-2.5 0 24 24" /></span> : <ApplicationIcon dataUrl={option.iconDataUrl} />,
   }));
   const failure = picker.error ?? (picker.missing ? picker.text.unavailable : null);
   return <span className="application-audio-picker" aria-busy={picker.pending || picker.loading}

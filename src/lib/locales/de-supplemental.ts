@@ -11,6 +11,15 @@ export const SUPPLEMENTAL = {
     saveFailed: "Die erfasste Anwendung konnte nicht gewechselt werden. Prüfe den Untertitelstatus und versuche es erneut.",
     help: "Erfasst nur das Audio dieser Anwendung. Browsertabs gehören zur selben Anwendung. Die Auswahl schaltet die App nicht stumm. Wähle sie unter Windows nach erneutem Öffnen nochmals aus.",
   },
+  playbackStream_copy: {
+    title: "Audiostream aufnehmen", all: "Gesamter Systemton", application: "Audiostream",
+    search: "Audiostreams suchen", refresh: "Audiostreams aktualisieren", loading: "Audiostreams werden geladen…",
+    empty: "Keine Audiostreams gefunden. Ton abspielen und aktualisieren.", noMatch: "Keine passenden Audiostreams.", missing: "Nicht verfügbar",
+    unavailable: "Dieser Audiostream ist nicht verfügbar. Ton abspielen und erneut auswählen oder Gesamter Systemton wählen.",
+    unsupported: "Audiostream-Aufnahme erfordert Linux mit PulseAudio oder PipeWire-Pulse.",
+    failed: "Audiostreams konnten nicht geladen werden. Erneut aktualisieren.", saveFailed: "Audiostream konnte nicht gewechselt werden. Untertitelstatus prüfen und erneut versuchen.",
+    help: "Nimmt einen Wiedergabestream auf. Mehrere Streams einer Anwendung werden einzeln angezeigt. Ausgabe und Lautstärke bleiben unverändert. Nach Schließen des Streams oder Neustart von Mimi erneut auswählen.",
+  },
   captureStatus_copy: {
     title: "Audioeingang", system: "Systemaudio", microphone: "Mikrofon", output: "Systemausgabe", device: "Aufnahmegerät",
     idle: "Keine Erfassung", paused: "Pausiert", connecting: "Verbindung wird hergestellt", stopping: "Wird gestoppt", error: "Fehler",

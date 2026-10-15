@@ -56,7 +56,7 @@ it.each(["zh", "en", "ja"] as const)("keeps Apple translation recovery separate 
     expect(sessionErrorSettingsTarget(`${label}: private-native-content`)).toBeNull();
   }
   for (const label of ["apple_translation_assets_missing", "apple_translation_language_unsupported", "apple_translation_unavailable"]) {
-    expect(sessionErrorSettingsTarget(label)).toBe("service");
+    expect(sessionErrorSettingsTarget(label)).toBe(label === "apple_translation_language_unsupported" ? "voice" : "service");
   }
   expect(sessionErrorSettingsTarget("apple_speech_assets_missing")).toBe("appleSpeechResources");
   for (const reason of ["appleTranslationAssetsMissing", "appleTranslationLanguageUnsupported", "appleTranslationUnavailable", "appleTranslationFailed"] as const) {
@@ -355,8 +355,8 @@ it("routes only exact resource errors to Apple preparation and preserves other r
     expect(sessionErrorSettingsTarget(`prefix ${label}`)).toBeNull();
     expect(sessionErrorSettingsTarget({ message: label })).toBeNull();
   }
-  expect(sessionErrorSettingsTarget("audio3_error.setup.unsupported_language.UNSUPPORTED_LANGUAGE")).toBe("service");
-  for (const label of ["apple_speech_recognition_failed", "apple_speech_unavailable", "apple_speech_language_unsupported", "audio3_error.recognition.timeout.LOCAL_TIMEOUT", "unknown"]) {
+  expect(sessionErrorSettingsTarget("audio3_error.setup.unsupported_language.UNSUPPORTED_LANGUAGE")).toBe("voice");
+  for (const label of ["apple_speech_recognition_failed", "apple_speech_unavailable", "audio3_error.recognition.timeout.LOCAL_TIMEOUT", "unknown"]) {
     expect(sessionErrorSettingsTarget(label)).toBeNull();
   }
 });
@@ -434,7 +434,7 @@ it.each(UI_LANGUAGES)("keeps safe provider failures actionable across session, l
   ]) cases.push([error, labels.reasons.invalidConfiguration]);
   for (const [label, expected] of cases) {
     expect(credentialErrorMessage(label), label).toBe(expected);
-    const target = [labels.auth, labels.missing, labels.reasons.invalidConfiguration, I18N.settings.languageSwitchUnsupported, I18N.settings.customSpeechEndpointInvalid, I18N.settings.customSpeechModelInvalid].includes(expected) ? "service" : null;
+    const target = expected === I18N.settings.languageSwitchUnsupported ? "voice" : [labels.auth, labels.missing, labels.reasons.invalidConfiguration, I18N.settings.customSpeechEndpointInvalid, I18N.settings.customSpeechModelInvalid].includes(expected) ? "service" : null;
     for (const error of [label, new Error(label)]) {
       expect(sessionErrorSettingsTarget(error), label).toBe(target);
       expect(languageActionErrorMessage(error, "fallback"), label).toBe(expected);
@@ -476,5 +476,12 @@ it.each(["en", "zh", "ja"] as const)("retains only a canonical bounded Baidu set
     expect(languageActionErrorMessage(unsafe, "fallback")).toBe("fallback");
     expect(sessionActionErrorMessage(unsafe, "fallback")).toBe("fallback");
     expect(profileErrorMessage(unsafe)).toBe(I18N.settings.profileActionFailed);
+  }
+});
+
+it("routes exact language failures to Audio & Languages without accepting provider text", () => {
+  for (const label of ["apple_speech_language_unsupported", "apple_speech_translation_language_unsupported", "translation_source_unsupported"]) {
+    expect(sessionErrorSettingsTarget(label)).toBe("voice");
+    expect(sessionErrorSettingsTarget(`${label}: private-runtime-detail`)).toBeNull();
   }
 });

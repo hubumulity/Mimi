@@ -19,17 +19,35 @@ internal class FirstRunGuide(private val activity: AppCompatActivity, private va
     private var dialog: BottomSheetDialog? = null
     var step = 0
     private var selected = ServiceProvider.fromId(runCatching { SettingsStore.provider(activity) }.getOrDefault("dashscope"))
+    var profileId: String? = null
+        private set
     val providerId get() = selected.id
-    private fun configured() = runCatching { SettingsStore.isConfigured(activity, selected) }.getOrDefault(false)
+    private fun configured() = runCatching { profileId?.let { SettingsStore.profileConfigured(activity, it) } == true }.getOrDefault(false)
+    private fun selectedTitle() = runCatching { SettingsStore.profiles(activity).firstOrNull { it.id == profileId }?.name }
+        .getOrNull() ?: providerTitle(activity, selected)
+    private val editor = activity.registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            result.data?.getStringExtra("profileId")?.let { saved ->
+                runCatching { SettingsStore.profiles(activity).firstOrNull { it.id == saved } }.getOrNull()?.let {
+                    profileId = it.id; selected = it.provider
+                }
+            }
+        }
+        refresh()
+    }
     private lateinit var body: LinearLayout
     private var lastState = ""
     private val prefs get() = activity.getSharedPreferences("first_run", 0)
     val showing get() = dialog?.isShowing == true
-    fun open(page: Int = 0, providerId: String? = null) {
+    fun open(page: Int = 0, providerId: String? = null, savedProfileId: String? = null) {
         if (showing) dialog?.dismiss()
         step = page.coerceIn(0, 4)
         prefs.edit().putBoolean("seen", true).apply()
         selected = ServiceProvider.fromId(providerId ?: runCatching { SettingsStore.provider(activity) }.getOrDefault("dashscope"))
+        profileId = runCatching {
+            SettingsStore.profiles(activity).firstOrNull { it.id == (savedProfileId ?: SettingsStore.activeProfileId(activity)) }
+                ?.takeIf { providerId == null || it.provider == selected }?.id
+        }.getOrNull()
         dialog = BottomSheetDialog(activity).apply {
             body = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -53,7 +71,7 @@ internal class FirstRunGuide(private val activity: AppCompatActivity, private va
         if (Settings.canDrawOverlays(activity)) prefs.edit().putBoolean("overlay-granted", true).apply()
         if (audioPermission()) prefs.edit().putBoolean("audio-granted", true).apply()
         if (!showing) return
-        val state = "${configured()}:${Settings.canDrawOverlays(activity)}:" +
+        val state = "$profileId:${selectedTitle()}:${configured()}:${Settings.canDrawOverlays(activity)}:" +
             "${audioPermission()}:${MimiService.isRunning}:${MimiService.captureObservation?.state}:" +
             "${prefs.getBoolean("overlay-denied", false)}:${prefs.getBoolean("audio-denied", false)}:${prefs.getBoolean("projection-denied", false)}:${MimiService.lastCaptureError}:" +
             "${synchronized(MimiService.firstRunEvidence) { MimiService.firstRunEvidence.complete }}"
@@ -96,28 +114,36 @@ internal class FirstRunGuide(private val activity: AppCompatActivity, private va
             0 -> {
                 label(activity.getString(R.string.guide_intro), 24f)
                 label(activity.getString(R.string.guide_intro_hint), muted = true)
+                val profiles = runCatching { SettingsStore.profiles(activity) }.getOrElse {
+                    label(activity.getString(R.string.guide_storage_unavailable))
+                    button(activity.getString(R.string.profiles_retry), "guide-storage-retry") { render() }
+                    return
+                }
                 body.addView(android.widget.Spinner(activity).apply {
                     tag = "guide-provider"
                     adapter = android.widget.ArrayAdapter(activity, R.layout.guide_spinner_item,
-                        ServiceProvider.entries.map { providerTitle(activity, it) }).apply { setDropDownViewResource(R.layout.mimi_spinner_dropdown) }
-                    setSelection(ServiceProvider.entries.indexOf(selected))
+                        profiles.map { it.name } + ServiceProvider.entries.map { activity.getString(R.string.guide_add_provider, providerTitle(activity, it)) }).apply { setDropDownViewResource(R.layout.mimi_spinner_dropdown) }
+                    setSelection(profiles.indexOfFirst { it.id == profileId }.takeIf { it >= 0 } ?: (profiles.size + ServiceProvider.entries.indexOf(selected)))
                     onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                         override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
                         override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                            val next = ServiceProvider.entries[position]
-                            if (next != selected) { selected = next; render() }
+                            val profile = profiles.getOrNull(position)
+                            val next = profile?.provider ?: ServiceProvider.entries[position - profiles.size]
+                            if (next != selected || profileId != profile?.id) {
+                                selected = next; profileId = profile?.id; render()
+                            }
                         }
                     }
                 }, LinearLayout.LayoutParams(-1, dp(56)).apply { bottomMargin = dp(12) })
                 label(providerDescription(activity, selected), muted = true)
-                button(activity.getString(R.string.guide_continue_provider, providerTitle(activity, selected)), "guide-next") { step = 1; render() }
+                button(activity.getString(R.string.guide_continue_provider, selectedTitle()), "guide-next") { step = 1; render() }
             }
             1 -> {
-                heading(activity.getString(R.string.guide_connect, providerTitle(activity, selected)),
+                heading(activity.getString(R.string.guide_connect, selectedTitle()),
                     activity.getString(R.string.guide_saved_hint), "guide-storage-help")
                 label(if (configured()) activity.getString(R.string.guide_saved) else activity.getString(R.string.guide_missing))
                 button(activity.getString(R.string.guide_credentials), "guide-credentials") {
-                    activity.startActivity(Intent(activity, ServiceSettingsActivity::class.java).putExtra("provider", selected.id))
+                    editor.launch(Intent(activity, ServiceSettingsActivity::class.java).putExtra("provider", selected.id).putExtra("profileId", profileId))
                 }
                 if (MimiService.isRunning) {
                     label(activity.getString(R.string.service_stop_first), muted = true)
@@ -125,8 +151,8 @@ internal class FirstRunGuide(private val activity: AppCompatActivity, private va
                         activity.stopService(Intent(activity, MimiService::class.java))
                     }
                 }
-                if (!MimiService.isRunning && configured()) button(activity.getString(R.string.guide_check_permissions), "guide-next") {
-                    if (runCatching { SettingsStore.activateProvider(activity, selected) }.getOrDefault(false)) { step = 2; render() }
+                if (!MimiService.isRunning && !MimiService.isStopping && configured()) button(activity.getString(R.string.guide_check_permissions), "guide-next") {
+                    if (runCatching { profileId?.let { SettingsStore.activateProfile(activity, it) } == true }.getOrDefault(false)) { step = 2; render() }
                     else android.widget.Toast.makeText(activity, R.string.guide_storage_unavailable, android.widget.Toast.LENGTH_LONG).show()
                 }
             }

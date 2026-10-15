@@ -4,7 +4,8 @@
 <body><main id="root"></main><script type="module">
 // Local UI fixtures only: no native bridge, credentials, provider or capture.
 let fixture = {};
-window.layoutFixtureRequests = { translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0 };
+window.layoutFixtureRequests = { profileCreate: 0, translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0, credentialSave: 0, credentialReveal: 0, connectionCheck: 0 };
+window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 window.__TAURI_INTERNALS__ = {
   metadata: { currentWindow: { label: "settings" }, currentWebview: { label: "settings" } },
   transformCallback: () => 0,
@@ -44,6 +45,20 @@ window.__TAURI_INTERNALS__ = {
         receivingAudioData: fixture.state === "silent" || fixture.state === "receiving",
       };
     }
+    if (command === "audio_applications") {
+      if (args?.cachedOnly) return { supported: true, applications: fixture.streamState === "missing" ? [] : [useStore.getState().settings.systemAudioTarget].filter(target => target.kind === "application") };
+      if (fixture.streamState === "failed") throw new Error("application_audio_list_failed");
+      return { supported: true, applications: fixture.streamState === "empty" ? [] : [
+        { id: "fixture-stream-1", name: "Fixture Player · Music #7" },
+        { id: "fixture-stream-2", name: "Fixture Player · Video #8" },
+      ] };
+    }
+    if (command === "session_switch_system_audio_target") {
+      const current = useStore.getState().settings;
+      useStore.setState({ settings: { ...current, systemAudioTarget: args.target,
+        recordSessionAudio: false } });
+      return;
+    }
     if (command === "app_desktop_shortcut_commands") return null;
     if (["overlay_control_set_panel_height", "plugin:window|set_size", "plugin:window|set_position"].includes(command)) return;
     if (command === "session_switch_source_language") {
@@ -78,6 +93,8 @@ window.__TAURI_INTERNALS__ = {
       const snapshot = { ...current, profiles: current.profiles.map(profile => {
         if (profile.id !== args.profileId) return profile;
         const next = { ...profile, ...(args.name === undefined ? {} : { name: args.name.trim() }) };
+        if (args.alibabaRealtimeMode !== undefined) next.alibabaRealtimeMode = args.alibabaRealtimeMode;
+        if (args.alibabaWorkspaceId !== undefined) next.alibabaWorkspaceId = args.alibabaWorkspaceId;
         if (args.qwenMtModel !== undefined) next.qwenMtModel = args.qwenMtModel;
         if (args.textTranslationName) {
           next.textTranslationNames = { ...profile.textTranslationNames };
@@ -92,6 +109,15 @@ window.__TAURI_INTERNALS__ = {
         return next;
       }) };
       // Stand in for the native settings event; this fixture never writes disk.
+      useStore.setState({ settings: snapshot });
+      return snapshot;
+    }
+    if (command === "profile_create") {
+      window.layoutFixtureRequests.profileCreate += 1;
+      if (fixture.failCreate) throw new Error("fixture_create_failed");
+      const current = useStore.getState().settings;
+      const created = { id: `fixture-created-${current.profiles.length}`, provider: args.provider, name: args.name, credentialState: "missing", speechCredentialState: "missing", textTranslation: "followService" };
+      const snapshot = { ...current, profiles: [...current.profiles, created], activeProfileId: current.activeProfileId || created.id };
       useStore.setState({ settings: snapshot });
       return snapshot;
     }
@@ -117,10 +143,30 @@ window.__TAURI_INTERNALS__ = {
       window.layoutCopiedValue = args.text;
       return;
     }
+    if (command === "profile_test_connection") {
+      window.layoutFixtureRequests.connectionCheck += 1;
+      if (fixture.failConnection) return { credential: "present", service: "unavailable", reason: "network_unavailable", elapsedMs: 123 };
+      return { credential: "present", service: "available", reason: null, elapsedMs: 123 };
+    }
+    if (command === "profile_save_credentials") {
+      window.layoutFixtureRequests.credentialSave += 1;
+      if (args.credentials.kind === "customSpeech") {
+        if (args.credentials.endpoint) fixture.savedSpeechEndpoint = args.credentials.endpoint;
+        if (args.credentials.model) fixture.savedSpeechModel = args.credentials.model;
+      }
+      if (fixture.failCredentialSave) throw new Error("credential_store_unavailable");
+      const current = useStore.getState().settings;
+      const snapshot = { ...current, profiles: current.profiles.map(profile => profile.id === args.profileId
+        ? { ...profile, credentialState: "present", speechCredentialState: "present", textCredentialState: "present",
+          ...(args.credentials.kind === "alibabaTranslation" ? { textTranslation: args.credentials.textTranslation } : {}) }
+        : profile) };
+      useStore.setState({ settings: snapshot });
+      return snapshot;
+    }
     if (command === "profile_credential_editor_state") return args.textTranslation
       ? { savedFields: fixture.keyless ? [] : ["token"], endpoint: "http://127.0.0.1:8080/v1", model: "fixture-model" }
-      : { savedFields: ["apiKey"], endpoint: "wss://speech.example/v1/realtime", model: "fixture-speech-model" };
-    if (command === "profile_reveal_credential") return "fixture-saved-value";
+      : { savedFields: (useStore.getState().settings.profiles.find(profile => profile.id === args.profileId)?.speechCredentialState ?? useStore.getState().settings.profiles.find(profile => profile.id === args.profileId)?.credentialState) === "missing" ? [] : ["apiKey"], endpoint: fixture.savedSpeechEndpoint ?? "wss://speech.example/v1/realtime", model: fixture.savedSpeechModel ?? "fixture-speech-model" };
+    if (command === "profile_reveal_credential") { window.layoutFixtureRequests.credentialReveal += 1; return "fixture-saved-value"; }
     if (command === "plugin:event|listen") return 0;
     if (command === "plugin:event|unlisten") return;
     throw new Error("fixture_command_unavailable");
@@ -161,27 +207,29 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 let generation = 0;
 window.applyLayoutCase = async next => {
   fixture = { ...next };
-  window.layoutFixtureRequests = { translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0 };
+  window.layoutFixtureRequests = { profileCreate: 0, translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0, credentialSave: 0, credentialReveal: 0, connectionCheck: 0 };
   Object.defineProperty(navigator, "userAgent", { configurable: true, value: next.platform === "windows" ? "Windows NT 10.0" : next.platform === "macos" ? "Macintosh" : "Linux x86_64" });
   const active = ["receiving", "silent", "noData"].includes(next.state);
   document.body.dataset.window = next.surface === "overlay" ? "overlay-control" : "settings";
   document.documentElement.dataset.platform = next.platform;
   document.documentElement.lang = next.language === "zh" ? "zh-CN" : next.language;
-  location.hash = next.category ?? "service-profiles";
+  location.hash = next.category ?? (next.editor || next.listProfiles || next.emptyProfiles || next.providerPicker || next.providerConfirmation ? "service-profiles" : "voice-settings");
   localStorage.setItem("mimi.settings-theme", next.theme);
   setStoredUiLanguage(next.language);
   window.layoutFixtureLabels = { source: I18N.settings.sourceLanguage, target: I18N.settings.translateTo, overlaySource: I18N.overlay.sourceLanguage, output: audioSourceCopy().title, appleReady: I18N.settings.appleTranslationReady, appleNeedsSetup: I18N.settings.appleTranslationNeedsSetup };
   const appleProfile = next.editor && next.provider === "appleSpeech";
   const sourceLanguage = next.sourceLanguage ?? (appleProfile ? "en" : initial.settings.sourceLanguage);
   const targetLanguage = next.targetLanguage ?? (appleProfile ? "original" : initial.settings.targetLanguage);
-  const profile = { id: next.profileId ?? "layout-custom", name: next.profileName ?? "Fixture configuration", provider: next.provider ?? "customDashScopeASR", credentialState: "present", speechCredentialState: "present", textCredentialState: "present", textTranslation: next.textTranslation ?? (appleProfile ? "followService" : "chatMock"), textTranslationNames: { chatMock: next.translationName ?? "" }, speechRecognitionName: next.speechRecognitionName, ...next.profileOverrides };
+  const profile = { id: next.profileId ?? "layout-custom", name: next.profileName ?? "Fixture configuration", provider: next.provider ?? "customDashScopeASR", credentialState: "present", speechCredentialState: "present", textCredentialState: "present", textTranslation: next.textTranslation ?? (next.provider && !["customDashScopeASR", "customOpenAIASR", "alibabaCloud", "deepLX"].includes(next.provider) ? "followService" : appleProfile ? "followService" : "chatMock"), textTranslationNames: { chatMock: next.translationName ?? "" }, speechRecognitionName: next.speechRecognitionName, ...next.profileOverrides };
   useStore.setState({
     initializationStatus: "ready",
-    settings: { ...initial.settings, uiLanguage: next.language, microphoneInputAvailable: next.platform === "macos", windowsAudioSource: next.state === "missing" ? "removed-output" : "fixture-output",
+    settings: { ...initial.settings, uiLanguage: next.language,
+      systemAudioTarget: next.systemAudioTarget ?? { kind: "system" },
+      microphoneInputAvailable: next.platform === "macos", windowsAudioSource: next.state === "missing" ? "removed-output" : "fixture-output",
       sourceLanguage, targetLanguage,
-      ...(next.editor || next.surface || next.listProfiles ? { profiles: next.listProfiles
+      ...(next.editor || next.surface || next.listProfiles || next.provider ? { profiles: next.profiles ?? (next.listProfiles
         ? [profile, { ...profile, id: "layout-other", name: next.profileName ?? "Other configuration" }]
-        : [profile], activeProfileId: profile.id } : {}),
+        : [profile]), activeProfileId: next.activeProfileId ?? profile.id } : {}),
       ...(next.emptyProfiles ? { profiles: [], activeProfileId: "" } : {}),
       ...(appleProfile || next.textTranslation === "apple" ? { languageCapabilities: { profileId: profile.id, provider: profile.provider, textTranslation: profile.textTranslation, targetLanguage,
         sourceLanguages: next.sourceLanguages ?? next.appleSupport?.languages.filter(language => language.installed).map(language => language.sourceLanguage) ?? next.appleTranslationSupport?.sourceLanguages ?? [],
@@ -193,15 +241,15 @@ window.applyLayoutCase = async next => {
   flushSync(() => root.render(React.createElement(next.surface === "overlay" ? FixtureOverlayControl : SettingsView, { key: ++generation })));
   await settle();
   if (next.profileDeleteConfirmation) {
-    document.querySelectorAll(".service-row__delete")[1].click();
+    document.querySelectorAll(".service-row__more")[1].click();
+    await settle();
+    document.querySelector(".settings-action-menu .service-row__delete").click();
     await settle();
   }
   if (next.editor && !next.surface) {
-    document.querySelector(".service-row__edit").click();
+    document.querySelector(".service-row__edit")?.click();
     await settle();
     if (next.reveal) {
-      document.querySelector(".credential-panel__saved-actions button")?.click();
-      await settle();
       for (const button of document.querySelectorAll(".saved-credential-input__toggle")) button.click();
       await settle();
     }
@@ -243,7 +291,7 @@ window.applyLayoutCase = async next => {
     }
   }
   if (next.providerPicker || next.providerConfirmation) {
-    document.querySelector(".services-toolbar > button").click();
+    document.querySelector("#service-add-profile")?.click();
     await settle();
     if (next.providerConfirmation) {
       document.querySelector('.provider-option[data-provider="openAIRealtime"]').click();
@@ -251,6 +299,20 @@ window.applyLayoutCase = async next => {
     }
   }
 };
-await window.applyLayoutCase({ platform: "windows", language: "zh", state: "idle", theme: "light", deviceName: "Fixture headphones" });
+const query = new URLSearchParams(location.search);
+// Explicit review cases and Linux playback-stream parameters share this local fixture.
+const reviewCase = query.get("review");
+await window.applyLayoutCase({ platform: query.get("platform") ?? "windows", language: query.get("language") ?? "zh",
+  state: query.get("state") ?? "idle", theme: query.get("theme") ?? "light", deviceName: "Fixture headphones",
+  category: query.get("category") ?? undefined, surface: query.get("surface") ?? undefined,
+  streamState: query.get("streamState") ?? undefined,
+  ...(query.has("selectedStream") ? { systemAudioTarget: { kind: "application", id: "fixture-stream-1",
+    name: "Fixture Player · Very long playback stream 音频流 ストリーム ".repeat(3) } } : {}),
+  ...(reviewCase ? JSON.parse(reviewCase) : {}),
+});
+if (query.has("openAudio")) {
+  document.querySelector(".application-audio-picker button[role=combobox]")?.click();
+  await settle();
+}
 window.layoutReady = true;
 </script></body></html>

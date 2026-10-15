@@ -265,11 +265,11 @@ export function overlayControlGetState(): Promise<OverlayControlMode> {
 }
 
 export function overlayControlSetPanelHeight(height: number): Promise<void> {
-  return invoke("overlay_control_set_panel_height", { height });
+  return invoke("overlay_control_set_panel_height", { height, pixelRatio: window.devicePixelRatio });
 }
 
 export function overlayControlSetIslandWidth(width: number): Promise<void> {
-  return invoke("overlay_control_set_island_width", { width });
+  return invoke("overlay_control_set_island_width", { width, pixelRatio: window.devicePixelRatio });
 }
 
 export function overlayControlSetPopupBounds(
@@ -292,7 +292,7 @@ export function appQuit(): Promise<void> {
   return invoke("app_quit");
 }
 
-export type SettingsNavigationTarget = "service" | "export" | "appleSpeechResources" | "activeProfile";
+export type SettingsNavigationTarget = "service" | "voice" | "export" | "appleSpeechResources" | "activeProfile";
 
 export function appShowSettings(
   target?: SettingsNavigationTarget,

@@ -11,18 +11,60 @@ These project rules apply to implementation and review.
 - Start with the existing design tokens, components, icons and nearby screens.
   Keep the established black, white and neutral-gray visual language. Use
   status colors only for a concrete state; preserve existing provider branding.
+- Configuration pickers show the provider mark in both the selected value and
+  every option, consistently with the floating controls. Application pickers
+  share one icon slot; match fallback symbols to the artwork's visible size.
+  Center the SVG's drawn bounds, not just its canvas; asymmetric marks can
+  look off-center inside a correctly centered wrapper.
+  macOS raster icons must cover at least twice their CSS dimensions for Retina
+  displays, without increasing the bounded icon cache or fetching remote assets.
 - Name the actual function, state or action in plain language. Do not use slogans,
   promises or personified service names such as “translation partner”. Preview
   captions use ordinary sample text. Describe only capabilities available on
   that platform; omit unsupported features from product copy. Android playback
   capture still needs the system audio-recording permission, so explain that
   requirement where permission is requested.
+- Service help explains the actual workflow and relevant choice boundaries;
+  a brand, model name or acronym alone is not an explanation. Check copy against
+  the implemented route. Keep custom-protocol details in confirmation/editor
+  help, with a plain-language purpose in the initial service picker.
+  Break multi-part help at semantic boundaries (workflow, then requirements or
+  limits); preserve those breaks while allowing narrow-window wrapping.
 - Make the title, current state, main action and detail areas easy to distinguish.
   Group related controls, use consistent button sizes and align actions right.
   Do not scatter buttons across large blank areas or add cards to every row.
-- An empty configuration list needs a short, readable next-step instruction
-  beside its add action. Show it only after a successful settings load; a zero
-  count alone is not sufficient guidance for a fresh install.
+  In configuration lists, keep actions in one compact strip; move the whole
+  strip below the identity when needed instead of using a two-row action block
+  that inflates short rows. Keep action wording at minimum width, omit redundant
+  icons if necessary, and check artwork bounds as well as its outer icon slot.
+  Keep configuration order stable when selection changes; mark the active row. Omit
+  routine saved/ready credential state from lists and editor headers, including
+  redundant help icons; show missing or unavailable state when the user needs
+  to act. A provider mark does not need a repeated brand-name subtitle under a
+  configuration alias. Retain distinct user-defined recognition names.
+- Navigation must define scroll and focus together. Enter settings subpages at
+  the top after content replacement; return to a list at its saved position and
+  entry control. Category switches start at the top without stealing sidebar
+  focus. Keep modal cancellation and ordinary data refreshes in place. Test
+  from a scrolled viewport, including lower-list entries and native deep links;
+  a successful click alone does not establish navigation acceptance.
+- On desktop, a single configuration opens directly into its settings, with Add in the
+  header. Preserve unsaved drafts when adding is cancelled, restore the editor
+  position and focus, and invalidate saved-secret reveals while it is hidden.
+  Multiple configurations keep a list in saved order.
+- Android keeps its existing native list and editor navigation when adding profile
+  management. Reuse its row density, typography and touch targets; do not copy
+  desktop action strips into a second row or redesign unrelated app surfaces.
+  A single saved profile remains a list entry, avoiding a Back-to-auto-open loop.
+  Use native single-choice indicators for profile selection. Keep selection and
+  editing distinct: tapping an already selected row leaves it selected; Settings
+  opens the editor. Do not crowd the name with repeated check/status text. Expose
+  the checked state to accessibility, and keep saved order stable.
+- With no configurations, show the service picker directly after a successful
+  settings load. Keep one short next-step instruction, omit an intermediate
+  empty page and cancel-to-empty action, and create only after confirmation.
+  Reuse the same responsive picker for later Add actions; loading failures
+  remain retryable errors rather than being presented as a fresh install.
 - Keep essential labels, choices and actionable errors readable at normal text
   size. Put non-essential explanations behind hover/focus help icons. Long raw
   diagnostics and advanced details start collapsed; bound long lists and text.
@@ -34,6 +76,13 @@ These project rules apply to implementation and review.
   desktop reading edge. Growing reference text must not push an unchanged
   translation down; preserve complete glyph lines and deliberate history reading.
   Check changing line counts in native draws rather than only static screenshots.
+- Windows control-window measurements are CSS pixels, not native logical pixels.
+  Report the WebView's `devicePixelRatio` with capsule width and panel height,
+  and divide by the native window DPI scale before sizing against monitor bounds.
+  WebView `ZoomFactor` alone does not include the observed Windows text scaling.
+  Preserve accessibility scaling; size both fixed and measured dimensions in
+  the same units. Re-measure on viewport/DPI changes even when content width is
+  unchanged, and verify the actual native capsule and expanded panel.
 - Reserve readable label space and bound picker columns. Put ongoing device
   feedback in `SettingsRow.feedback`, below the label/control grid; never put a
   long status sentence beside a picker inside the auto-sized control column.

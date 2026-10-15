@@ -12,52 +12,39 @@ import org.json.JSONObject
 /** Explicit local test input in private app cache; never part of the release APK. */
 internal class TemporaryProviderAcceptance(private val context: Context) : AutoCloseable {
     private val input = File(context.cacheDir, "acceptance-provider.json")
-    private val active = SettingsStore.provider(context)
-    private val source = SettingsStore.sourceLang(context)
-    private val target = SettingsStore.targetLang(context)
-    private val translation = SettingsStore.translationConfiguration(context)
-    private val model = SettingsStore.qwenMtModel(context)
-    private var original: ServiceConfiguration? = null
+    private var original: ProfileSettingsSnapshot? = null
     fun apply() {
         try {
-            check(input.isFile && input.length() in 1..16_384)
+            check(original == null && input.isFile && input.length() in 1..16_384)
             val value = JSONObject(input.readText(Charsets.UTF_8))
             val provider = ServiceProvider.fromId(value.getString("provider"))
             check(provider.id == value.getString("provider"))
             val fields = value.getJSONObject("credentials")
             check(fields.length() == provider.fields.size)
             val configuration = ServiceConfiguration(provider, provider.fields.associate {
-                val field = fields.get(it.id)
-                check(field is String)
-                it.id to field
-            })
-            val (from, to) = provider.normalize(value.getString("source"), value.getString("target"))
-            // Validate using the production PC factory before any saved state changes.
+                val field = fields.get(it.id); check(field is String); it.id to field
+            }, alibabaRealtimeMode = value.optString("alibabaRealtimeMode", "asrMt"),
+                alibabaWorkspaceId = value.optString("alibabaWorkspaceId", ""))
+            val testTranslation = TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
+            val (from, to) = provider.normalize(value.getString("source"), value.getString("target"),
+                testTranslation.provider, configuration.alibabaRealtimeMode)
             val testModel = value.optString("translationModel", "lite")
             check(testModel in listOf("lite", "flash", "plus"))
-            val testTranslation = TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
+            // Validate using the production PC factory before any saved state changes.
             runtimeModelNames(buildRuntimeConfiguration(configuration, testTranslation, from, to, testModel))
-            original = SettingsStore.configuration(context, provider)
-            check(SettingsStore.saveConfiguration(context, configuration, testTranslation, true, testModel) && SettingsStore.activateProvider(context, provider))
+            original = ProfileSettingsSnapshot(context)
+            // Always a distinct profile: never borrow or overwrite a user's same-provider entry.
+            checkNotNull(SettingsStore.saveProfile(context, null, "Acceptance fixture", configuration,
+                testTranslation, qwenMtModel = testModel, activate = true))
             SettingsStore.setSourceLang(context, from); SettingsStore.setTargetLang(context, to)
             check(SettingsStore.flushPendingWritesForTests(context))
         } catch (_: Exception) {
-            // JSONObject parser/type errors can include their private input.
             throw IllegalStateException("invalid_acceptance_provider_input")
         } finally { check(!input.exists() || input.delete()) }
     }
     override fun close() {
-        original?.let {
-            check(SettingsStore.saveConfiguration(context, it, translation, true, model))
-            check(SettingsStore.configuration(context, it.provider).credentials == it.credentials)
-            check(SettingsStore.translationConfiguration(context) == translation && SettingsStore.qwenMtModel(context) == model)
-        }
-        val previousProvider = ServiceProvider.fromId(active)
-        if (SettingsStore.isConfigured(context, previousProvider)) check(SettingsStore.activateProvider(context, previousProvider))
-        else SettingsStore.setProvider(context, active)
-        SettingsStore.setSourceLang(context, source); SettingsStore.setTargetLang(context, target)
-        check(SettingsStore.flushPendingWritesForTests(context))
-        check(SettingsStore.provider(context) == active && SettingsStore.sourceLang(context) == source && SettingsStore.targetLang(context) == target)
+        original?.close()
+        original = null
         check(!input.exists() || input.delete())
     }
 }

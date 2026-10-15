@@ -11,6 +11,15 @@ export const SUPPLEMENTAL = {
     saveFailed: "Impossible de changer l’application capturée. Vérifiez l’état des sous-titres, puis réessayez.",
     help: "Capture uniquement l’audio de cette application. Les onglets du navigateur partagent la même application. Sélectionner une application ne la met pas en sourdine. Sous Windows, sélectionnez-la de nouveau après l’avoir rouverte.",
   },
+  playbackStream_copy: {
+    title: "Capturer un flux audio", all: "Tout le son du système", application: "Flux audio",
+    search: "Rechercher des flux audio", refresh: "Actualiser les flux audio", loading: "Chargement des flux audio…",
+    empty: "Aucun flux audio trouvé. Lancez un son puis actualisez.", noMatch: "Aucun flux audio correspondant.", missing: "Indisponible",
+    unavailable: "Ce flux audio est indisponible. Lancez un son et sélectionnez à nouveau un flux, ou choisissez Tout le son du système.",
+    unsupported: "La capture de flux audio nécessite Linux avec PulseAudio ou PipeWire-Pulse.",
+    failed: "Impossible de charger les flux audio. Actualisez pour réessayer.", saveFailed: "Impossible de changer de flux audio. Vérifiez les sous-titres puis réessayez.",
+    help: "Capture un seul flux de lecture. Une application peut avoir plusieurs flux, affichés séparément. La sortie et le volume restent inchangés. Sélectionnez à nouveau le flux après sa fermeture ou le redémarrage de Mimi.",
+  },
   captureStatus_copy: {
     title: "Entrée audio", system: "Audio du système", microphone: "Microphone", output: "Sortie du système", device: "Périphérique de capture",
     idle: "Capture inactive", paused: "En pause", connecting: "Connexion", stopping: "Arrêt", error: "Erreur",

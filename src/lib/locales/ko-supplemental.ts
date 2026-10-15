@@ -11,6 +11,15 @@ export const SUPPLEMENTAL = {
     saveFailed: "캡처할 앱을 변경할 수 없습니다. 자막 상태를 확인하고 다시 시도하세요.",
     help: "이 앱의 오디오만 캡처합니다. 브라우저 탭은 하나의 앱으로 처리됩니다. 앱을 선택해도 음소거되지 않습니다. Windows에서는 앱을 다시 연 후 다시 선택하세요.",
   },
+  playbackStream_copy: {
+    title: "오디오 스트림 캡처", all: "모든 시스템 소리", application: "오디오 스트림",
+    search: "오디오 스트림 검색", refresh: "오디오 스트림 새로고침", loading: "오디오 스트림 불러오는 중…",
+    empty: "오디오 스트림이 없습니다. 소리를 재생한 후 새로고침하세요.", noMatch: "일치하는 오디오 스트림이 없습니다.", missing: "사용 불가",
+    unavailable: "선택한 오디오 스트림을 사용할 수 없습니다. 소리를 재생하고 다시 선택하거나 모든 시스템 소리를 선택하세요.",
+    unsupported: "오디오 스트림 캡처에는 Linux의 PulseAudio 또는 PipeWire-Pulse가 필요합니다.",
+    failed: "오디오 스트림을 불러올 수 없습니다. 새로고침하여 다시 시도하세요.", saveFailed: "오디오 스트림을 전환할 수 없습니다. 자막 상태를 확인하고 다시 시도하세요.",
+    help: "재생 스트림 하나를 캡처합니다. 같은 앱의 여러 스트림은 별도로 표시됩니다. 재생 경로나 볼륨은 변경하지 않습니다. 스트림이 닫히거나 Mimi가 다시 시작되면 다시 선택하세요.",
+  },
   captureStatus_copy: {
     title: "오디오 입력", system: "시스템 오디오", microphone: "마이크", output: "시스템 출력", device: "캡처 장치",
     idle: "캡처하지 않음", paused: "일시 정지됨", connecting: "연결 중", stopping: "중지 중", error: "오류",

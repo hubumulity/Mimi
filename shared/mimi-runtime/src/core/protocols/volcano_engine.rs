@@ -238,14 +238,18 @@ fn target_language_code(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VolcanoEngineServerEvent {
     SessionStarted,
-    SourceSubtitleStarted,
+    SourceSubtitleStarted {
+        start_time_ms: Option<i32>,
+    },
     SourceSubtitleDraft(String),
     SourceSubtitleFinal {
         text: String,
         start_time_ms: Option<i32>,
         end_time_ms: Option<i32>,
     },
-    TranslationSubtitleStarted,
+    TranslationSubtitleStarted {
+        start_time_ms: Option<i32>,
+    },
     TranslationSubtitleDraft(String),
     TranslationSubtitleFinal {
         text: String,
@@ -335,19 +339,27 @@ impl VolcanoEngineServerEvent {
         let text = text.unwrap_or_default();
         match event.ok_or(VolcanoEngineProtocolError::MissingEvent)? as u32 {
             EVENT_SESSION_STARTED => Ok(Self::SessionStarted),
-            EVENT_SOURCE_SUBTITLE_START => Ok(Self::SourceSubtitleStarted),
+            // The official TranslateResponse uses implicit proto3 int32
+            // fields 5/6, so omission and explicit zero are equivalent. Apply
+            // defaults only to events whose protocol carries timing; RESPONSE
+            // remains a text fragment with no inferred block identity.
+            EVENT_SOURCE_SUBTITLE_START => Ok(Self::SourceSubtitleStarted {
+                start_time_ms: Some(start_time_ms.unwrap_or_default()),
+            }),
             EVENT_SOURCE_SUBTITLE_RESPONSE => Ok(Self::SourceSubtitleDraft(text)),
             EVENT_SOURCE_SUBTITLE_END => Ok(Self::SourceSubtitleFinal {
                 text,
-                start_time_ms,
-                end_time_ms,
+                start_time_ms: Some(start_time_ms.unwrap_or_default()),
+                end_time_ms: Some(end_time_ms.unwrap_or_default()),
             }),
-            EVENT_TRANSLATION_SUBTITLE_START => Ok(Self::TranslationSubtitleStarted),
+            EVENT_TRANSLATION_SUBTITLE_START => Ok(Self::TranslationSubtitleStarted {
+                start_time_ms: Some(start_time_ms.unwrap_or_default()),
+            }),
             EVENT_TRANSLATION_SUBTITLE_RESPONSE => Ok(Self::TranslationSubtitleDraft(text)),
             EVENT_TRANSLATION_SUBTITLE_END => Ok(Self::TranslationSubtitleFinal {
                 text,
-                start_time_ms,
-                end_time_ms,
+                start_time_ms: Some(start_time_ms.unwrap_or_default()),
+                end_time_ms: Some(end_time_ms.unwrap_or_default()),
             }),
             EVENT_SESSION_FINISHED => Ok(Self::SessionFinished),
             EVENT_SESSION_FAILED => Ok(Self::SessionFailed { status_code }),
@@ -550,6 +562,55 @@ mod tests {
     }
 
     #[test]
+    fn shared_timing_contract_applies_proto3_defaults_without_inferring_response_identity() {
+        let contract: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../translation-contracts.json")).unwrap();
+        for case in contract["volcanoSubtitleTimingEvents"].as_array().unwrap() {
+            let hex = case["hex"].as_str().unwrap();
+            let bytes = (0..hex.len())
+                .step_by(2)
+                .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+                .collect::<Vec<_>>();
+            let decoded = VolcanoEngineServerEvent::decode(&bytes);
+            if case["expected"].is_null() {
+                assert!(decoded.is_err(), "{}", case["id"]);
+                continue;
+            }
+            use serde_json::json;
+            let value = match decoded.unwrap() {
+                VolcanoEngineServerEvent::SourceSubtitleStarted { start_time_ms } => {
+                    json!({"type":"sourceStart","startTimeMs":start_time_ms})
+                }
+                VolcanoEngineServerEvent::TranslationSubtitleStarted { start_time_ms } => {
+                    json!({"type":"translationStart","startTimeMs":start_time_ms})
+                }
+                VolcanoEngineServerEvent::SourceSubtitleFinal {
+                    text,
+                    start_time_ms,
+                    end_time_ms,
+                } => {
+                    json!({"type":"sourceFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms})
+                }
+                VolcanoEngineServerEvent::TranslationSubtitleFinal {
+                    text,
+                    start_time_ms,
+                    end_time_ms,
+                } => {
+                    json!({"type":"translationFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms})
+                }
+                VolcanoEngineServerEvent::SourceSubtitleDraft(text) => {
+                    json!({"type":"sourceDraft","text":text})
+                }
+                VolcanoEngineServerEvent::TranslationSubtitleDraft(text) => {
+                    json!({"type":"translationDraft","text":text})
+                }
+                other => panic!("unexpected event {other:?}"),
+            };
+            assert_eq!(value, case["expected"], "{}", case["id"]);
+        }
+    }
+
+    #[test]
     fn shared_s2t_catalog_validates_all_directions_and_serializes_every_legal_setup() {
         let contract: serde_json::Value =
             serde_json::from_str(include_str!("../../../../translation-contracts.json")).unwrap();
@@ -740,7 +801,9 @@ mod tests {
             ),
             (
                 response(EVENT_SOURCE_SUBTITLE_START as u64, None),
-                VolcanoEngineServerEvent::SourceSubtitleStarted,
+                VolcanoEngineServerEvent::SourceSubtitleStarted {
+                    start_time_ms: Some(0),
+                },
             ),
             (
                 response(EVENT_SOURCE_SUBTITLE_RESPONSE as u64, Some("hello")),
@@ -750,13 +813,15 @@ mod tests {
                 response(EVENT_SOURCE_SUBTITLE_END as u64, Some("hello.")),
                 VolcanoEngineServerEvent::SourceSubtitleFinal {
                     text: "hello.".into(),
-                    start_time_ms: None,
-                    end_time_ms: None,
+                    start_time_ms: Some(0),
+                    end_time_ms: Some(0),
                 },
             ),
             (
                 response(EVENT_TRANSLATION_SUBTITLE_START as u64, None),
-                VolcanoEngineServerEvent::TranslationSubtitleStarted,
+                VolcanoEngineServerEvent::TranslationSubtitleStarted {
+                    start_time_ms: Some(0),
+                },
             ),
             (
                 response(EVENT_TRANSLATION_SUBTITLE_RESPONSE as u64, Some("你好")),
@@ -766,8 +831,8 @@ mod tests {
                 response(EVENT_TRANSLATION_SUBTITLE_END as u64, Some("你好。")),
                 VolcanoEngineServerEvent::TranslationSubtitleFinal {
                     text: "你好。".into(),
-                    start_time_ms: None,
-                    end_time_ms: None,
+                    start_time_ms: Some(0),
+                    end_time_ms: Some(0),
                 },
             ),
             (
@@ -811,6 +876,31 @@ mod tests {
                 end_time_ms: Some(2_340),
             }
         );
+    }
+
+    #[test]
+    fn starts_preserve_explicit_values_and_apply_proto3_omitted_zero() {
+        for (event, source) in [
+            (EVENT_SOURCE_SUBTITLE_START, true),
+            (EVENT_TRANSLATION_SUBTITLE_START, false),
+        ] {
+            for start in [Some(0), Some(1_200), None] {
+                let mut wire = response(event as u64, None);
+                if let Some(start) = start {
+                    write_varint_field(&mut wire, 5, start as u64);
+                }
+                let expected = if source {
+                    VolcanoEngineServerEvent::SourceSubtitleStarted {
+                        start_time_ms: Some(start.unwrap_or_default()),
+                    }
+                } else {
+                    VolcanoEngineServerEvent::TranslationSubtitleStarted {
+                        start_time_ms: Some(start.unwrap_or_default()),
+                    }
+                };
+                assert_eq!(VolcanoEngineServerEvent::decode(&wire).unwrap(), expected);
+            }
+        }
     }
 
     #[test]

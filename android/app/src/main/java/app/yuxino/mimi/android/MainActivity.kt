@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
         guide = FirstRunGuide(this) { beginStartFlow(permissionOnly = guide.step == 2) }
         startStop = findViewById(R.id.start_stop)
         findViewById<View>(R.id.first_run_guide).setOnClickListener { guide.open() }
-        if (savedInstanceState?.getBoolean("guide_open") == true) guide.open(savedInstanceState.getInt("guide_step"), savedInstanceState.getString("guide_provider"))
+        if (savedInstanceState?.getBoolean("guide_open") == true) guide.open(savedInstanceState.getInt("guide_step"), savedInstanceState.getString("guide_provider"), savedInstanceState.getString("guide_profile"))
         else if (guide.shouldOpen()) guide.open()
         findViewById<View>(R.id.service_settings).setOnClickListener { openSettings() }
         findViewById<View>(R.id.source_language_action).setOnClickListener { showLanguages(source = true) }
@@ -127,6 +127,7 @@ class MainActivity : AppCompatActivity() {
         outState.putBoolean("guide_open", guide.showing)
         outState.putInt("guide_step", guide.step)
         outState.putString("guide_provider", guide.providerId)
+        outState.putString("guide_profile", guide.profileId)
         outState.putString("main_section", when (currentSection) {
             R.id.tab_service -> "services"
             R.id.tab_general -> "general"
@@ -192,6 +193,7 @@ class MainActivity : AppCompatActivity() {
             HelpUi.dismiss(this)
             immersiveHelp.dismiss()
             showSection(selected)
+            if (selected == R.id.tab_caption) refreshUi()
         }
         findViewById<View>(R.id.copy_capture_diagnostics).setOnClickListener { copyDiagnostics() }
     }
@@ -206,14 +208,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun copyDiagnostics() {
         val observation = MimiService.captureObservation
-        val report = "mimi Android capture diagnostics v1\n" +
+        val report = "Mimi Android capture diagnostics v1\n" +
             "androidApi=${Build.VERSION.SDK_INT}\nsource=android_playback_capture\nusage=media,game,unknown\nmicrophone=false\n" +
             "running=${MimiService.isRunning}\nobservation=${observation?.state?.name ?: "STOPPED"}\n" +
             "pcmAgeMs=${observation?.pcmAgeMs ?: "unknown"}\nsoundAgeMs=${observation?.soundAgeMs ?: "unknown"}\n" +
             "captureError=${MimiService.lastCaptureError ?: "none"}"
         val copied = runCatching {
             (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                .setPrimaryClip(android.content.ClipData.newPlainText("mimi capture diagnostics", report))
+                .setPrimaryClip(android.content.ClipData.newPlainText("Mimi capture diagnostics", report))
         }.isSuccess
         Toast.makeText(this, if (copied) R.string.capture_diagnostics_copied else R.string.capture_diagnostics_copy_failed,
             if (copied) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
@@ -283,10 +285,11 @@ class MainActivity : AppCompatActivity() {
             HelpUi.bind(this@MainActivity, this, this@MainActivity.findViewById<TextView>(R.id.status).text.toString(), getString(hint))
             visibility = View.VISIBLE
         }
-        findViewById<TextView>(R.id.source_summary).text = languageLabel(SettingsStore.sourceLang(this))
+        val (effectiveSource, effectiveTarget) = effectiveLanguages()
+        findViewById<TextView>(R.id.source_summary).text = languageLabel(effectiveSource)
         val originalOnly = SettingsStore.originalTextOnly(this)
         findViewById<TextView>(R.id.target_summary).apply {
-            text = if (originalOnly) getString(R.string.translation_none) else languageLabel(SettingsStore.targetLang(this@MainActivity))
+            text = if (originalOnly) getString(R.string.translation_none) else languageLabel(effectiveTarget)
             setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, if (originalOnly) 0 else R.drawable.ic_expand, 0)
         }
         findViewById<View>(R.id.target_language_action).isEnabled = !originalOnly
@@ -294,16 +297,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.ImageView>(R.id.provider_icon).setImageResource(serviceProviderIcon(selectedProvider))
         findViewById<android.widget.ImageView>(R.id.translation_provider_icon).apply {
             val translation = SettingsStore.textTranslationProvider(this@MainActivity)
-            val separate = selectedProvider == app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE &&
+            val separate = SettingsStore.configuration(this@MainActivity).usesIndependentTextTranslation &&
                 translation != app.yuxino.mimi.android.provider.TextTranslationProvider.BUILTIN &&
                 translation != app.yuxino.mimi.android.provider.TextTranslationProvider.NONE
             visibility = if (separate) View.VISIBLE else View.GONE
             if (separate) setImageResource(translationProviderIcon(translation))
         }
-        val provider = providerTitle(this, selectedProvider)
-        findViewById<TextView>(R.id.provider_summary).text = getString(
-            if (keyOk) R.string.home_service_ready else R.string.home_service_unset, provider,
-        )
+        val profile = SettingsStore.activeProfile(this)
+        findViewById<android.widget.ImageView>(R.id.provider_icon).visibility = if (profile == null) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.provider_summary).text = profile?.name ?: getString(R.string.profile_none)
         findViewById<TextView>(R.id.model_summary).apply {
             val models = if (running) MimiService.activeModelNames else if (keyOk)
                 runtimeModelNames(SettingsStore.runtimeConfiguration(this@MainActivity)) else emptyList()
@@ -312,7 +314,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<SubtitlePreviewView>(R.id.subtitle_preview).configure(
             SettingsStore.fontSize(this), SettingsStore.translationColor(this),
-            SettingsStore.overlayOpacity(this), SettingsStore.overlayBgAlpha(this), SettingsStore.targetLang(this),
+            SettingsStore.overlayOpacity(this), SettingsStore.overlayBgAlpha(this), effectiveTarget,
             SettingsStore.immersiveSubtitles(this), SettingsStore.originalTextOnly(this),
             SettingsStore.displayMode(this), SettingsStore.overlayWidthPercent(this), live = running,
             alignment = SettingsStore.captionAlignment(this), heightPercent = SettingsStore.overlayHeightPercent(this),
@@ -334,11 +336,13 @@ class MainActivity : AppCompatActivity() {
         if (!source && SettingsStore.originalTextOnly(this)) return
         val previousSource = SettingsStore.sourceLang(this)
         val previousTarget = SettingsStore.targetLang(this)
-        val selected = if (source) SettingsStore.sourceLang(this) else SettingsStore.targetLang(this)
+        val (effectiveSource, effectiveTarget) = effectiveLanguages()
+        val selected = if (source) effectiveSource else effectiveTarget
         val provider = app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(this))
         val translation = SettingsStore.textTranslationProvider(this)
-        val choices = if (source) provider.sourcesForTranslation(translation)
-            else provider.targetsForTranslation(translation).filter { provider.supportsPair(previousSource, it, translation) }
+        val mode = SettingsStore.configuration(this).alibabaRealtimeMode
+        val choices = if (source) provider.sourcesForTranslation(translation, mode)
+            else provider.targetsForTranslation(translation, mode).filter { provider.supportsPair(effectiveSource, it, translation, mode) }
         val dialog = BottomSheetDialog(this)
         val content = layoutInflater.inflate(R.layout.language_sheet, FrameLayout(this), false)
         content.findViewById<LinearLayout>(R.id.language_help_heading).addView(HelpUi.heading(this,
@@ -387,10 +391,16 @@ class MainActivity : AppCompatActivity() {
             ?.backgroundTintList = ContextCompat.getColorStateList(this, R.color.mimi_bg)
     }
 
+    private fun effectiveLanguages(): Pair<String, String> {
+        val config = SettingsStore.configuration(this)
+        return config.provider.normalize(SettingsStore.sourceLang(this), SettingsStore.targetLang(this),
+            SettingsStore.textTranslationProvider(this), config.alibabaRealtimeMode)
+    }
+
     private fun saveLanguage(source: Boolean, code: String) {
         if (source) SettingsStore.setSourceLang(this, code) else SettingsStore.setTargetLang(this, code)
         val provider = app.yuxino.mimi.android.provider.ServiceProvider.fromId(SettingsStore.provider(this))
-        val (from, to) = provider.normalize(SettingsStore.sourceLang(this), SettingsStore.targetLang(this), SettingsStore.textTranslationProvider(this))
+        val (from, to) = provider.normalize(SettingsStore.sourceLang(this), SettingsStore.targetLang(this), SettingsStore.textTranslationProvider(this), SettingsStore.configuration(this).alibabaRealtimeMode)
         SettingsStore.setSourceLang(this, from)
         SettingsStore.setTargetLang(this, to)
     }

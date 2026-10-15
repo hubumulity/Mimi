@@ -1,0 +1,21 @@
+<resources>
+    <string name="profiles_add">Konfiguration hinzufügen</string>
+    <string name="profiles_empty">Wähle einen Dienst für deine erste Konfiguration.</string>
+    <string name="profiles_name">Konfigurationsname</string>
+    <string name="profiles_save">Speichern</string>
+    <string name="profiles_duplicate">Duplizieren</string>
+    <string name="profiles_delete">Löschen</string>
+    <string name="profiles_delete_title">„%1$s“ löschen?</string>
+    <string name="profiles_delete_message">Diese Konfiguration und ihre Zugangsdaten werden gelöscht. Andere Konfigurationen bleiben erhalten.</string>
+    <string name="profiles_copy_name">%1$s (Kopie)</string>
+    <string name="profiles_limit">Du kannst bis zu 20 Konfigurationen speichern.</string>
+    <string name="profiles_retry">Erneut versuchen</string>
+    <string name="profile_none">Keine Konfiguration ausgewählt</string>
+    <string name="profiles_list_help">Speichere mehrere Konfigurationen, auch für denselben Dienst. Tippe auf eine Konfiguration, um sie zu verwenden, oder auf Einstellungen, um sie zu bearbeiten. Duplizieren und Löschen stehen im Menü des Editors.</string>
+    <string name="profiles_translation_help_save">Tests senden einen festen Beispieltext und speichern keine Änderungen. Entwürfe bleiben beim Dienstwechsel im Editor erhalten. Speichern sichert den gewählten Dienst. Schlüssel werden auf diesem Gerät verschlüsselt gespeichert.</string>
+    <string name="guide_add_provider">%1$s hinzufügen</string>
+    <string name="profiles_load_failed">Konfiguration konnte nicht geladen werden. Öffne die Einstellungen und versuche es erneut.</string>
+    <string name="profiles_add_short">Hinzufügen</string>
+    <string name="profiles_use_named">%1$s verwenden</string>
+    <string name="profiles_duplicated">Konfiguration dupliziert</string>
+</resources>

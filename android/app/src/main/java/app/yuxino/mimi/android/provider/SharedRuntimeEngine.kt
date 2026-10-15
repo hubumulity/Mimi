@@ -11,6 +11,7 @@ internal class SharedRuntimeEngine(
 ) : ProviderEngine {
     override val sampleRateHz: Int = NativeRuntimeConfiguration.capabilities(
         configuration.getString("provider"), configurationRoute(configuration), configuration.getString("targetLanguage"),
+        configuration.optString("alibabaRealtimeMode", "disabled"),
     ).getInt("sampleRateHz")
     private val active = AtomicBoolean(false)
     private val lock = Any()

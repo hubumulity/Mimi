@@ -23,10 +23,8 @@ pub const DEEPL_TARGET_CODES: &[&str] = &[
     "en", "pt",
 ];
 
-pub const DEEPLX_SOURCE_CODES: &[&str] = &[
-    "ar", "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "he", "hu", "id", "it", "ja",
-    "ko", "lt", "lv", "no", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "tr", "uk", "vi", "zh",
-];
+/// DeepLX v1.2.1 validates the same documented source/target registry.
+pub const DEEPLX_SOURCE_CODES: &[&str] = DEEPLX_TARGET_CODES;
 
 pub const DEEPLX_TARGET_CODES: &[&str] = &[
     "ar", "bg", "cs", "da", "de", "el", "en", "en-GB", "en-US", "es", "es-419", "et", "fi", "fr",

@@ -338,3 +338,21 @@ it.each([false, undefined])("keeps only the system row and application picker wh
   expect(description("system")).not.toContain(captureSwitchCopy().minimum);
   expect(mocks.switchAudioInput).not.toHaveBeenCalled();
 });
+
+it("selects a Linux playback stream using native capability and retains the independent microphone", async () => {
+  vi.stubGlobal("navigator", { userAgent: "Linux" });
+  const stream = { id: "opaque-stream", name: "Player · Media #7" };
+  mocks.invoke.mockResolvedValue({ supported: true, applications: [stream] });
+  useStore.setState({ settings: { ...initial.settings,
+    audioInput: "both", microphoneInputAvailable: true, systemAudioTarget: { kind: "system" } } });
+  await mount();
+  const text = applicationAudioCopy();
+  const trigger = host.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
+  expect(trigger.getAttribute("aria-label")).toBe(text.title);
+  expect(mocks.invoke).not.toHaveBeenCalledWith("audio_applications");
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(node => node.textContent === stream.name)!;
+  await act(async () => option.click());
+  expect(mocks.switchSystemAudioTarget).toHaveBeenCalledExactlyOnceWith({ kind: "application", ...stream });
+  expect(mocks.switchAudioInput).not.toHaveBeenCalled();
+});

@@ -1,0 +1,21 @@
+<resources>
+    <string name="profiles_add">新增設定</string>
+    <string name="profiles_empty">選擇服務，建立第一個設定。</string>
+    <string name="profiles_name">設定名稱</string>
+    <string name="profiles_save">儲存</string>
+    <string name="profiles_duplicate">複製</string>
+    <string name="profiles_delete">刪除</string>
+    <string name="profiles_delete_title">刪除「%1$s」？</string>
+    <string name="profiles_delete_message">將刪除此設定及其憑證，其他設定不受影響。</string>
+    <string name="profiles_copy_name">%1$s（副本）</string>
+    <string name="profiles_limit">最多可儲存 20 個設定。</string>
+    <string name="profiles_retry">重試</string>
+    <string name="profile_none">未選擇設定</string>
+    <string name="profiles_list_help">可以新增多個設定，同一個服務也能重複新增。點選設定即可使用，點「設定」進行編輯。複製與刪除位於編輯頁的更多選單。</string>
+    <string name="profiles_translation_help_save">檢查會傳送固定範例，不會儲存變更。切換服務會保留本次編輯的草稿；點選「儲存」後儲存目前服務。金鑰加密儲存在本機。</string>
+    <string name="guide_add_provider">新增%1$s</string>
+    <string name="profiles_load_failed">無法讀取此設定，請開啟設定重試。</string>
+    <string name="profiles_add_short">新增</string>
+    <string name="profiles_use_named">使用%1$s</string>
+    <string name="profiles_duplicated">已複製設定</string>
+</resources>

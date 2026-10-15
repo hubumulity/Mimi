@@ -410,6 +410,11 @@ export function sessionErrorSettingsTarget(error: unknown): SettingsNavigationTa
     return "appleSpeechResources";
   }
   if (typeof label !== "string") return null;
+  if (["apple_speech_language_unsupported", "apple_speech_translation_language_unsupported",
+    "apple_translation_source_required", "apple_translation_language_unsupported",
+    "source_switch_unsupported", "target_switch_unsupported", "translation_source_unsupported",
+    "audio3_error.setup.unsupported_language.UNSUPPORTED_LANGUAGE"].includes(label) ||
+    builtinServiceErrors.unsupportedLanguage.has(label)) return "voice";
   if ([
     "apple_translation_assets_missing",
     "apple_translation_source_required",

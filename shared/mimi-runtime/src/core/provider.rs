@@ -6,8 +6,8 @@
 use crate::core::models::{SourceLanguage, TargetLanguage, TranslationMode};
 use crate::core::network_proxy::{ProxyConfig, ProxyConfigError};
 use crate::core::protocols::{
-    audio3, baidu_translate, deepl_languages, gemini_live, openai_realtime, tencent_cloud,
-    volcano_engine, xai_realtime,
+    audio3, baidu_translate, deepl_languages, gemini_live, live_translate, openai_realtime,
+    tencent_cloud, volcano_engine, xai_realtime,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -51,15 +51,24 @@ impl AlibabaRealtimeMode {
         }
     }
 
-    /// Deliberately narrow desktop experiment. These are not the full model catalogs.
+    /// Qwen3.8 recognizes input automatically; all 60 text targets are available.
     pub fn capabilities(self) -> ProviderCapabilities {
         ProviderCapabilities {
             source_languages: vec![SourceLanguage::Automatic],
-            target_languages: vec![
-                TargetLanguage::Original,
-                TargetLanguage::SimplifiedChinese,
-                TargetLanguage::English,
-            ],
+            target_languages: [
+                vec![TargetLanguage::Original],
+                target_languages(
+                    &live_translate::TRANSLATION_LANGUAGE_CODES
+                        .iter()
+                        .map(|code| match *code {
+                            "nb" => "no",
+                            "fil" => "tl",
+                            code => code,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            ]
+            .concat(),
             translation_modes: vec![TranslationMode::Turbo],
             input_sample_rate_hz: 16_000,
             target_pairs: Vec::new(),
@@ -104,6 +113,19 @@ impl ProviderKind {
         route: TextTranslation,
         target: TargetLanguage,
     ) -> ProviderCapabilities {
+        self.capabilities_for_route_with_model(
+            route,
+            target,
+            crate::core::protocols::qwen_mt::REALTIME_MT_MODEL,
+        )
+    }
+
+    pub fn capabilities_for_route_with_model(
+        self,
+        route: TextTranslation,
+        target: TargetLanguage,
+        model: crate::core::protocols::qwen_mt::QwenMTModel,
+    ) -> ProviderCapabilities {
         if self.is_standalone_asr() {
             custom_speech_capabilities(self, route, target)
         } else if matches!(self, Self::AlibabaCloud | Self::DeepLX) {
@@ -112,7 +134,7 @@ impl ProviderKind {
             } else {
                 route
             };
-            alibaba_capabilities(route, target)
+            alibaba_capabilities_with_model(route, target, model)
         } else {
             self.capabilities()
         }
@@ -366,6 +388,18 @@ fn catalog_capabilities(
 /// to send it to a different service. Original uses the full Audio3 catalog;
 /// translated output intersects it with the selected text service's catalog.
 fn alibaba_capabilities(route: TextTranslation, target: TargetLanguage) -> ProviderCapabilities {
+    alibaba_capabilities_with_model(
+        route,
+        target,
+        crate::core::protocols::qwen_mt::REALTIME_MT_MODEL,
+    )
+}
+
+fn alibaba_capabilities_with_model(
+    route: TextTranslation,
+    target: TargetLanguage,
+    model: crate::core::protocols::qwen_mt::QwenMTModel,
+) -> ProviderCapabilities {
     if matches!(route, TextTranslation::DeepL | TextTranslation::DeepLX) {
         let (sources, targets) = independent_catalog(route);
         let mut capabilities = catalog_capabilities(sources, targets, 16_000, true);
@@ -404,20 +438,21 @@ fn alibaba_capabilities(route: TextTranslation, target: TargetLanguage) -> Provi
             *source == SourceLanguage::Automatic
                 || (audio3::LANGUAGE_CODES.contains(&source.raw_value())
                     && (target == TargetLanguage::Original
-                        || crate::core::protocols::qwen_mt::REALTIME_MT_MODEL
-                            .supported_language_codes()
-                            .contains(&source.raw_value())))
+                        || model.supported_language_codes().contains(&match source {
+                            SourceLanguage::Norwegian => "nb",
+                            _ => source.raw_value(),
+                        })))
         })
         .collect();
     let mut target_languages = vec![TargetLanguage::Original];
     target_languages.extend(
-        crate::core::protocols::qwen_mt::REALTIME_MT_MODEL
+        model
             .supported_language_codes()
             .iter()
             .filter_map(|code| {
                 TargetLanguage::ALL
                     .into_iter()
-                    .find(|target| target.raw_value() == *code)
+                    .find(|target| match target { TargetLanguage::Norwegian => "nb", _ => target.raw_value() } == *code)
             }),
     );
     ProviderCapabilities {
@@ -796,9 +831,9 @@ impl ServiceProfile {
         {
             return Err(ServiceProfileError::UnsupportedAlibabaRealtime);
         }
-        if (mode != AlibabaRealtimeMode::Disabled || !workspace_id.is_empty())
-            && !alibaba_workspace_id_is_valid(workspace_id)
-        {
+        // Profiles may be saved before setup is complete. Session configuration
+        // still requires a valid workspace before capture or provider access.
+        if !workspace_id.is_empty() && !alibaba_workspace_id_is_valid(workspace_id) {
             return Err(ServiceProfileError::InvalidAlibabaWorkspaceId);
         }
         self.alibaba_realtime_mode = mode;
@@ -889,8 +924,11 @@ impl ServiceProfile {
             }
             capabilities
         } else {
-            self.effective_provider()
-                .capabilities_for_route(self.text_translation(), target)
+            self.effective_provider().capabilities_for_route_with_model(
+                self.text_translation(),
+                target,
+                self.qwen_mt_model,
+            )
         }
     }
 
@@ -995,9 +1033,10 @@ mod tests {
                 .unwrap();
         assert_eq!(profile.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
         assert!(profile.alibaba_workspace_id.is_empty());
-        assert!(profile
+        profile
             .set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, "")
-            .is_err());
+            .unwrap();
+        assert_eq!(profile.validated().unwrap(), profile);
         profile.text_translation = Some(TextTranslation::DeepLX);
         profile
             .set_alibaba_realtime(AlibabaRealtimeMode::LiveTranslate, " test-workspace ")
@@ -2183,5 +2222,67 @@ mod tests {
         let profile = ServiceProfile::default();
         assert_eq!(profile.id, DEFAULT_ALIBABA_PROFILE_ID);
         assert_eq!(profile.provider, ProviderKind::AlibabaCloud);
+    }
+}
+
+#[cfg(test)]
+mod selected_qwen_model_tests {
+    use super::*;
+    use crate::core::protocols::qwen_mt::{QwenMTModel, QwenMTRequestEncoder};
+
+    #[test]
+    fn selected_model_catalog_matches_encoder_and_shared_ui_subset() {
+        let catalogs: serde_json::Value =
+            serde_json::from_str(include_str!("../../../provider-language-catalogs.json")).unwrap();
+        for model in [QwenMTModel::Lite, QwenMTModel::Flash, QwenMTModel::Plus] {
+            let mut profile =
+                ServiceProfile::new("fixture", "Fixture", ProviderKind::AlibabaCloud).unwrap();
+            profile.qwen_mt_model = model;
+            let caps = profile.capabilities(TargetLanguage::English);
+            assert_eq!(
+                caps.target_languages.len(),
+                if model == QwenMTModel::Lite { 32 } else { 81 }
+            );
+            assert_eq!(
+                caps.source_languages.contains(&SourceLanguage::Norwegian),
+                model != QwenMTModel::Lite
+            );
+            if model != QwenMTModel::Lite {
+                let codes: Vec<_> = caps
+                    .target_languages
+                    .iter()
+                    .filter(|target| **target != TargetLanguage::Original)
+                    .map(|target| target.raw_value())
+                    .collect();
+                assert_eq!(
+                    serde_json::to_value(codes).unwrap(),
+                    catalogs["qwenMtFlash"]["targetLanguages"]
+                );
+            }
+            for source in &caps.source_languages {
+                for target in &caps.target_languages {
+                    if *target == TargetLanguage::Original {
+                        continue;
+                    }
+                    let request = QwenMTRequestEncoder::request(
+                        "Synthetic fixture.",
+                        *source,
+                        *target,
+                        model,
+                        false,
+                        None,
+                        &[],
+                        &[],
+                    )
+                    .unwrap();
+                    if *target == TargetLanguage::Norwegian {
+                        assert_eq!(
+                            request["translation_options"]["target_lang"],
+                            "Norwegian Bokmål"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

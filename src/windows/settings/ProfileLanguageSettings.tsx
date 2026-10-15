@@ -1,6 +1,5 @@
 import { useLanguageNormalizationToast } from "./useLanguageNormalizationToast";
 import { useEffect, useRef, useState } from "react";
-import { Switch } from "../../components/Switch";
 import { LanguageSelect } from "../../components/LanguageSelect";
 import { speechLanguageGuidance, targetLanguageOptionLabel } from "../../lib/speechLanguageGuidance";
 import { I18N } from "../../lib/i18n";
@@ -35,8 +34,6 @@ export function ProfileLanguageSettings({ settings, disabled, onOpenAppleResourc
     ? I18N.settings.appleSpeechNoReadyLanguages : guidance.notice;
   const targets = targetLanguagesForSettings(settings);
   const skipped = settings.targetLanguage === "original";
-  const previousTarget = useRef(settings.targetLanguage);
-  useEffect(() => { if (settings.targetLanguage !== "original") previousTarget.current = settings.targetLanguage; }, [settings.targetLanguage]);
   const save = async (draft: SettingsDraft) => {
     if (disabled || inFlight.current) return;
     inFlight.current = true;
@@ -72,16 +69,8 @@ export function ProfileLanguageSettings({ settings, disabled, onOpenAppleResourc
         options={sources.map(value => ({ value, label: guidance.optionLabel(value) }))}
         onChange={value => { const sourceLanguage = sources.find(language => language === value); if (sourceLanguage) void save({ sourceLanguage }); }} />
     </SettingsRow>}
-    {!embedded && targets.includes("original") && <SettingsRow label={I18N.settings.skipTranslation} description={I18N.settings.skipTranslationHelp}>
-      <Switch aria-label={I18N.settings.skipTranslation} checked={skipped} disabled={disabled || busy || (skipped && targets.every(target => target === "original"))}
-        onChange={skip => {
-          const previous = previousTarget.current;
-          const targetLanguage = skip ? "original" : previous !== "original" && targets.includes(previous) ? previous : targets.find(target => target !== "original");
-          if (targetLanguage) void save({ targetLanguage });
-        }} />
-    </SettingsRow>}
     <SettingsRow label={I18N.settings.translateTo} description={I18N.settings.translationConfiguredHelp}>
-      <LanguageSelect label={I18N.settings.translateTo} value={settings.targetLanguage} valueLabel={appleTranslation ? targetLanguageOptionLabel(settings, settings.targetLanguage) : undefined} disabled={disabled || busy || (!embedded && skipped) || (targets.length === 1 && targets[0] === settings.targetLanguage)}
+      <LanguageSelect label={I18N.settings.translateTo} value={settings.targetLanguage} valueLabel={appleTranslation ? targetLanguageOptionLabel(settings, settings.targetLanguage) : undefined} disabled={disabled || busy || (targets.length === 1 && targets[0] === settings.targetLanguage)}
         options={targets.map(value => ({ value, label: targetLanguageOptionLabel(settings, value) }))}
         onChange={value => { const targetLanguage = targets.find(language => language === value); if (targetLanguage) void save({ targetLanguage }); }} />
     </SettingsRow>

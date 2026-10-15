@@ -53,24 +53,26 @@ it("keeps a disabled setup control inactive", async () => {
 });
 
 
-it.each(UI_LANGUAGES)("exposes only ASR + MT and LiveTranslate modes in %s", async language => {
+it.each(UI_LANGUAGES)("labels both translation modes in the interface language in %s", async language => {
   setStoredUiLanguage(language);
   await act(async () => root.render(<AlibabaRealtimeSettings
     profile={{ id: "synthetic", name: "Alibaba", provider: "alibabaCloud", credentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "llm-test-workspace" }}
     disabled={false} onSave={vi.fn()} />));
   const selector = host.querySelector<HTMLButtonElement>('[role="combobox"]')!;
-  expect(selector.textContent).toContain("LiveTranslate");
+  expect(selector.textContent?.trim()).toBeTruthy();
+  expect(selector.textContent).not.toMatch(/LiveTranslate|ASR \+ MT/);
   await act(async () => selector.click());
   const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   expect(options).toHaveLength(2);
-  expect(options[0].querySelector(".mimi-select__label")?.textContent).toContain("LiveTranslate");
-  expect(options[1].querySelector(".mimi-select__label")?.textContent).toContain("ASR + MT");
+  expect(options[0].querySelector(".mimi-select__label")?.textContent).toBe(selector.textContent);
+  expect(options[0].getAttribute("aria-selected")).toBe("true");
+  expect(options[1].querySelector(".mimi-select__label")?.textContent?.trim()).toBeTruthy();
   const descriptions = options.map(option => option.querySelector(".mimi-select__description")?.textContent);
   expect(descriptions.every(description => typeof description === "string" && description.trim().length > 0)).toBe(true);
   if (language === "zh") {
     expect(descriptions).toEqual([
       "边听边译，同时输出原文和译文。",
-      "先识别再翻译，翻译服务可更换。",
+      "可更换翻译服务",
     ]);
   }
   expect(options.map(option => option.textContent).join(" ")).not.toContain("Omni");
@@ -85,23 +87,10 @@ it.each([undefined, "disabled"] as const)("lists LiveTranslate first while prese
     profile={{ id: "synthetic", name: "Alibaba", provider: "alibabaCloud", credentialState: "present", alibabaRealtimeMode: mode }}
     disabled={false} onSave={onSave} />));
   const selector = host.querySelector<HTMLButtonElement>('[role="combobox"]')!;
-  expect(selector.textContent).toBe("Current ASR + MT");
+  expect(selector.textContent).toBe("ASR + MT");
   await act(async () => selector.click());
   const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   expect(options[0].getAttribute("aria-selected")).toBe("false");
   expect(options[1].getAttribute("aria-selected")).toBe("true");
-  expect(onSave).not.toHaveBeenCalled();
-});
-
-it("opens the configuration guide from the mode label without saving a mode", async () => {
-  setStoredUiLanguage("zh");
-  const onSave = vi.fn();
-  await act(async () => root.render(<AlibabaRealtimeSettings
-    profile={{ id: "synthetic", name: "Alibaba", provider: "alibabaCloud", credentialState: "present" }}
-    disabled={false} onSave={onSave} />));
-  const guide = host.querySelector<HTMLButtonElement>('.service-stage__selector .alibaba-setup-link')!;
-  expect(guide.textContent).toBe("配置指南");
-  await act(async () => guide.click());
-  expect(openAlibabaSetupPage).toHaveBeenCalledExactlyOnceWith("guide");
   expect(onSave).not.toHaveBeenCalled();
 });

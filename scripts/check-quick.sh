@@ -51,13 +51,15 @@ esac
 
 case "$scope" in
   frontend)
+    echo "==> shared provider copy"
+    python3 -B "$SCRIPT_DIR/sync-provider-copy.py" --check
     echo "==> frontend typecheck"
     npm run typecheck
     if [[ ${#typescript_files[@]} -gt 0 ]]; then
       echo "==> frontend lint for the selected TypeScript files"
-      npx --no-install eslint --cache --cache-strategy content --cache-location node_modules/.cache/eslint "${typescript_files[@]}"
+      npx --no-install eslint --config config/eslint.config.js --cache --cache-strategy content --cache-location node_modules/.cache/eslint "${typescript_files[@]}"
       echo "==> frontend tests related to the selected source files"
-      npx --no-install vitest related --run --maxWorkers=2 "${typescript_files[@]}"
+      npx --no-install vitest --config config/vite.config.ts related --run --maxWorkers=2 "${typescript_files[@]}"
     elif [[ $# -eq 0 ]]; then
       echo "==> frontend lint"
       npm run lint

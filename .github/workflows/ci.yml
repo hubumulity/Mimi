@@ -262,6 +262,11 @@ jobs:
 
       - run: npm ci --prefer-offline --no-audit --no-fund
 
+      - name: Shared provider copy
+        run: |
+          python3 -B scripts/sync-provider-copy.py --check
+          python3 -B scripts/sync-provider-copy-test.py
+
       - name: Lint
         run: npm run lint
 
@@ -270,6 +275,9 @@ jobs:
 
       - name: Test quick-check argument safety
         run: bash scripts/check-quick-test.sh
+
+      - name: Test signed watch preview configuration
+        run: node --test scripts/dev-app-watch.node.mjs
 
       - name: Shared native packaging invariants
         run: python3 -B scripts/shared-core-native-test.py
@@ -751,8 +759,8 @@ jobs:
     uses: ./.github/workflows/android-release.yml
     secrets: inherit
 
-  # Publish once, only after Android and every desktop package are verified.
-  publish-release:
+  # Stage once, only after Android and every desktop package are verified.
+  stage-release:
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     needs: [release-macos, release-windows, release-linux, release-android, windows-arm64]
@@ -768,7 +776,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Create, verify, and publish signed updater release
+      - name: Create and verify signed updater draft
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -892,37 +900,7 @@ jobs:
             exit 1
           fi
 
-          gh release edit "$GITHUB_REF_NAME" --title "mimi $GITHUB_REF_NAME" --notes-file release-notes.md --draft=false --latest
-
-          public_manifest="public-latest.json"
-          expected_manifest_digest="$(sha256sum release-assets/latest.json | cut -d ' ' -f 1)"
-          manifest_ready=0
-          for _ in {1..12}; do
-            if curl --fail --silent --show-error --location \
-              "https://github.com/$GH_REPO/releases/latest/download/latest.json" \
-              --output "$public_manifest" \
-              && [[ "$(sha256sum "$public_manifest" | cut -d ' ' -f 1)" == "$expected_manifest_digest" ]]; then
-              manifest_ready=1
-              break
-            fi
-            sleep 5
-          done
-          if [[ "$manifest_ready" != "1" ]]; then
-            echo "The public latest.json does not match the published manifest." >&2
-            exit 1
-          fi
-          for asset_name in "${assets[@]##*/}"; do
-            asset_ready=0
-            for _ in {1..12}; do
-              if curl --fail --silent --show-error --location --head \
-                "https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME/$asset_name" >/dev/null; then
-                asset_ready=1
-                break
-              fi
-              sleep 5
-            done
-            if [[ "$asset_ready" != "1" ]]; then
-              echo "Release asset is not publicly accessible: $asset_name" >&2
-              exit 1
-            fi
-          done
+          # Publication is a separate, explicitly approved maintainer action.
+          gh release edit "$GITHUB_REF_NAME" --title "mimi $GITHUB_REF_NAME" --notes-file release-notes.md --draft=true
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')" = "true"
+          echo "Verified release assets are staged in a private draft; awaiting maintainer acceptance." >> "$GITHUB_STEP_SUMMARY"

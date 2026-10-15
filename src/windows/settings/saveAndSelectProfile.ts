@@ -8,5 +8,9 @@ export async function saveAndSelectProfile(
   select: (id: string) => Promise<SettingsSnapshot>,
 ): Promise<SettingsSnapshot> {
   const saved = await save(profileId, credentials);
+  const profile = saved.profiles?.find(item => item.id === profileId);
+  // An incomplete LiveTranslate profile can keep its key while setup continues.
+  // Activation requires its separately saved workspace, and must not fall back.
+  if (profile?.alibabaRealtimeMode === "liveTranslate" && !profile.alibabaWorkspaceId?.trim()) return saved;
   return saved.activeProfileId === profileId && credentials.kind !== "alibabaTranslation" ? saved : select(profileId);
 }

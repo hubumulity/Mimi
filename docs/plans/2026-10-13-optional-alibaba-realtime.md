@@ -1,13 +1,13 @@
 # Optional Alibaba LiveTranslate experiment
 
-Keep the existing Alibaba `qwen-audio-3.0-asr-flash-streaming` → `qwen-mt-lite`
-Turbo route as the default. This experiment adds an explicit profile choice for
+Keep existing Alibaba profiles on their saved route. New desktop Alibaba
+configurations default to LiveTranslate; ASR + MT remains selectable. This experiment adds an explicit profile choice for
 `qwen3.8-livetranslate-flash-realtime` without restoring the old translation-mode
 picker or changing existing profiles.
 
 The shared runtime owns the protocol. The first iteration is audio-only,
 16 kHz mono PCM16, text-only output, Beijing workspaces, automatic source
-recognition, and original/Chinese/English targets. Independent MT settings stay
+recognition, and Original and all 60 documented text translation targets. Independent MT settings stay
 saved and return when the user selects ASR + MT again. LiveTranslate requires an
 existing Workspace ID and a matching saved Alibaba key; missing IDs fail before
 network access. No credentials are copied when changing the mode.
@@ -20,15 +20,15 @@ translation, but the model can still generate billable translation output.
 
 The desktop selector lists **LiveTranslate (simultaneous)** first, while
 keeping existing profiles on ASR + MT until explicitly
-changed. A missing workspace ID prevents saving LiveTranslate. Both options have
+changed. An unfinished new profile may retain LiveTranslate with an empty workspace ID;
+a valid ID is still required before starting a session or a connection check. Both options have
 short descriptions: ASR + MT recognizes first and uses a separately selectable
 text translator; LiveTranslate produces source and translated text in one model
-session as audio arrives. Its help identifies the experimental limits. A guide
-link beside the selector opens the official configuration documentation. Fixed
+session as audio arrives. Its help identifies the experimental limits. Fixed
 Beijing console links beside the fields open API Key and workspace management.
 The user flow has three steps: get an existing workspace ID and matching key;
 select LiveTranslate, fill and save in Mimi; choose automatic recognition and
-Chinese/English translation, then start a short subtitle test. The existing key may
+a supported translation target, then start a short subtitle test. The existing key may
 be reused when it belongs to that workspace and has model-call access. The
 workspace ID is copied from an existing workspace or the `llm-xxx` prefix of its
 API Host; it is never inferred from a key or confused with a model ID. Mimi does

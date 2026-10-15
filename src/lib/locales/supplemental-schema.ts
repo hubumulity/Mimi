@@ -9,6 +9,15 @@ export const SUPPLEMENTAL_EN = {
     saveFailed: "Could not switch the captured application. Check subtitle status, then try again.",
     help: "Captures only this application’s audio. Browser tabs share an application. Selecting an app does not mute it. On Windows, select it again after reopening it.",
   },
+  playbackStream_copy: {
+    title: "Capture audio stream", all: "All system audio", application: "Audio stream",
+    search: "Search audio streams", refresh: "Refresh audio streams", loading: "Loading audio streams…",
+    empty: "No audio streams found. Play sound, then refresh.", noMatch: "No matching audio streams.", missing: "Unavailable",
+    unavailable: "This audio stream is unavailable. Play sound and select a stream again, or choose All system audio.",
+    unsupported: "Audio stream capture requires Linux with PulseAudio or PipeWire-Pulse.",
+    failed: "Could not load audio streams. Refresh to try again.", saveFailed: "Could not switch the audio stream. Check subtitle status, then try again.",
+    help: "Captures one playback stream. An app can have several streams. Playback routing and volume stay unchanged. Select the stream again after it closes or Mimi restarts.",
+  },
   captureStatus_copy: {
     title: "Audio input", system: "System audio", microphone: "Microphone", output: "System output", device: "Capture device",
     idle: "Not capturing", paused: "Paused", connecting: "Connecting", stopping: "Stopping", error: "Error",

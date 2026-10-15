@@ -39,11 +39,12 @@ The preparation script honors `CARGO_TARGET_DIR` for both build outputs and
 verification paths, so managed worktrees can reuse an existing compilation cache.
 When this is set, use that target directory for the four upload paths below.
 
-## Stage and publish
+## Stage for acceptance
 
 Use the exact version, commit, and verified files printed by the preparation
-step. These commands upload a draft, then trigger public release CI; run them
-only when release publication is authorized:
+step. These commands upload a draft, then trigger packaging CI. The final
+`stage-release` job verifies and uploads every platform asset but keeps the
+release private. A tag build never publishes the release or changes Latest:
 
 ```bash
 version="$(node -p 'require("./package.json").version')"
@@ -74,8 +75,8 @@ or the release database ID (`gh api "repos/yuxino/Mimi/releases/$release_id"`);
 do not create a second draft or change the release tag based on that URL alone.
 
 The tag-only macOS job needs `contents: write` because GitHub hides unpublished
-drafts from read-only tokens. Ordinary CI remains read-only; the final publish
-job still controls publication.
+drafts from read-only tokens. Ordinary CI remains read-only; the final staging
+job still requires a draft and never publishes it.
 
 GitHub macOS CI verifies each architecture in a separate matrix job. It safely
 extracts the app, checks
@@ -87,12 +88,33 @@ trust cleanup is attempted after verification with a 15-second timeout. If
 macOS authorization services do not respond, the disposable VM is discarded
 when the job ends. No private code-signing key is imported,
 and user machines are not asked to change certificate trust. Windows still
-builds in CI. Only the final publish
-job may publish the draft only after macOS, Windows, Linux and the signed Android
-APK pass. The APK shares this release and its checksum list; do not create an
-`android-v*` release. Read back the published
-assets, digests and `latest.json`; a local build alone does not establish a
-working public update.
+builds in CI. The final staging job runs only after macOS, Windows, Linux and
+the signed Android APK pass. The APK shares this release and its checksum list;
+do not create an `android-v*` release.
+
+## Publish after acceptance
+
+Wait for explicit maintainer approval after testing the draft assets. Before
+publication, verify the tag still matches the signed source, all tag CI jobs
+passed, the draft contains exactly the expected 17 assets, remote asset digests
+match `SHA256SUMS.txt`, and `latest.json` passes the manifest verifier. Recheck
+that this version is newer than the current Latest. Then, and only then, publish:
+
+```bash
+gh release edit "$tag" --draft=false --latest
+```
+
+Read back the public assets, digests and tag-specific `latest.json`, and verify
+`releases/latest/download/latest.json` matches that same manifest. Also check the
+exact updater endpoint in `tauri.conf.json`, including any repository-name
+redirect, using an anonymous request. Resolve the canonical repository with
+`gh repo view --json nameWithOwner` rather than an older note when verifying
+release/asset URLs. GitHub's native asset count can include source archives and
+release attestation beyond the 17 uploaded assets; use the API asset list for
+the strict package contract. Confirm the
+native Contributors credit on the public release. A draft build does not
+establish a working public update. Before approval, use authenticated draft
+asset downloads for acceptance; anonymous users and the updater cannot see them.
 
 ## Installation and migration
 

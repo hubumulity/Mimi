@@ -283,8 +283,55 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             SubtitleEvent::SourceUtteranceDraft { .. }
                 | SubtitleEvent::PreviewPair { .. }
                 | SubtitleEvent::ConfirmedPair { .. }
+                | SubtitleEvent::WithdrawPreview { .. }
         );
         match event {
+            SubtitleEvent::SourceBoundary {
+                utterance_id,
+                source_order,
+            } => {
+                if utterance_id.is_empty()
+                    || source_order == 0
+                    || source_order > i64::MAX as u64
+                    || self.discarded_source_ids.contains(&utterance_id)
+                {
+                    return;
+                }
+                if self
+                    .identified_sources
+                    .iter()
+                    .any(|item| item.id != utterance_id && item.ordinal == source_order)
+                {
+                    return;
+                }
+                if let Some(item) = self
+                    .identified_sources
+                    .iter_mut()
+                    .find(|item| item.id == utterance_id)
+                {
+                    if item.confirmed {
+                        return;
+                    }
+                    if self.latest_source_ordinal == Some(item.ordinal) {
+                        self.latest_source_ordinal = Some(source_order);
+                    }
+                    item.ordinal = source_order;
+                } else {
+                    self.identified_sources.push_back(IdentifiedSource {
+                        id: utterance_id,
+                        ordinal: source_order,
+                        confirmed: false,
+                    });
+                }
+                self.identified_sources
+                    .make_contiguous()
+                    .sort_by_key(|item| item.ordinal);
+                if self.identified_sources.len() > MAX_IDENTIFIED_SOURCES {
+                    let old = self.identified_sources.pop_front().unwrap();
+                    self.discard_source_id(old.id);
+                }
+                self.next_source_ordinal = self.next_source_ordinal.max(source_order);
+            }
             SubtitleEvent::SourceDraft(text) => {
                 self.latest_source_ordinal = None;
                 let text = trim(&text);
@@ -372,6 +419,44 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 self.snapshot.preview_pair = None;
                 self.preview_source_utterance_id = None;
                 self.clear_unconfirmed_display_pair();
+            }
+            SubtitleEvent::WithdrawPreview {
+                source_utterance_id,
+            } => {
+                if source_utterance_id == 0 {
+                    return;
+                }
+                let owner = self.source_layout_identity(source_utterance_id);
+                let owns_source = !self.snapshot.source.is_final
+                    && self.snapshot.source.utterance_id.as_deref() == Some(owner.as_str());
+                let owns_preview = self.preview_source_utterance_id == Some(source_utterance_id);
+                let owns_display = !self.snapshot.display_pair_final
+                    && self.display_pair_source_utterance_id == Some(source_utterance_id);
+                if !owns_source && !owns_preview && !owns_display {
+                    return;
+                }
+                if owns_preview {
+                    self.snapshot.preview_pair = None;
+                    self.preview_source_utterance_id = None;
+                }
+                if owns_display {
+                    self.clear_unconfirmed_display_pair();
+                }
+                if owns_source {
+                    self.snapshot.source =
+                        SubtitleLine::for_utterance(String::new(), false, owner.clone());
+                }
+                // Unstamped translation drafts may belong to an older final
+                // still in flight. Only an identified line or complete owned
+                // preview supplies enough evidence to withdraw that line.
+                if !self.snapshot.translation.is_final
+                    && ((owns_source && owns_preview)
+                        || self.snapshot.translation.utterance_id.as_deref()
+                            == Some(owner.as_str()))
+                {
+                    self.snapshot.translation =
+                        SubtitleLine::for_utterance(String::new(), false, owner);
+                }
             }
             SubtitleEvent::UtteranceText {
                 utterance_id,
@@ -544,6 +629,14 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 if !newer_source_visible {
                     self.snapshot.source = SubtitleLine::new(source.clone(), true);
                     self.snapshot.translation = SubtitleLine::new(translation.clone(), true);
+                    // Original-only readers use the raw final lane. Retain the
+                    // same owner as its complete pair so confirmation/time is
+                    // not lost when a numeric ASR sentence finishes HTTP MT.
+                    if let Some(id) = source_utterance_id {
+                        let owner = self.source_layout_identity(id);
+                        self.snapshot.source.utterance_id = Some(owner.clone());
+                        self.snapshot.translation.utterance_id = Some(owner);
+                    }
                 }
                 // Raw B may arrive (including an empty begin) before A's
                 // final HTTP completes, while the complete preview still
@@ -668,8 +761,16 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         if let Some(item) = self.identified_sources.iter().find(|item| item.id == id) {
             return (item.ordinal, item.confirmed);
         }
-        self.next_source_ordinal = self.next_source_ordinal.saturating_add(1);
-        let ordinal = self.next_source_ordinal;
+        let Some(ordinal) = self
+            .next_source_ordinal
+            .checked_add(1)
+            .filter(|ordinal| *ordinal < u64::MAX)
+        else {
+            // Treat exhausted new identities as inadmissible without mutating
+            // a restorable state or fabricating a confirmation.
+            return (self.next_source_ordinal, true);
+        };
+        self.next_source_ordinal = ordinal;
         self.identified_sources.push_back(IdentifiedSource {
             id: id.into(),
             ordinal,
@@ -837,6 +938,43 @@ mod tests {
 
     type SubtitleReducer = super::SubtitleReducer<BoundedTestArchive>;
 
+    #[test]
+    fn source_order_limits_and_exhausted_auto_order_keep_state_restorable() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.apply(SubtitleEvent::SourceBoundary {
+            utterance_id: "clock-limit".into(),
+            source_order: i64::MAX as u64,
+        });
+        reducer.apply(SubtitleEvent::SourceBoundary {
+            utterance_id: "invalid-clock".into(),
+            source_order: i64::MAX as u64 + 1,
+        });
+        assert_eq!(reducer.identified_sources.len(), 1);
+        reducer.apply(SubtitleEvent::UtteranceText {
+            utterance_id: "automatic".into(),
+            role: UtteranceRole::Source,
+            text: "Synthetic current".into(),
+            is_final: false,
+        });
+        assert_eq!(reducer.next_source_ordinal, i64::MAX as u64 + 1);
+        assert!(reducer.validate_state(100).is_ok());
+        reducer.next_source_ordinal = u64::MAX - 1;
+        let before = serde_json::to_value(&reducer).unwrap();
+        reducer.apply(SubtitleEvent::UtteranceText {
+            utterance_id: "exhausted".into(),
+            role: UtteranceRole::Source,
+            text: "Synthetic rejected".into(),
+            is_final: false,
+        });
+        reducer.apply(SubtitleEvent::IdentifiedFinalPair {
+            utterance_id: "exhausted".into(),
+            source: "Synthetic rejected".into(),
+            translation: "Synthetic rejected translation".into(),
+        });
+        assert_eq!(serde_json::to_value(&reducer).unwrap(), before);
+        assert!(reducer.validate_state(100).is_ok());
+    }
+
     #[derive(Default)]
     struct BoundedTestArchive {
         enabled: bool,
@@ -933,7 +1071,14 @@ mod tests {
         assert!(reducer.snapshot.preview_pair.is_none());
         assert!(reducer.snapshot.source.is_final);
         assert_eq!(reducer.snapshot.source.text, "Synthetic next source");
-        assert!(reducer.snapshot.source.utterance_id.is_none());
+        assert_eq!(
+            reducer.snapshot.source.utterance_id,
+            reducer.snapshot.display_pair.as_ref().unwrap().utterance_id
+        );
+        assert_eq!(
+            reducer.snapshot.translation.utterance_id,
+            reducer.snapshot.source.utterance_id
+        );
         assert_eq!(reducer.snapshot.history.len(), 2);
         reducer.apply(SubtitleEvent::Clear);
         reducer.apply(SubtitleEvent::SourceUtteranceDraft {

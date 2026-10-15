@@ -58,3 +58,11 @@ it("normalizes capabilities after changing the text route of an already active p
   expect((await saveAndSelectProfile("ali", update, save, select)).translationMode).toBe("turbo");
   expect(select).toHaveBeenCalledWith("ali");
 });
+
+
+it("saves an unfinished LiveTranslate key without activating or falling back to ASR", async () => {
+  const saved = { ...snapshot("old"), profiles: [{ id: "new", name: "New", provider: "alibabaCloud", credentialState: "present", alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "" }] } as SettingsSnapshot;
+  const select = vi.fn();
+  expect(await saveAndSelectProfile("new", credentials, async () => saved, select)).toBe(saved);
+  expect(select).not.toHaveBeenCalled();
+});

@@ -151,10 +151,10 @@ it("restores the selected Windows application's icon without changing capture or
   expect(switchTarget).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
 });
 
-it("does not automatically enumerate application icons on Linux", async () => {
+it("checks Linux cached choices without refreshing discovery or requesting icons", async () => {
   vi.stubGlobal("navigator", { userAgent: "Linux" });
   await mount();
-  expect(invoke).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("audio_applications", { cachedOnly: true });
   expect(icon()).toBeUndefined();
 });
 

@@ -42,7 +42,7 @@ internal fun captionProviderMarks(context: Context): List<Int> {
     val translator = SettingsStore.textTranslationProvider(context)
     return buildList {
         add(serviceProviderIcon(provider))
-        if (provider == ServiceProvider.DASHSCOPE && translator != TextTranslationProvider.BUILTIN && translator != TextTranslationProvider.NONE) {
+        if (SettingsStore.configuration(context).usesIndependentTextTranslation && translator != TextTranslationProvider.BUILTIN && translator != TextTranslationProvider.NONE) {
             add(translationProviderIcon(translator))
         }
     }

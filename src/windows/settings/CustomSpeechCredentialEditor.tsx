@@ -21,13 +21,12 @@ export function CustomSpeechCredentialEditor(props: ComponentProps<typeof Alibab
 }) {
   const { profile, inputId, disabled, busy, feedback, onSave, onRequestDelete, onConfirmDelete, confirmingDelete, onCancelDelete, connectionCheck } = props;
   const [draft, setDraft] = useState(emptyCredentialDraft);
-  const [editing, setEditing] = useState(false);
   const [changedFields, setChangedFields] = useState<{ endpoint?: true; model?: true }>({});
   const [speechEpoch, setSpeechEpoch] = useState(0);
   const [translationEpoch, setTranslationEpoch] = useState(0);
   const [invalid, setInvalid] = useState<"endpoint" | "model" | null>(null);
   const saved = profile.speechCredentialState === "present";
-  const editorState = useCredentialEditorState(profile.id, undefined, props.visible !== false && (!saved || editing), speechEpoch);
+  const editorState = useCredentialEditorState(profile.id, undefined, props.visible !== false, speechEpoch);
   const savedValues = editorState.state;
   const endpoint = changedFields.endpoint ? draft.endpoint : savedValues?.endpoint ?? "";
   const model = changedFields.model ? draft.model : savedValues?.model ?? "";
@@ -38,13 +37,13 @@ export function CustomSpeechCredentialEditor(props: ComponentProps<typeof Alibab
     endpoint: changedEndpoint || !saved ? endpoint : "",
     model: changedModel || changedEndpoint || !saved ? model : "",
   };
-  const credentials = saved && (editorState.loading || editorState.error) ? null : buildCustomSpeechCredentials(profile, speechDraft);
+  // A complete explicit replacement owns every speech field and may attempt a
+  // save without old metadata. Partial drafts still require that saved read.
+  const completeSpeechDraft = buildCustomSpeechCredentials({ ...profile, speechCredentialState: "missing" }, draft);
+  const credentials = saved && (editorState.loading || editorState.error) ? completeSpeechDraft : buildCustomSpeechCredentials(profile, speechDraft);
   const speechChanged = !!changedEndpoint || !!changedModel || !!draft.apiKey.trim();
   const retrySavedSpeech = (profile.speechCredentialState ?? profile.credentialState) === "unavailable" && !changedFields.endpoint && !changedFields.model && !draft.apiKey;
   const invalidSpeechDraft = ((changedFields.endpoint || !saved) && !customSpeechEndpointIsValid(endpoint)) || ((changedFields.model || !saved) && !openAICompatibleModelIsValid(model));
-  // An explicit complete replacement can be checked even if the saved-value
-  // read failed. Partial drafts still need the saved configuration to resolve.
-  const completeSpeechDraft = buildCustomSpeechCredentials({ ...profile, speechCredentialState: "missing" }, draft);
   const speechCheckDraft: ProviderCredentialsInput | null | undefined = retrySavedSpeech || (saved && !speechChanged)
     ? undefined : invalidSpeechDraft ? null : credentials ?? completeSpeechDraft;
   const endpointRef = useRef<ConfigInputElement>(null);
@@ -55,7 +54,7 @@ export function CustomSpeechCredentialEditor(props: ComponentProps<typeof Alibab
   const helpId = `${speechId}-requirements`;
   const openAI = profile.provider === "customOpenAIASR";
   const requirements = [I18N.settings.customSpeechSetupSteps, openAI ? I18N.settings.customSpeechRequirementsOpenAI : I18N.settings.customSpeechRequirementsDashScope, I18N.settings.customSpeechLanguages].join("\n");
-  const discard = () => { setDraft(emptyCredentialDraft()); setChangedFields({}); setSpeechEpoch(current => current + 1); setEditing(false); setInvalid(null); };
+  const discard = () => { setDraft(emptyCredentialDraft()); setChangedFields({}); setSpeechEpoch(current => current + 1); setInvalid(null); };
   useEffect(() => {
     const ref = invalid === "endpoint" ? endpointRef : invalid === "model" ? modelRef : null;
     ref?.current?.focus({ preventScroll: true });
@@ -78,22 +77,21 @@ export function CustomSpeechCredentialEditor(props: ComponentProps<typeof Alibab
   return <div className="credential-panel" aria-busy={busy}>
     <div className="service-credential-toolbar">
       <CredentialStorageHelp id={noteId} profile={profile} />
-      {typeof connectionCheck === "function" ? connectionCheck(speechCheckDraft) : connectionCheck}
-      {saved && !editing && <span className="credential-panel__saved-actions">
-        <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled} onClick={() => setEditing(true)}><Icon name="key" />{I18N.settings.editSpeechConfiguration}</button>
+      {saved && <span className="credential-panel__saved-actions">
         <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled || confirmingDelete} onClick={onRequestDelete}><Icon name="trash" />{I18N.settings.deleteCredentials}</button>
       </span>}
-    </div>
+
+      {typeof connectionCheck === "function" ? connectionCheck(speechCheckDraft) : connectionCheck}</div>
     {profile.credentialState === "unavailable" && !feedback && <p role="status" className="credential-unavailable">{credentialUnavailableHelp()}</p>}
     <section className="service-stage" aria-labelledby={`${speechId}-title`}>
       <header className="service-stage__heading"><div className="service-stage__name-help"><h3 id={`${speechId}-title`}>{I18N.settings.speechRecognition}</h3><SettingsHelp id={helpId} text={requirements} label={I18N.settings.helpLabel} /></div>
       </header>
       <div className="settings-field service-stage__selector"><span>{I18N.settings.serviceProvider}</span><span className="service-stage__provider"><ProviderIcon provider={profile.provider} size={32} />{openAI ? "OpenAI Realtime ASR" : "DashScope ASR"}</span></div>
-      {props.onSaveRecognitionName && <AutoSaveNameField key={profile.id} id={`${speechId}-name`}
+      {props.onSaveRecognitionName && <AutoSaveNameField key={profile.id} id={`${speechId}-name`} draftKey="recognition"
         className="recognition-name-field" label={I18N.settings.speechRecognitionName}
         value={profile.speechRecognitionName ?? ""} placeholder={providerDisplayName(profile.provider)}
         disabled={disabled} allowEmpty onSave={props.onSaveRecognitionName} />}
-      {(!saved || editing) && <form className="credential-form" onSubmit={submit}>
+      {<form className="credential-form" onSubmit={submit}>
         {editorState.error && <InlineFeedback tone="error">{editorState.error}<button type="button" className="settings-link" disabled={disabled} onClick={() => setSpeechEpoch(current => current + 1)}>{I18N.settings.retryLoadingSettings}</button></InlineFeedback>}
         <div className="credential-form__fields">
           <label className="settings-field" htmlFor={`${speechId}-endpoint`}>
@@ -111,10 +109,10 @@ export function CustomSpeechCredentialEditor(props: ComponentProps<typeof Alibab
             <SavedCredentialInput key={`${profile.id}:${speechEpoch}`} id={`${speechId}-key`} profileId={profile.id} field="apiKey" label={I18N.settings.apiKey} hasSavedValue={(savedValues?.savedFields.includes("apiKey") ?? false) && !changedEndpoint} active={props.visible !== false && !busy && !confirmingDelete} autoComplete="new-password" spellCheck={false} disabled={disabled} required={!saved || !!changedEndpoint} value={draft.apiKey} placeholder={saved && !changedEndpoint ? I18N.settings.savedTranslationKeyPlaceholder : I18N.settings.apiKeyPlaceholder} aria-describedby={`${speechId}-address-key ${noteId}`} onValueChange={value => setDraft(current => ({ ...current, apiKey: value }))} />
           </div>
         </div>
-        <span className="credential-form__actions">
+        {(!saved || speechChanged) && <span className="credential-form__actions">
           {saved && <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled} onClick={discard}>{I18N.settings.cancel}</button>}
           <button type="submit" className="settings-button settings-button--primary settings-button--compact" disabled={disabled || !credentials}><Icon name="key" />{I18N.settings.saveSpeechConfiguration}</button>
-        </span>
+        </span>}
       </form>}
     </section>
     <AlibabaCredentialEditor key={translationEpoch} {...props} inputId={`${inputId}-text`} storageNoteId={noteId} textOnly feedback={null} connectionCheck={undefined} />

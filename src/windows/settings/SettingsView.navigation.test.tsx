@@ -120,3 +120,22 @@ it("routes repeated current-configuration intents to the detail request without 
   expect(host.querySelector("[data-profile-editor-request]")?.getAttribute("data-profile-editor-request")).toBe("2");
   expect(host.querySelector("[data-apple-resource-request]")?.getAttribute("data-apple-resource-request")).toBe("0");
 });
+
+
+it("resets the shared viewport after category and diagnostics navigation", async () => {
+  await act(async () => root.render(<SettingsView />));
+  const scroll = host.querySelector<HTMLElement>(".settings-console__scroll")!;
+  scroll.scrollTop = 720;
+  await act(async () => host.querySelector<HTMLButtonElement>("#settings-category-general")!.click());
+  expect(scroll.scrollTop).toBe(0);
+  scroll.scrollTop = 480;
+  await act(async () => host.querySelector<HTMLButtonElement>("#settings-category-diagnostics")!.click());
+  expect(scroll.scrollTop).toBe(0);
+  scroll.scrollTop = 320;
+  await act(async () => host.querySelector<HTMLButtonElement>("#settings-diagnostics-back")!.click());
+  expect(scroll.scrollTop).toBe(0);
+  expect(document.activeElement).toBe(host.querySelector("#settings-category-diagnostics"));
+  scroll.scrollTop = 600;
+  await act(async () => navigate("activeProfile"));
+  expect(scroll.scrollTop).toBe(0);
+});

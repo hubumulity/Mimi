@@ -1,5 +1,5 @@
 <resources>
-    <string name="brand_description">mimi のキャラクター</string>
+    <string name="brand_description">Mimi のキャラクター</string>
     <string name="home_kicker">字幕と翻訳</string>
     <string name="home_title">リアルタイム字幕</string>
     <string name="home_description">ほかのアプリで再生中の音声を字幕で表示します。音声の取得を許可しないアプリもあります。</string>

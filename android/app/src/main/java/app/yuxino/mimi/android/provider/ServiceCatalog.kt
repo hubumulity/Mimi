@@ -42,32 +42,38 @@ enum class ServiceProvider(
     val sources: List<String> get() = sourcesForTranslation(TextTranslationProvider.BUILTIN)
     val targets: List<String> get() = targetsForTranslation(TextTranslationProvider.BUILTIN)
 
-    private fun route(translation: TextTranslationProvider): String =
-        if (this == DASHSCOPE) translation.runtimeRoute() else "followService"
+    private fun route(translation: TextTranslationProvider, alibabaRealtimeMode: String): String =
+        if (this == DASHSCOPE && alibabaRealtimeMode != "liveTranslate") translation.runtimeRoute() else "followService"
 
-    private fun runtimeTarget(target: String, translation: TextTranslationProvider): String =
-        if (this == DASHSCOPE && translation == TextTranslationProvider.NONE) "original" else target
+    private fun runtimeTarget(target: String, translation: TextTranslationProvider, alibabaRealtimeMode: String): String =
+        if (this == DASHSCOPE && alibabaRealtimeMode != "liveTranslate" && translation == TextTranslationProvider.NONE) "original" else target
 
-    private fun capabilities(translation: TextTranslationProvider): JSONObject =
-        NativeRuntimeConfiguration.capabilities(wireProvider, route(translation), runtimeTarget("zh", translation))
+    private fun capabilities(translation: TextTranslationProvider, alibabaRealtimeMode: String): JSONObject =
+        NativeRuntimeConfiguration.capabilities(wireProvider, route(translation, alibabaRealtimeMode),
+            runtimeTarget("zh", translation, alibabaRealtimeMode), alibabaRealtimeMode)
 
-    fun sourcesForTranslation(translation: TextTranslationProvider): List<String> =
-        capabilities(translation).strings("sourceLanguages")
+    fun sourcesForTranslation(translation: TextTranslationProvider, alibabaRealtimeMode: String = "asrMt"): List<String> =
+        capabilities(translation, alibabaRealtimeMode).strings("sourceLanguages")
 
-    fun targetsForTranslation(translation: TextTranslationProvider): List<String> =
-        capabilities(translation).strings("targetLanguages")
+    fun targetsForTranslation(translation: TextTranslationProvider, alibabaRealtimeMode: String = "asrMt"): List<String> =
+        capabilities(translation, alibabaRealtimeMode).strings("targetLanguages")
 
-    fun supportsPair(source: String, target: String, translation: TextTranslationProvider = TextTranslationProvider.BUILTIN): Boolean {
-        val effectiveTarget = runtimeTarget(target, translation)
-        val normalized = try { NativeRuntimeConfiguration.normalize(wireProvider, route(translation), source, effectiveTarget) }
+    fun supportsPair(source: String, target: String, translation: TextTranslationProvider = TextTranslationProvider.BUILTIN,
+        alibabaRealtimeMode: String = "asrMt"): Boolean {
+        val effectiveTarget = runtimeTarget(target, translation, alibabaRealtimeMode)
+        val normalized = try { NativeRuntimeConfiguration.normalize(wireProvider, route(translation, alibabaRealtimeMode),
+            source, effectiveTarget, alibabaRealtimeMode) }
             catch (_: IllegalArgumentException) { return false }
         return normalized.getString("sourceLanguage") == source && normalized.getString("targetLanguage") == effectiveTarget
     }
 
-    fun normalize(source: String, target: String, translation: TextTranslationProvider = TextTranslationProvider.BUILTIN): Pair<String, String> {
-        val normalized = NativeRuntimeConfiguration.normalize(wireProvider, route(translation), source, runtimeTarget(target, translation))
+    fun normalize(source: String, target: String, translation: TextTranslationProvider = TextTranslationProvider.BUILTIN,
+        alibabaRealtimeMode: String = "asrMt"): Pair<String, String> {
+        val normalized = NativeRuntimeConfiguration.normalize(wireProvider, route(translation, alibabaRealtimeMode), source,
+            runtimeTarget(target, translation, alibabaRealtimeMode), alibabaRealtimeMode)
         return normalized.getString("sourceLanguage") to
-            if (this == DASHSCOPE && translation == TextTranslationProvider.NONE) target else normalized.getString("targetLanguage")
+            if (this == DASHSCOPE && alibabaRealtimeMode != "liveTranslate" && translation == TextTranslationProvider.NONE) target
+            else normalized.getString("targetLanguage")
     }
     fun configured(values: Map<String, String>): Boolean = fields.all { !values[it.id].isNullOrBlank() }
     companion object {
@@ -112,10 +118,10 @@ internal fun buildRuntimeConfiguration(
     qwenMtModel: String,
 ): JSONObject {
     require(speech.provider.configured(speech.credentials)) { "speech_credentials" }
-    val route = if (speech.provider == ServiceProvider.DASHSCOPE) translation.provider else TextTranslationProvider.BUILTIN
+    val route = if (speech.usesIndependentTextTranslation) translation.provider else TextTranslationProvider.BUILTIN
     fun credential(kind: String) = JSONObject().put("kind", kind)
     fun value(field: String) = speech.value(field).trim()
-    val text = if (speech.provider == ServiceProvider.DASHSCOPE) translation.runtimeCredentials() else null
+    val text = if (speech.usesIndependentTextTranslation) translation.runtimeCredentials() else null
     val credentials = when (speech.provider) {
         ServiceProvider.DASHSCOPE -> when (route) {
             TextTranslationProvider.BUILTIN, TextTranslationProvider.NONE -> credential("apiKey").put("apiKey", value("apiKey"))
@@ -134,6 +140,8 @@ internal fun buildRuntimeConfiguration(
         .put("sourceLanguage", sourceLanguage)
         .put("targetLanguage", if (route == TextTranslationProvider.NONE) "original" else targetLanguage)
         .put("qwenMtModel", normalizeQwenMTModel(qwenMtModel))
+        .put("alibabaRealtimeMode", if (speech.usesAlibabaLiveTranslate) "liveTranslate" else "disabled")
+        .put("alibabaWorkspaceId", if (speech.provider == ServiceProvider.DASHSCOPE) speech.alibabaWorkspaceId.trim() else "")
         .put("translationMode", "turbo")
         .put("networkProxy", JSONObject().put("mode", "system").put("url", JSONObject.NULL))
         .put("textNetworkProxy", JSONObject().put("mode", "system").put("url", JSONObject.NULL))
@@ -141,7 +149,10 @@ internal fun buildRuntimeConfiguration(
 
 /** Never use a data class: generated toString must not expose credentials. */
 class ServiceConfiguration(val provider: ServiceProvider, val credentials: Map<String, String>,
-    val endpoint: String = "", val model: String = "") {
+    val endpoint: String = "", val model: String = "",
+    val alibabaRealtimeMode: String = "asrMt", val alibabaWorkspaceId: String = "") {
+    val usesAlibabaLiveTranslate: Boolean get() = provider == ServiceProvider.DASHSCOPE && alibabaRealtimeMode == "liveTranslate"
+    val usesIndependentTextTranslation: Boolean get() = provider == ServiceProvider.DASHSCOPE && !usesAlibabaLiveTranslate
     fun value(field: String): String = credentials[field].orEmpty()
     override fun toString(): String = "ServiceConfiguration(${provider.id}, redacted)"
 }

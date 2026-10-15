@@ -1,18 +1,36 @@
-# mimi for Android
+# Mimi for Android
 
-Native Android version of [mimi](../README.md) — live subtitles and
-translation for system audio. Native Kotlin UI/capture (no Tauri), with the same
-Rust subtitle/provider runtime as desktop through JNI.
+Floating translated subtitles for audio playing on your phone. Watch a video,
+stream, or class with the original text, translation, or both on screen.
 
-[Download Android](https://github.com/yuxino/mimi/releases/latest)
+[English](README.md) · [简体中文](README.zh-CN.md) · [Desktop home](../README_EN.md)
 
-[Provider setup and current models](../docs/provider-setup.md) · [服务开通与模型指南](../docs/provider-setup.zh-CN.md)
+<a id="start"></a>
 
-> Android is packaged separately from mimi desktop releases. Both builds use
-> `shared/mimi-core` and `shared/mimi-runtime` for subtitle state, actual provider
-> clients, translation scheduling and recovery. Provider credentials remain
-> configured on Android. Shared source alone does not establish live service or
-> device availability; verification limits are listed below.
+## Start here
+
+1. [Download the Android APK](https://github.com/yuxino/mimi/releases/latest) and install it on Android 10 or later.
+2. Open **Services → Add**, choose a service, enter its credentials, and save. The first configuration is selected automatically; tap a saved configuration to switch later. The [service setup guide](../docs/provider-setup.md#choose) explains where to get them; cloud usage may cost money.
+3. In **Captions**, choose the spoken and translation languages, then start. Allow display over other apps, audio recording, and the system capture prompt when asked.
+4. Switch to the app you want to hear and play speech. Subtitles appear over it; use Immersive Mode to keep just the text and pass touches through.
+
+Android captures app playback, **not the microphone**. Android still requires the
+audio-recording permission for playback capture. Some apps block capture, so protected
+content may produce no subtitles. Cloud recognition receives the captured audio;
+remote text translation receives recognized text. New installs retain the three most recent
+confirmed captions in memory; existing installations keep their previous setting.
+Stopping clears these captions without saving a transcript.
+
+Need to change the text translator? See [independent text translation](#independent-text-translation).
+Android has no Apple Speech or custom recognition setup. See [known limits](#known-limits)
+for other differences, or [report an issue](https://github.com/yuxino/mimi/issues).
+
+<details>
+<summary>Feature details and implementation</summary>
+
+Native Kotlin UI and audio capture use the shared Rust subtitle and provider
+runtime through JNI. Credentials are configured separately on Android. Shared
+code does not prove availability on every device; see [verification status](#verification-status).
 
 ## Features
 
@@ -31,11 +49,11 @@ Rust subtitle/provider runtime as desktop through JNI.
   Azure OpenAI, Volcano Engine Doubao, Tencent Cloud, Baidu realtime translation and xAI Grok Voice.
   Their production clients are shared with desktop. Grok is turn-based voice translation;
   generated audio is discarded. Each service has its own encrypted credential fields and supported language choices.
-- **Configuration** — tap a configured service to switch, or open its settings to edit. Azure requires a
+- **Configuration** — save multiple named configurations, including more than one for the same service. Each keeps its own credentials and text translator. Tap a configuration to select it; Settings edits it without switching. Duplicate and Delete are in the editor’s More menu. Stop captions before changing configurations. Azure requires a
   resource endpoint and translation/transcription deployment names; Tencent requires AppID, SecretID and
   SecretKey; Baidu requires AppID and AppKey. Other services use an API key. Built-in service models,
   endpoints and language capabilities follow the shared factory. Stored secrets are not filled back into the editor;
-  leaving a secret field empty preserves its saved value. Changes are written only with Save and use.
+  leaving a secret field empty preserves its saved value. Changes are written only with Save; backing out of a new editor adds nothing. Existing service settings migrate automatically.
 - **Subtitle overlay** — one `TYPE_APPLICATION_OVERLAY` reading panel with
   current source and translation. Drag its top handle to move it and its corner
   to resize width and height. Confirmed lines appear only when bounded history
@@ -64,13 +82,14 @@ Rust subtitle/provider runtime as desktop through JNI.
   for Audio3 + text translation and sentence-identified realtime previews for
   integrated live clients. New sentence identities never borrow old final lines;
   the current complete pair remains available independently of saved history.
-- **Alibaba Cloud** — Audio3 recognition with Qwen-MT Lite/Flash/Plus or an
-  independent text translator; Lite is the default. Historical built-in custom
+- **Alibaba Cloud** — choose simultaneous translation or ASR + MT. New configurations start with simultaneous translation; existing ones keep ASR + MT. Both modes use the desktop runtime. Follow the shared [Alibaba setup guide](../docs/provider-setup.md#alibaba-livetranslate) for workspace and key requirements. ASR + MT uses Audio3 with Qwen-MT Lite/Flash/Plus or an independent text translator; Lite is the default. Historical built-in custom
   endpoint/model/hotword keys are retained without enabling unsupported overrides.
 - **Credentials** — EncryptedSharedPreferences (Android Keystore master key),
-  scoped by provider.
-- **History privacy** — disabled by default; opting into history retains only a bounded
-  in-memory list. Disabling it or stopping the session clears retained subtitles.
+  stored separately from profile metadata and isolated per configuration.
+- **Subtitle history** — new installations keep the three most recent confirmed
+  captions in memory by default. Existing installations keep their previous setting,
+  including the former zero default. Set the count to zero or stop the session to
+  clear retained subtitles; this does not save a transcript to disk.
 - **Interface language** — More offers Follow system and the same eight interface
   languages as desktop: 简体中文, 繁體中文, English, 日本語, Deutsch, 한국어, Français and ภาษาไทย.
   Changes apply immediately and persist after restart, independently of subtitle
@@ -81,6 +100,8 @@ See the [native Before/After comparison](https://github.com/yuxino/Mimi/pull/211
 for the empty-overlay, live font-size and help-icon repairs. Optional explanations
 appear on mouse hover/long press; tap a help icon to read scrollable details.
 Setup, permission and audio-recovery instructions remain visible.
+
+</details>
 
 ## Requirements
 
@@ -162,8 +183,8 @@ The Android interface reuses Mimi's existing character artwork and neutral
 light/dark palette. Subtitle source and target languages can be changed directly on the home screen with Undo. Tapping the
 subtitle sample opens appearance settings, where changes are saved automatically
 and previewed without capture or a network session. The appearance screen also
-previews normal and immersive text. The service tab lists all eight integrations and opens a separate editor with only that service’s fields.
-Credentials require explicit Save and use; changing appearance never saves credentials. Your own service credentials are still required for real translation.
+previews normal and immersive text. The service tab lists saved configurations. Add opens the service picker; each configuration has a separate editor.
+Credentials require explicit Save; changing appearance never saves credentials. Your own service credentials are still required for real translation.
 
 The main page groups Captions, Services and More. Captions offers live
 original/translation/bilingual display, alignment, width, height, font, color and opacity controls.
@@ -213,7 +234,7 @@ changed preferences. Include narrow/large-font and wide native layouts.
 The checks exercise quick language selection/Undo, direct appearance access,
 auto-save with actual touch gestures, all eight service editors, write-only secret fields, rejected incomplete configurations, history clearing and the
 keyboard. Changed non-secret preferences are restored in a finally block; provider
-drafts are discarded without Save and use. No provider or audio capture session starts. Screenshots contain sample subtitles and empty key
+drafts are discarded without Save. No provider or audio capture session starts. Screenshots contain sample subtitles and empty key
 fields and are written to the app's external `files/ui-preview` directory. Pass
 `-e overlay_interaction true` on a blank idle device for actual two-dimensional
 resize/drag, live quick settings without a duplicate preview, all alignments,
@@ -240,7 +261,7 @@ In Services → Alibaba Cloud, **Text translation** offers the built-in translat
 **DeepL**, **DeepLX**, **ChatMock**, **OpenAI-compatible API**, and **No translation (original only)**.
 Independent modes use Alibaba Cloud's `qwen3-asr-flash-realtime` for recognition; the selected
 text service translates confirmed text. Original-only mode makes no text translation request.
-Enable that ASR model for your Alibaba key. Other speech providers keep their built-in translation. This is not an OpenAI Realtime endpoint override.
+Choose **ASR + MT** in the Alibaba configuration and enable that ASR model for its key. Other speech providers keep their built-in translation. This is not an OpenAI Realtime endpoint override.
 
 - **DeepL** needs a separate DeepL API key. Mimi chooses the official Free endpoint for
   keys ending in `:fx`, otherwise the Pro endpoint. No custom URL or model is needed.
@@ -274,7 +295,7 @@ tcp:8000 tcp:8000` can make the computer's local ChatMock service available at
 Mimi's API key; account login stays in your ChatMock installation.
 
 **Test translation** sends a fixed example through the same HTTP path as subtitles and
-shows elapsed milliseconds. It does not save the draft or send system audio. **Save and use**
+shows elapsed milliseconds. It does not save the draft or send system audio. **Save**
 commits both stages; back discards changes. Translation keys have independent encrypted
 storage and are not reused when the destination changes. Help icons open the requirements
 without persistent explanatory paragraphs in the editor.

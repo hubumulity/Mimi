@@ -115,7 +115,7 @@ it.each(["zh", "en", "ja"] as const)("keeps localized unsupported-language cause
     await act(async () => configure().focus());
     expect(document.activeElement).toBe(configure());
     await act(async () => configure().click());
-    expect(showSettings).toHaveBeenLastCalledWith("service");
+    expect(showSettings).toHaveBeenLastCalledWith("voice");
     expect(start).not.toHaveBeenCalled();
     expect(setOverlayCollapsed).not.toHaveBeenCalled();
   }
@@ -165,7 +165,7 @@ it("routes the settings start switch to configuration while a configuration erro
   await mount("settings");
   const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
   await act(async () => toggle.click());
-  expect(showSettings).toHaveBeenCalledExactlyOnceWith("service");
+  expect(showSettings).toHaveBeenCalledExactlyOnceWith("voice");
   expect(start).not.toHaveBeenCalled();
 });
 
@@ -363,12 +363,12 @@ it.each(["en", "zh", "ja"] as const)("opens service settings for fixed authentic
       expect(feedback().querySelectorAll("button")).toHaveLength(1);
       expect([...host.querySelectorAll("button")].some(button => button.textContent === I18N.settings.sessionRetry)).toBe(false);
       await act(async () => configure().click());
-      expect(showSettings).toHaveBeenCalledExactlyOnceWith("service");
+      expect(showSettings).toHaveBeenCalledExactlyOnceWith(message === I18N.settings.languageSwitchUnsupported ? "voice" : "service");
       expect(start).not.toHaveBeenCalled();
       if (surface === "settings" || surface === "compact-settings") {
         showSettings.mockClear();
         await act(async () => host.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-        expect(showSettings).toHaveBeenCalledExactlyOnceWith("service");
+        expect(showSettings).toHaveBeenCalledExactlyOnceWith(message === I18N.settings.languageSwitchUnsupported ? "voice" : "service");
         expect(start).not.toHaveBeenCalled();
       }
     }

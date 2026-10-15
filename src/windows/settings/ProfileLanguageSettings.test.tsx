@@ -78,10 +78,7 @@ it("lets the embedded Apple target recover to original-only when the native cata
 it("lets Apple Speech fall back to original-only when Apple translation is unavailable", async () => {
   settings = { ...settings, sourceLanguage: "en", targetLanguage: "ja", profiles: [{ ...settings.profiles[0], provider: "appleSpeech", textTranslation: "apple" }] };
   await act(async () => root.render(<ProfileLanguageSettings settings={settings} disabled={false} hideSourceLanguage />));
-  const skip = host.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${I18N.settings.skipTranslation}"]`)!;
-  expect(skip).not.toBeNull();
-  expect(skip.disabled).toBe(false);
-  await act(async () => skip.click());
+  await choose(I18N.settings.translateTo, "original");
   expect(save).toHaveBeenCalledExactlyOnceWith({ targetLanguage: "original" });
 });
 
@@ -179,7 +176,7 @@ it("guards duplicate saves and reports a safe failure without pretending the cho
 
 it("disables language controls during a transition without asking to stop an already transitioning session", async () => {
   await render(true);
-  expect(host.querySelectorAll('button:disabled')).toHaveLength(3);
+  expect(host.querySelectorAll('button:disabled')).toHaveLength(2);
   expect(host.textContent).not.toContain(I18N.settings.languageChangeRequiresStop);
   expect(save).not.toHaveBeenCalled();
 });
@@ -216,16 +213,15 @@ it("retains the target and reports preparation failure when an active Apple targ
   expect(onBusy.mock.calls).toEqual([[true], [false]]);
 });
 
-it("persists skipping translation as Original, restores the previous target, and keeps source-language help compact", async () => {
+it("uses one target picker for Original and translation without a duplicate skip control", async () => {
   await render();
   expect(host.querySelector('.settings-row .settings-help-control__description')?.textContent).toContain(I18N.settings.recognitionHintHelp);
-  const toggle = () => host.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${I18N.settings.skipTranslation}"]`)!;
-  await act(async () => toggle().click());
+  expect(host.querySelector('[role="switch"]')).toBeNull();
+  await choose(I18N.settings.translateTo, "original");
   expect(save).toHaveBeenCalledWith({ targetLanguage: "original" });
   settings = { ...settings, targetLanguage: "original" }; await render();
-  expect(toggle().getAttribute("aria-checked")).toBe("true");
-  expect(host.querySelector<HTMLButtonElement>(`button[aria-label="${I18N.settings.translateTo}"]`)!.disabled).toBe(true);
-  await act(async () => toggle().click());
+  expect(host.querySelector<HTMLButtonElement>(`button[aria-label="${I18N.settings.translateTo}"]`)!.disabled).toBe(false);
+  await choose(I18N.settings.translateTo, "en");
   expect(save).toHaveBeenLastCalledWith({ targetLanguage: "en" });
 });
 
@@ -250,7 +246,7 @@ it("explains when enabling text translation actually resets a custom source", as
   settings = { ...settings, sourceLanguage: "ak", targetLanguage: "original", profiles: [{ ...settings.profiles[0], provider: "customDashScopeASR", textTranslation: "deepL" }] };
   save.mockImplementation(async draft => { settings = { ...settings, sourceLanguage: "auto", targetLanguage: draft.targetLanguage }; });
   await render();
-  await act(async () => host.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${I18N.settings.skipTranslation}"]`)!.click());
+  await choose(I18N.settings.translateTo, "en");
   await render();
   expect(host.textContent).toContain(I18N.settings.recognitionLanguageAdjusted("Akan", I18N.settings.recognitionServiceDefault));
 });

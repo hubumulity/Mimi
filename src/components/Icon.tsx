@@ -23,6 +23,7 @@ import {
   Download,
   Key,
   Languages,
+  Layers3,
   LockKeyhole,
   LockKeyholeOpen,
   Mic,
@@ -70,6 +71,7 @@ export type IconName =
   | "cloud"
   | "help"
   | "languages"
+  | "layers"
   | "lock"
   | "unlock"
   | "plus"
@@ -109,6 +111,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   cloud: Cloud,
   help: CircleHelp,
   languages: Languages,
+  layers: Layers3,
   lock: LockKeyhole,
   unlock: LockKeyholeOpen,
   plus: Plus,

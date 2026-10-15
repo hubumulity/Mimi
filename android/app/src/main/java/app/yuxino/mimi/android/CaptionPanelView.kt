@@ -48,6 +48,7 @@ internal class CaptionPanelView(
     private var minimumSourceLine = 0
     private var minimumTranslationLine = 0
     private var minimumTimeLine = 0
+    private val sourceViewport = CaptionSourceViewport()
 
     init {
         tag = "expanded-subtitles"
@@ -242,6 +243,7 @@ internal class CaptionPanelView(
     }
 
     fun applyStyle(style: CaptionFrameStyle) {
+        sourceViewport.reset()
         displayMode = style.mode; showDividers = style.dividers
         (history as CaptionHistoryTextView).dividers = style.dividers
         CaptionTypography.apply(source, translation, style.fontSize, false, style.mode == CaptionDisplayMode.ORIGINAL)
@@ -264,6 +266,7 @@ internal class CaptionPanelView(
 
     private fun beginReading() {
         if (!followingLive) return
+        sourceViewport.reset()
         val first = if (source.visibility == View.VISIBLE) source else translation
         readingAnchor = transcriptScroll.scrollY + first.scrollY
         followingLive = false; followCurrentOnLayout = false; towardsLive = false
@@ -271,6 +274,7 @@ internal class CaptionPanelView(
     }
 
     private fun followLive() {
+        sourceViewport.reset()
         followingLive = true; followCurrentOnLayout = true; readingAnchor = null
         requestLayout()
     }
@@ -293,8 +297,17 @@ internal class CaptionPanelView(
         translationParams.topMargin = margin
         val available = transcriptScroll.measuredHeight - (if (both) dp(6) else 0) -
             (if (timestamp.visibility == View.VISIBLE) timestamp.measuredHeight else 0)
-        val budget = if (followingLive) captionLaneBudget(available, heights(source), heights(translation))
+        val measuredBudget = if (followingLive) captionLaneBudget(available, heights(source), heights(translation))
             else Int.MAX_VALUE to Int.MAX_VALUE
+        val budget = if (followingLive && both) {
+            // MT may grow and then shorten while the original is unchanged. Do
+            // not reveal an older reference line again just because MT freed
+            // some room. Its vertical baseline still follows the compact pair.
+            sourceViewport.limit(source.text.toString(), source.measuredWidth, available, measuredBudget.first) to measuredBudget.second
+        } else {
+            sourceViewport.reset()
+            measuredBudget
+        }
         var changed = false
         for ((view, count) in listOf(source to budget.first, translation to budget.second)) {
             (view as LatestCaptionTextView).followsLatest = followingLive

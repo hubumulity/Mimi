@@ -4,6 +4,381 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-15：并行排查迟到事件与录音恢复
+
+- 修复源码：`8e1b1a71ffb40d1ead2d39bdcd178399ea70736a`，基于
+  `e5b7746e`。设计见 [生命周期边界](../plans/2026-10-15-lifecycle-boundary-regressions.md)。
+- 共享配对器的旧代码在已完成 A 的迟到译文草稿到达时覆盖 B，新增 reducer
+  回归先失败再通过。带身份但缺映射的草稿现在丢弃；无身份兼容路径及正常
+  已映射草稿保留。共用 fixture 加入 unknown／retired 两步，Rust、真实 wire
+  解码与 Android actual JNI 均回放；原有 Alibaba 正常响应样本测试通过。
+- 录音收尾失败后，旧播放／导出优先读取损坏或过期 WAV；坏 PCM 也被已有
+  WAV 掩盖。两个回归先失败再通过。临时目录覆盖两音源、空／损坏／错采样率／
+  错内容 WAV、坏 rate／奇数字节 PCM；只有 PCM 不存在才回退。历史存储 18 项
+  和关闭保存后清理重试 2 项通过，没有修改录音授权门禁或写入／收尾逻辑。
+- Apple 翻译语言包准备的旧字符串归属在离页返回和语言对 A→B→A 后使新查询
+  失效，另会复活旧错误。正式组件新增 3 项先失败再通过；不可复用上下文保护
+  结果、错误和成功回调，完成仍释放 busy。兄弟 Apple Speech 及状态 hook 已有
+  相应上下文规则。定向 108 项、frontend quick 430 项通过，各修复交叉复核无阻断。
+- 完整 `./scripts/check.sh` 通过：前端 136 文件／2198 项，桌面 Rust 610 项，
+  shared core 93 项及共享契约、runtime 785 项、JNI crate 8 项；保留既有显式
+  native 环境的 ignored 项。Android Debug／Release 各 234 项 JVM 全通过，
+  两种 actual JNI 配对契约报告各 5 项通过，新 fixture 与处理资源哈希一致。
+- 签名 watch UI-only 检查添加确认、ASR + MT 模式保存、服务页离开／返回，
+  没有访问用户凭据、连接服务或采集声音。Apple 语言包准备在 UI-only 中明确
+  不可用，因此准备期间的迟到结果依据受控组件测试，未宣称系统下载验收。
+- 修复提交的内嵌 UI-only 开发版实际启动并显示服务页，严格签名检查通过；
+  构建／安装 Mach-O UUID 同为 `E3824995-C8B2-3197-92F6-E8161773EF39`，
+  运行路径为 canonical dev app。两次预览均正常退出，正式安装保持原样。
+- 限制：没有新建实际 provider 会话、Windows／Linux 原生或实体 Android
+  捕获验收；临时文件与合成事件不证明真实故障发生频率或字幕阅读体验。
+  本轮没有发布版本。
+
+## 2026-10-15：v1.6.2 独立回归与公开交付
+
+- 发布源码：`v1.6.2` → `17cbc0300b08f28a76c4396628d0d9ea33845584`；
+  本轮产品修复 `acb4847a` 基于 `844f0bde`，后续提交仅整理验证及公开文案。
+  设计见 [选择框与显式凭据恢复](../plans/2026-10-15-release-recovery-regressions.md)。
+- 新发现的选择框解锁后重开、完整语音草稿因旧元数据读取失败而禁用保存，
+  都在 v1.6.1 已存在。正式组件与真实 voice consumer 先 4 项失败，再通过；
+  部分草稿继续要求可靠旧值，真实编辑页的保存拒绝保留字段及重试。最终
+  quick 覆盖 45 文件、1011 项，settings／overlay 共用控件及正常 keyboard／
+  search、名称 owner、迟到粘贴与 Android holder 的相邻路径复核未见新缺陷。
+- 待导入的自定义 speech 槽原先拦住完整显式替换。真实本地文件存储与 fake
+  legacy 的正式聚焦用例先 6 通过／3 失败，再 9 项全通过；file store 26 项、
+  多 route 文本槽保护 1 项通过。只放行 typed MigrationRequired 的完整有效
+  speech 值，未知旧值不删除回滚。写入大小失败保留原 pending 文档，marker
+  失败保留耐久新值供 retry；损坏／不可读文件和部分草稿不覆盖，文本多 route
+  blob、catalog／preferences 及正常 known-value rollback 保留原边界。
+- 精确 v1.6.1 tag `56f04d7d` 与本轮未改变的 shared source 独立对照：正常
+  aligner 10 案例／72 steps、subtitle 12 案例／74 steps、9 类 Qwen localhost
+  HTTP 响应一致，旧状态恢复通过；两版本取消／clear／reconnect 等聚焦各
+  7 项通过，公开 ASR WebSocket→queue→controller 的正常 final 和 stop-tail
+  成对结果一致。当前 incomplete／empty／withdrawal 等 12 项回归通过。
+- 完整 `./scripts/check.sh` 通过：前端 2195 项、桌面 Rust 608 项、shared
+  runtime 785 项；既有显式 native 环境的 ignored 项没有强制启用。两次独立
+  diff 复核没有发现阻塞。所有系统凭据及 I/O 故障仅使用 fake／临时目录。
+- Android Debug／Release 各 234 项 JVM 测试通过，包含生产 actual JNI；两种
+  lint 无错误，各有 63 项既有 warning。v1.6.2／10602 四 ABI debug APK 检查
+  通过，SHA256 `3a3c0a9aa3cc0c123df315312671e2eb3d930ab3843a71ea6a835dc9208dfd1f`。
+  Android 15 虚拟机按相同 signer `install -r` 保留开发数据，真实 Activity
+  recreate 再次通过：未保存合成名称、语音、workspace／mode、Qwen 和独立
+  MT 草稿保留、密码遮罩、不进 Bundle、取消不写 catalog、fresh editor 不串稿。
+- macOS canonical watch 及最终内嵌 `1.6.2-dev` 的 UI-only 签名开发版验证
+  添加确认、完整识别草稿保存、复制／返回、两可用配置 keyboard 切换及关闭
+  菜单；内嵌版本名称编辑立即离页再返回保留。运行路径为 canonical dev app，
+  构建／安装 UUID `B97A9C67-D056-34E1-82E0-B27E81E0235B` 一致；严格签名通过，
+  安装 executable SHA256 `410503de01efb1bc52d73d800a8d878d510fd47c343f6c1525e55ff00b887eb7`。
+  完成后正常退出，无服务连接或音频采集。
+- 正式 macOS ARM64／Intel 两套 DMG 和 updater archive 均通过严格签名、
+  debugger 排除、version／architecture／sealed source 检查，DMG 内 app 与
+  loose app 的指定要求及 CDHash 一致。两种正式二进制分别实际启动并显示
+  v1.6.2；Intel 通过本机 Rosetta，均使用 UI-only，正式安装未替换。现有
+  正式 app 与新包的完整指定要求一致，没有迁移证书或更改系统权限。
+- main 桌面 `38607076333`／Android `38607076322`，tag 桌面
+  `38608784255`／Android `38608783870` 均成功。tag 流水线包括 Windows
+  x64／ARM64、便携解压及 Linux 成品 smoke、Linux synthetic PulseAudio
+  system／microphone、两种 macOS updater 和 Android 正式签名／rejection
+  检查；这些 CI 环境测试不等同于用户硬件和实际服务。
+- Android 正式 APK signer SHA256 为
+  `b263d1b5ec3c43eb4f8107f438a5cbebed18f9290e56ed2e0d0ffb11e4b74ec2`，
+  与实际下载的 v1.6.1 公开 APK 一致。四 ABI 检查通过，虚拟机安装并前台
+  启动正式 `MainActivity`，version 1.6.2／10602；installed code 与成品
+  SHA256 `0b33386e181f45988d1e6c94e5da54d6ccc08ce1d2ae5a7b5277b1e7d214550c`
+  一致。新正式包与已配置开发版使用独立 app scope，没有卸载或清理开发数据。
+- 四 macOS 资产先 staging 到私有 draft，再推精确 tag。所有 tag CI 完成后，
+  authenticated 草稿和无 Authorization 的公开下载各自核验 17 资产，远端
+  size／digest、16 项 SHA256SUMS 及 5 个实际 minisign 全部一致；updater
+  四平台 URL、signature、version 和 English-first／中文 notes 对应源码。
+  已按用户本次“检查没问题就发布”授权公开为 Latest：
+  [v1.6.2](https://github.com/yuxino/Mimi/releases/tag/v1.6.2)。tag-specific、
+  canonical Latest 及 app 实际配置的 updater endpoint 返回相同 manifest。
+- ego-lite 页面确认 Latest、immutable release、17cbc03、双语说明及 17
+  实际资产链接；页面另列两份源码和 release attestation，共显示 Assets 20。
+  本次新发代码的 authors 只有维护者，原生页面没有 Contributors 区域；没有
+  重复上一版的外部贡献者 credit 或为展示头像伪造新的感谢。
+- 限制：受控对照和 CI／虚拟机不能证明实际 provider 接受度／识别质量、
+  用户 Windows／Linux／Intel 或实体 Android 的捕获硬件。未连接实际服务、
+  开始音频捕获或访问真实用户凭据／记录。
+
+## 2026-10-15：第四轮 pending 状态与 Android 虚拟机复核
+
+- 产品源码：`4793d51454d009149371fdec3ff6c31b40426fd6`，基于
+  `8a3c8de9`。设计见 [pending 状态边界](../plans/2026-10-15-pending-state-regressions.md)。
+  桌面三个名称字段离页后丢失失败草稿／重试，正式用户路径先 3 项失败，
+  修复后通过。补查串行保存、晚到结果、不同 route、删除失败／确认删除、
+  StrictMode 与中断 IME；后两项在修复审查时先复现，再补防护。
+- 录音收尾遇到目录、链接、损坏或内容不匹配的已有 WAV 时，旧逻辑会误报
+  成功并消费 PCM。两种来源与同文件头／长度但首字节、跨 buffer 尾字节
+  不同的用例均先失败；最终 16 项通过。仅复用已有输出时以两个 8 KiB
+  buffer 比较全 payload；异常保留 PCM／journal，合法旧输出与双源 retry
+  保留，已有保存记录及关闭保存的相邻测试通过。未访问真实用户记录。
+- 自定义 OpenAI ASR 的空／空白 completion 原先被丢弃，Stop 仍可能确认
+  已撤回草稿。共享 Rust 保留终结身份、只撤回匹配 owner，并在可靠撤回
+  交付时消费此前匹配的 queued draft。实际 localhost WebSocket → shared
+  client → controller 和 JNI engine 重放 4 种终稿 fixtures；另查旧空终稿／
+  新缺终稿 Stop tail。新增 3 个 owner 案例／12 steps 走 direct 与实际 JNI；
+  老显示 owner、新任务、连续撤回、晚到 preview、confirmed history、clear／
+  revision、deadline 与正常终稿均有聚焦回归，没有第二套 Kotlin 算法。
+- Android 15 的 `Mimi_Android15` 虚拟机保留既有开发数据，以相同 debug
+  签名 `install -r` 更新最终四 ABI APK。旧 editor 的真实 Activity 重建先
+  丢失草稿；修复后名称、识别字段、workspace／mode、Qwen 型号与独立 MT
+  route 的原始字段保留。取消不改变 catalog 哈希，fresh editor 无旧草稿，
+  凭据不进入 Bundle，密码保持遮罩。原生截图等标签动画结束后复核；测试
+  只使用未保存的合成 editor，不连接服务或启动采集。Process death 仍从
+  已保存配置加载，不恢复 RAM secrets。
+- macOS canonical 签名 watch 和内嵌前端的 UI-only 开发版验证添加、复制、
+  名称编辑后立即返回、不同 editor 隔离、校验离页保留与修正后保存。
+  后台 I/O 失败与迟到结果由受控异步回归覆盖，未在原生内存 fixture 注入
+  磁盘故障。提交后再次构建、严格签名校验并实际启动；构建／安装 Mach-O
+  UUID 一致，运行路径为 canonical 开发 app，随后正常退出。
+- 完整 `./scripts/check.sh` 通过：前端 2187 项、桌面 Rust 603 项；shared
+  runtime 785 项通过，既有需显式 native 环境的 ignored 项没有强行启用。
+  Android Debug／Release 各 234 项 JVM 测试通过，含生产 actual JNI；两种
+  lint 无错误，本次修改文件无 lint 诊断，debug APK 四 ABI／alignment／
+  notices 检查通过。peer 复核涵盖最终 owner／queue、WAV payload、IME 与
+  Android holder；之前选择器／voice 40 项和本地凭据正常 copy／delete／
+  restart 对照也通过。
+- 限制：没有真实 provider、音频采集、实体 Android 或 Windows／Linux
+  原生 UI 验收；合成输入不能证明真实识别质量、频率或阅读体验。没有发布版本。
+
+## 2026-10-14：第三轮兼容性复核与选择／凭据边界
+
+- 基于 `0d2141a1`，设计见
+  [选择器与凭据边界](../plans/2026-10-14-picker-and-credential-regressions.md)。
+  语音页不可用服务已经标记 disabled，但共享选择器仍派发切换；三种
+  缺少配置的用户路径先变红，修复后点击、键盘、搜索及动态禁用通过。
+  普通列表、当前值、恢复可用与设置／浮窗共用控件保留原行为。
+- 正常保存／删除最后导入槽后缺少完成标记，临时文件丢失与重启回归
+  证明旧系统值会被重新导入。标记失败不重试、末槽保存误报成功也先
+  变红；修复后普通 21 项与开发诊断 22 项存储测试通过。耐久读回校验、
+  部分导入、未退休清理、损坏文档与只读探针保持各自边界。未访问真实
+  凭据或用户记录，所有 I/O 故障在临时目录及 fake 系统存储中注入。
+- 对 `c0511a09` 与当前共享源码做独立旧／新对照：8 个既有配对案例
+  64 steps 与两种空来源案例 8 steps 输出一致；旧序列化状态恢复也按
+  每步核查。9 类 localhost 合成 Qwen 响应的结果、错误与 partial 序列
+  一致；既有 stop、clear、取消、截止时间和连接复用分支通过。本轮
+  未发现前两轮改动的确定正常流程回归；该结论只覆盖已对照的路径。
+- 完整 `check.sh` 通过，前端 2172 项、桌面 Rust 596 项通过；实际 JNI
+  的 `SharedLivePairContractTest` 5 项与 `NativeRuntimeJniTest` 13 项通过。
+  两次交叉复核通过，未新增 Kotlin 业务实现。
+- `28f0ccf0` 的 canonical 签名开发版先完成构建、安装与严格签名验证；
+  用户确认正式版正常退出后，使用嵌入前端的 `--ui-only` 做原生验收。
+  缺少凭据／workspace 的两个条目可见灰显，点击不切换；Home／End 与
+  反向方向键跳过不可用项，可用 A/B 正常互切。补齐 workspace 后恢复
+  可选；当前配置失去合成凭据后仍保留显示，也能切回正常配置。构建
+  Mach-O UUID、运行路径与安装包一致，检查后正常退出开发版。
+  合成配置和占位值只在 UI-test 内存中，未运行连接检查或开始会话。
+- 没有执行真实服务、录音或实体设备捕获，也未发布版本。
+
+## 2026-10-14：第二轮会话边界回归
+
+- 基于 `59b9475d` 的本轮修复，设计见
+  [会话边界记录](../plans/2026-10-14-session-boundary-regressions.md)。配置
+  目录损坏／不可读不再返回成功空快照，真实空目录与凭据不可用仍保留
+  各自语义；会话与浮窗广播也不能覆盖加载错误。原目录内容保持不变。
+- 历史删除成功后离页返回不会残留已删记录，迟到列表、字幕和录音被
+  拒绝；已选另一会话保留其内容和播放。临时 journal 的真实 I/O 失败
+  回归证明：关闭保存后清理失败，恢复磁盘再收尾不会复活被关闭的类型，
+  仍授权的另一类型和已有保存记录保持完整；持续失败保留 pending/error。
+- 共享原文身份与翻译占位分开跟踪，避免迟到旧原文提前确认新草稿，
+  或下一句译文先到时丢失配对。直接 Rust、桌面真实协议解码与实际 JNI
+  重放同一组 12 cases／97 steps，含新加的四种序列与旧状态字段缺失；
+  记录保持 64 身份上限，空 current、clear/reset、retire 与恢复均有回归。
+- 所有新增失败序列先在旧实现变红，再修复通过。完整 `check.sh` 通过，
+  前端 2158 项；Android Debug／Release 各 232 项 JVM 测试通过。
+  两次独立复核通过，无新增 Kotlin 字幕算法或另一份业务实现。
+- 签名 canonical `--watch --ui-only` 的安装、运行路径及构建 Mach-O UUID
+  核对一致。原生保存开关、空状态及离页返回通过，开关恢复关闭后正常
+  退出并停止预览；没有访问真实凭据、用户记录或音频设备。
+- 限制：原生页面检查没有注入删除延迟、目录损坏或磁盘故障；这些路径
+  通过受控异步、真实临时文件与 native getter 的回归验证。没有证明
+  真实服务的乱序频率或实体 Windows／Android 捕获，需要另行有界实测。
+
+## 2026-10-14：主动检查的四项回归
+
+- 基于 `c0511a09` 的本轮修复，设计与边界见
+  [回归检查记录](../plans/2026-10-14-proactive-regression-audit.md)。四项新增
+  用例先在旧实现失败：Qwen MT 截断／长度限制仍返回成功、Windows 输出
+  来源变化仍保留录音勾选、迟到粘贴覆盖新编辑、macOS 丢失完整系统语言码。
+- 修复后 `./scripts/check.sh` 完整通过，前端 2152 项测试通过。
+  Android Debug／Release 各 232 项 JVM 测试通过；新增 12 种合成响应
+  经实际 JNI 的 Audio3 → MT → controller 路径，正常完成进入历史，
+  不完整响应保留 history=0 和 displayPairFinal=false。无第二套 Kotlin 实现。
+- canonical 签名 `--watch --ui-only` 开发版的运行路径、稳定身份和构建
+  Mach-O UUID 一致。原生配置输入可编辑，安全字段仍为密码输入；显式繁体
+  与跟随系统切换、应用菜单 Settings／Quit 标签通过。Foundation 回归
+  核对当前完整首选界面语言。测试未访问凭据、云服务或音频，之后正常退出。
+- 完整检查的 watch-server 回归与当前预览共用 1420 端口：先退出应用并
+  停止预览，再运行完整检查；对应规则已补入常见回归。保留必要的本机
+  验证日志和构建元数据，清理本轮临时文件与一次性服务器。
+- 限制：剪贴板迟到竞争通过受控 deferred 测试，未人为延迟原生剪贴板；
+  Windows 真实输出设备录音、真实云服务截断、繁体系统环境与 Android
+  硬件捕获没有本轮设备证据，需要另行有界实测。此次只交付源码修复。
+
+## 2026-10-14：v1.6.1 发布包复核
+
+- 发布源为 `56f04d7d7142dd24661b74b3532641c033f4de03`，含 PR #277
+  与借用参数生命周期、Windows 缩放回归防护；Linux 采集和共享业务源码未改。
+  完整 canonical、macOS／Windows／Linux CI、Android 直接 Rust／实际 JNI
+  与签名打包检查通过。Windows 真实运行了借用激活参数成功／提前失败回归。
+- 无影 Windows Server 2025 Datacenter 24H2（26100.32860）运行最终
+  1.6.1 便携包，ZIP 与运行中 exe 的 SHA-256 均与发布资产一致；没有
+  UI-test 或开发调试器。麦克风、字幕保存、录音均关闭，使用有界音调进程
+  和仅保存统计元数据的本机接收端，证明采集与生命周期，不代表识别／翻译质量。
+- 指定应用收到非零 PCM，暂停后接收连接关闭，恢复后新连接继续收到非零 PCM；
+  目标进程退出显示应用不可用，Mimi 保持存活。系统混音独立收到非零 PCM。
+  100%／150% 显示及 150% 显示＋120% 文字下，语言胶囊、完整面板标题、
+  有界滚动到底部、折回和设置关闭重开通过；测试后恢复显示 125%、文字 100%。
+- 云端原配置使用未发布的 `localProgram` 类型，稳定版保护性拒绝读取；
+  随后的快照失败被误映射为 Apple 语言包错误。这条路径与 v1.6.0 相同。
+  只读枚举和原件哈希确认原因，临时隔离后提示消失；测试配置经正常界面
+  删除，退出后原 catalog／preferences 已按原 SHA-256 逐字节恢复。
+  隔离工具没有读取或迁移凭据，未改旧实验配置或原安装应用。
+- macOS 使用 canonical 签名开发包完成离线胶囊展开／折回及原有聚焦行为
+  检查；公开双架构包另行核对固定身份、源提交、架构和 DMG 内容。
+  Linux 原生 Wayland／音频及最终 deb／AppImage 安装烟雾检查由 CI 完成。
+  17 个公开资产已匿名下载校验，5 份更新签名、Latest 和双语更新清单一致。
+- 限制：本轮无真实云识别质量、实体 Windows 客户端／Android 硬件验收；
+  原 Explorer `AppHangXProcB1` 仍缺线程栈或 dump，不声称已定位或彻底修复。
+
+## 2026-10-14：Windows 按应用采集与控件缩放
+
+- 源为 v1.6.0（`4b53f0b`）加本轮修复，production identifier 的
+  `--no-bundle` release 构建；真实输出设备播放，配置取自本机用户设置，
+  测试后已还原 `system_audio_target`／`overlay_frame` 与输入、录制选项。
+  未替换已安装的 1.6.0。
+- 按应用采集（12 个受控 Python 进程、独立 Vivaldi 用户目录）：原
+  `PropVariantClear` 非法释放已消除，实际捕获到应用树内播放的英文语音，
+  收到原文与中文译文各 215／78 字符；激活结果改为同一 MTA 内转移，不再
+  走 `AgileReference`（本机 `REGDB_E_IIDNOTREG`）。目标进程退出后会话进入
+  `application_audio_unavailable` 错误态，进程存活。
+- 系统混音模式在同一构建上独立验证，英文原文与中文译文均到达；
+  暂停／恢复、停止、控件展开与 30 次设置关闭重开（最大 102 ms）均通过，
+  四个可见窗口的限时 `WM_NULL` 探测为 0–7 ms。
+- 语言胶囊与控制面板此前按 CSS 像素直接比对原生逻辑像素：窗口 DPI 96／144、
+  WebView DPR 1.2／1.8 时内容被裁切。现改为上报 DPR 并除以原生缩放，
+  在 100% 与 150% 屏上量测内容与视口一致；展开面板首次聚焦不再把标题
+ 滚出可视区，错误态面板同样从顶部显示。
+- 回归：`cargo test` 552 通过（2 ignored）、`cargo clippy -D warnings`、
+  `npm test` 2136 通过、改动文件 eslint 通过。删除两处依赖本机区域设置／
+  时钟的旧断言（发布时间线原文比较、按语言固定的音频来源标签），改为
+  跨环境成立的属性检查。
+- 未解决：`AppHangXProcB1`（等待 explorer.exe）没有线程栈或 dump，
+  不能证明是本次卡死根因；已移除关闭设置时冗余的同步托盘可见性调用，
+  本轮多次启动／停止与关闭重开压力测试未复现，真实卡死仍需等待链或
+  dump 才能定位。
+
+## 2026-10-13：Android 多配置与原文回露
+
+- 基于 `6df632d4` 的 1.6.0 候选工作区增量，Android debug 构建；API 35
+  模拟器的独立临时用户使用合成凭证，未启动采集或连接云服务。
+- 多配置覆盖零／一／多项、取消新建、同服务独立密钥和翻译草稿、模式切换、
+  编辑不切换、复制、删除确认与当前项回退、运行／停止期间禁用、损坏目录
+  显示错误及重试。切换后回字幕页同步配置名和模型摘要。初版整排操作被
+  用户否定，已恢复 Android 原有横向列表；不把功能通过当作视觉接受。
+- 后续用户否定名称旁叠加状态文字，改为原生单选圆点，选择与设置分开。
+  已选项再点保持选中；浅／深色中文、德语窄屏大字体复测通过，无障碍
+  暴露 checked 状态。前面的八语言检查针对列表恢复版，不代替最终视觉接受。
+- 截图须等待解锁和实际窗口焦点；删除后等待列表 Activity 恢复，避免把
+  锁屏图或生命周期尚未完成的断言当作产品结论。截图通过测试应用私有
+  文件导出，不需要模拟器 root。
+- `asr-mt-differential-v1` 原生十帧固定样例在修复前绘制 35 次：译文修短
+  后，未变原文的首个可见行从 2 回退到 1。修复后同样例与重置检查共
+  绘制 81 次，首行保持 2；原文预算变化从 3 次减为 1 次，译文底边
+  保持 225 px，无字形裁切。原文基线仍随译文高度移动，本轮仅修复旧行
+  回露，不声称解决所有跳动。文本、尺寸、字体、模式及手动历史重置通过。
+- Canonical 检查通过；随后 Android 渲染／导航细化通过 Debug 和 Release
+  各 230 项 JVM 测试（含实际 JNI）、两套 lint 和开发 APK 构建。原生
+  配置操作覆盖八种界面语言、深色及窄屏大字体；独立翻译的 15 张原生
+  表单／保存回归也通过。截图保留在本轮本机取证目录；生产配置未参与
+  破坏性用例。
+- 未覆盖真实阿里云音频链路、实体 Android 或升级安装验收；下一项是使用
+  用户指出的内置阿里 ASR + MT 配置，按同一有界样本核对实播阅读体验。
+  旧 macOS 候选包对应 `6df632d4`，不能作为这些新增改动的发布包。
+
+## 2026-10-13：服务说明语义与分行
+
+- 源为 `69284b75` 加本次说明调整。对照共享协议、服务能力与凭证字段，
+  补齐各服务的工作方式、Azure 部署要求及独立翻译边界；xAI 用说话停顿
+  后分段翻译解释回合式行为。八种语言按语义分行，Apple 本地识别含义保留。
+- 自定义识别初选说明用途，确认页和编辑页保留完整协议要求。签名开发版
+  热预览确认选择页说明、Azure 两行提示无裁切及 DashScope 确认页协议内容；
+  没有确认创建配置、切换服务、启动采集或发起连接检查。
+- 前端定向检查通过（107 个文件、1,839 项测试）；未新增服务质量、
+  Windows/Linux 原生或 Android 验收证据。
+
+## 2026-10-13：正常状态静默与当前配置置顶
+
+- 后续用户取消置顶：最终保持保存顺序，切换只更新当前状态。以
+  `e3e79384` 为源继续调整操作层级：当前状态替代同位置的灰色「使用」，
+  常用操作与复制／删除分组；有待恢复的语言预设仍保留有效的使用入口。
+  原生热预览确认使用中的火山引擎留在原位置、仅有一个当前标记、未配置
+  提示保留。233 项相关前端测试和 576 组几何检查通过；未操作真实切换。
+
+- 用户纠正：正常已保存状态不值得占用列表或问号；只提示需要处理的
+  未配置／异常状态。取代上一轮把正常凭证状态收进帮助的设计。
+- 测试源为 `8ff33101` 加本次修正：移除正常凭证帮助与重复状态朗读，
+  当前配置展示在首项，其他配置保持原始顺序，不写回排序；按已确认的
+  activeProfileId 更新，包括切换被拒绝及配置已保存但重连失败的路径。
+- 签名开发版热更新后确认真实当前配置置顶、正常问号消失、底部缺少凭证
+  提示仍可见。未切换真实服务或修改凭证。类型、lint 和 233 项相关前端
+  测试通过；未重跑跨层验收，没有新增 Windows/Linux 原生设备证据。
+
+## 2026-10-13：配置列表密度与身份层级
+
+- 测试源为预发布设置分支 `2158c2ea` 加本次配置列表改动。四项显式操作
+  保持单排，空间不足时整组换行；最窄列表省去操作图标并保留完整文字。
+  取消会撑高普通行的两列操作块；识别图标与名称对齐，绘图尺寸与图标槽
+  同为 24px。默认名称不再重复识别服务，独立翻译和自定义识别名称保留。
+- 正常凭证说明收进名称旁帮助，当前配置标记移到名称旁；缺少／不可用
+  凭证保持可见。未改变选择、复制、删除、会话保护或凭证读写行为。
+- 当前签名 `dev-app.sh --watch` 原生热预览检查了真实 11 项列表、进入
+  编辑再返回、键盘聚焦的凭证说明浮层。没有重启开发版、启动采集或发起
+  连接检查。主观视觉接受仍等待用户反馈。
+- 定向前端检查：类型、lint、232 项相关测试通过；最初扩展到共享图标
+  的测试中，其余 396 项亦通过，旧列表断言已在定向复测中修正。
+  最后的空行问题已修复并通过 `git diff --check`，未重复完整跨层检查。
+- 离线布局夹具：520／828／952／1600px、八种语言、两种主题、三种平台
+  控件与 idle／paused／确认弹窗共 576 组通过。补充目视检查英文深色最小
+  窗口、日文默认窗口、中文大窗口的混合服务、长名称、语言组合和缺少凭证。
+  图标不侵入名称、四个操作保持同排已纳入既有几何回归。
+- Windows/Linux 仅为浏览器夹具，不构成原生设备验收；没有 Android 或
+  新的识别／翻译质量验收。本改动仍依赖未并入 main 的预发布设置重构。
+
+## 2026-10-13：宽屏设置与选择器图标
+
+- 测试源为预发布设置重构 `f431df0d` 加本次未提交修复：共享设置框从
+  左对齐、最大 960px 改为居中、最大 1200px；声音与语言的配置选择器
+  补齐当前值和选项的服务图标，沿用浮窗的旧 DeepLX 配置识别图标映射。
+- macOS 应用图标从 32px 改为 64px PNG，覆盖 20 CSS px 的 Retina
+  显示；原有单图和总缓存上限保持不变。用户反馈第一版仅缩小喇叭仍不协调，
+  最终改为 18px 中性圆角底框内的 14px 细线单声波图标；未知应用也用
+  同尺寸底框，设置与浮窗共用。实际主观接受仍以用户后续反馈为准。
+  用户随后指出喇叭偏左：Volume1 绘制范围 x=2..17 与 24px 画布中心不同，
+  已把 viewBox 的水平中心对齐图形中心 9.5，保持原有尺寸和纵向位置。
+- 用户明确允许停止活动开发会话并重启。通过签名 `dev-app.sh --watch`
+  更新 canonical 开发版，启动器核对稳定 designated requirement 和实际
+  可执行文件。原生默认／放大窗口检查了配置菜单与真实本地应用图标；
+  最终喇叭通过热更新检查，不需要再次重启。没有重新启动采集或服务会话。
+- 浏览器离线夹具：520／760／952／1512／1920px、八种语言、深浅主题、
+  五个设置页共 400 组无横向溢出或选择器越界；配置列表／删除弹窗的
+  288 组既有几何检查通过；72 组声音页、服务详情、浮窗及 Windows 输出
+  选择器夹具通过。最终喇叭在深色菜单和当前值均测得 18px 外框／14px
+  内图，浅色在原生窗口观察。浏览器夹具不代表 Windows/Linux 原生验收。
+- 完整 `./scripts/check.sh` 通过：严格 Clippy、共享检查、桌面 574 项
+  测试（1 项既有忽略）、前端 2,083 项测试、类型／lint／生产构建；原生
+  图标回归验证 64px 解码尺寸、非透明像素、原有字节上限和绘图上下文恢复。
+- 未检查 Windows 原生图标清晰度、Linux 原生布局或 Android；未做新的
+  捕获／识别／翻译验收。本修复依赖尚未并入 main 的预发布设置布局。
+
+## 2026-10-13：Linux 播放流选择
+
+- 范围：基线 `7f85195` 上的 Linux 播放流选择实现，Cargo debug 构建。复用现有目标、IPC 和共享控件；流关闭或服务器断连使令牌失效，移动输出后重新解析 monitor，目标不可用时不回退系统混音。
+- 回归覆盖暂停流、同应用多流、双频隔离、16／24 kHz 采集、输出移动、目标删除、服务器断连／恢复及停止后无迟到 PCM。健康连接上的列表查询超时保留当前捕获和存活令牌；超限列表和持续查询失败尚未压力验收。
+- 验证：完整 `./scripts/check.sh` 通过，桌面 Rust 540 passed／14 ignored、前端 132 文件／2,085 项，含共享 Rust／实际主机 JNI、格式、严格 Clippy、lint、类型检查和生产构建。私有 PipeWire-Pulse 服务器的合成音频回归 8 项通过；React／模拟 IPC 布局夹具 160 组通过。
+- 限制：本地合成音频及浏览器夹具不代表真实设备、原生界面、提供商延迟或功耗验收；macOS／Windows 原生复验及远程 CI 仍待执行。实现与边界见 [Linux 开发指南](linux.md)。
+
 ## 2026-10-13：自定义文本翻译关闭思考与阿里延迟对比
 
 - 测试源为 main `41c323ad` 加本次共享协议改动；
@@ -2959,3 +3334,73 @@
 - 用户选择“先准备好，暂时别切换”：没有安装或启动此候选，没有修改
   当前配置。下一项是获准切换后使用独立识别 + 文字 MT，与相同真人
   样本做 native/provider A/B；未提供新的原生效果截图或质量提升结论。
+## 2026-10-13 — Configuration list and subpage navigation
+
+- Source: `c0e2b85b` plus the frontend changes in this entry's commit. Signed
+  macOS development app in watch mode; no native rebuild, capture, provider
+  request, credential change or production-app replacement.
+- Native check: scroll to the last configuration, enter its editor, observe the
+  page top and focused heading, then return to the original list offset and
+  Edit action. Independently checked real browser geometry with a synthetic
+  14-profile list: 273.5 px offset restored; category/diagnostics navigation,
+  picker cancellation and confirmation cancellation retained the intended
+  scroll/focus. ArrowUp entered More at Delete; Escape restored its trigger.
+- Quick frontend typecheck, selected lint and 242 related tests passed. Shared
+  list geometry covered four widths, eight locales and both themes (64 cases).
+  Three initial resize/menu races were test sequencing failures: resize is
+  supposed to dismiss an open menu. After waiting for layout before opening,
+  those three cases and six paused/confirmation variants passed. The larger
+  repeated-platform sweep was stopped in favor of this shared-control scope;
+  it is retained as the verifier's default, not claimed as completed here.
+- Reviewed Chinese/default and Japanese/dark/minimum-width browser images and
+  the actual macOS list. Browser platform fixtures do not establish native
+  Windows/Linux acceptance. No full Rust/shared suite or new speech-quality
+  acceptance was performed for these frontend-only changes. Visual acceptance
+  remains with the user; keep fixed order and omit routine credential status.
+
+## 2026-10-13 — Sole configuration and redundant provider labels
+
+- Source: `b41f0093` plus the frontend changes in this entry's commit. The
+  existing signed macOS watch app received hot updates without a native rebuild
+  or session restart. Its 11 real profiles were preserved; no provider request,
+  capture, credential reveal or configuration mutation was used for acceptance.
+- One configuration now opens its editor directly. Related regressions cover
+  loading into one profile, reduction to one, draft preservation on Add/Cancel,
+  saved-secret reveal invalidation, copying to a second profile, and focus on
+  returning to the new list. Quick frontend typecheck, selected lint and all
+  242 related tests passed; no full Rust/shared suite was needed or run.
+- Browser fixtures checked 32 list and 32 sole-editor layouts: 520/952 px,
+  eight locales, light/dark. An initial sole-editor selector also matched the
+  hidden diagnostics Back control; after scoping it to the service editor,
+  all 32 cases passed. Add opens at zero and cancellation restored the tested
+  200 px position and Add focus. Reviewed Chinese screenshots of both states.
+- Native macOS screenshot confirmed the aliased Alibaba row has no repeated
+  brand subtitle, missing credentials remain inline, and row heights align.
+  Sole-profile evidence uses synthetic browser data, not deletion of the real
+  configurations. Windows/Linux native acceptance and visual user acceptance
+  remain separate. Browser test pages were closed after review.
+
+## 2026-10-13 — First configuration service picker
+
+- Source: `8f7e5f6b` plus this entry's frontend changes. Zero configurations now
+  enter provider selection directly after settings initialization. The shared
+  Add picker uses two flat columns where space permits, a single narrow column,
+  24 px marks and an actual heading; confirmation still gates profile creation.
+- Quick frontend typecheck, selected lint and 1,839 related tests across 107
+  files passed. Coverage includes empty/loading/error entry, no automatic secret
+  reads or connection checks, first creation, cancellation focus and failed
+  creation. All eight locales received the same revised next-step instruction.
+- Synthetic browser geometry passed 32 combinations (520/1000 px, eight locales,
+  light/dark), including all 11 available options and icon/text/help spacing.
+  Confirmed that cancellation creates nothing and restores option focus; first
+  confirmed creation makes exactly one profile, enters its editor at scroll zero
+  and focuses its heading. No credential or provider operation accompanied it.
+- The actual signed macOS watch app exposed an intermediate-width issue: its
+  content was just below the initial two-column breakpoint. Lowered that
+  breakpoint from 600 to 560 px and visually verified two columns and wrapping
+  there. Native Add/Cancel restored the list and Add focus, preserving all 11
+  real configurations. Reviewed Chinese wide and Japanese dark narrow fixtures.
+- No capture, provider requests, real configuration writes, native rebuild or
+  production replacement. Browser fixture pages were closed. Zero-profile
+  screenshots are synthetic; native Windows/Linux and visual user acceptance
+  remain separate. No full Rust/shared acceptance run for this frontend change.

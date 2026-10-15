@@ -1,10 +1,12 @@
 # Mimi video demonstration
 
+[返回首页](../../README.md) · [Back to home](../../README_EN.md)
+
+字幕与沉浸模式演示，使用旧版界面。 / Subtitles and Immersive Mode, shown with an older interface.
+
 https://github.com/user-attachments/assets/3f2be409-6f43-407e-9bca-a8e4d3592dc3
 
 [Download original video (1080p, original audio)](https://github.com/yuxino/mimi/releases/download/demo-2026-09-06-788172a6/mimi-demo-1080p.mp4) · [Media attachments](https://github.com/yuxino/mimi/releases/tag/demo-2026-09-06-788172a6)
-
-The repository READMEs play the approved full video directly through GitHub’s native attachment player. Its standalone attachment URL must remain in its own paragraph so GitHub renders playback controls. The playback copy preserves the complete 40.133-second recording at 1920×1080 and 30 fps. High-quality H.264 compression reduces it from 23,631,884 to 12,746,625 bytes (46.1%); two-second keyframes improve seeking and lower bitrate peaks. The AAC soundtrack is copied without re-encoding. Full-frame SSIM against the original is 0.991973. The unchanged original remains available from the Release link. The Release retains the original video, animated preview and PNG as downloadable archives outside the source tree. The dedicated demo tag is a non-latest prerelease and is not an application update. README playback uses GitHub attachments. The separate product website serves a higher-quality 17,075,906-byte copy through its existing versioned CDN. Existing Git history is not rewritten.
 
 An English film plays with small Chinese subtitles in the actual Mimi renderer. Near the beginning, Control+Shift+M enters Immersive Mode: the panel, language control island, buttons and borders all disappear. Only the subtitle text remains over the picture. At the end, the shortcut restores the controls briefly for pause/resume, then returns to the subtitles-only view.
 
@@ -23,3 +25,10 @@ Dialogue plays at normal speed with its original sound. Control actions after th
 No credentials are present in the browser, video, fixtures or committed files. The original test key was held in process memory for the separate experiment. No private audio, microphone input or personal documents were used; the application itself still does not save audio or subtitles.
 
 The public film response fixture under `english-film/response.json` belongs only to this attributed documentation example. It is never loaded by Mimi and is not application telemetry. Source hashes, timing and validation results are in `provenance.json`.
+
+<details>
+<summary>Video files and encoding</summary>
+
+The repository READMEs link here to the approved full video, played through GitHub’s native attachment player. Its standalone attachment URL must remain in its own paragraph so GitHub renders playback controls. The playback copy preserves the complete 40.133-second recording at 1920×1080 and 30 fps. High-quality H.264 compression reduces it from 23,631,884 to 12,746,625 bytes (46.1%); two-second keyframes improve seeking and lower bitrate peaks. The AAC soundtrack is copied without re-encoding. Full-frame SSIM against the original is 0.991973. The unchanged original remains available from the Release link. The Release retains the original video, animated preview and PNG as downloadable archives outside the source tree. The dedicated demo tag is a non-latest prerelease and is not an application update. Playback on this page uses GitHub attachments. The separate product website serves a higher-quality 17,075,906-byte copy through its existing versioned CDN. Existing Git history is not rewritten.
+
+</details>

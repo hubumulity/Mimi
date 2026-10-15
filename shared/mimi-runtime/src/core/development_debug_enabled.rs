@@ -104,6 +104,7 @@ impl From<&SubtitleSnapshot> for SubtitleSummary {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProviderEventKind {
+    SourceBoundary,
     SessionCreated,
     SessionUpdated,
     SourceDraft,
@@ -113,6 +114,7 @@ pub enum ProviderEventKind {
     PreviewFinished,
     PreviewPair,
     PreviewCleared,
+    PreviewWithdrawn,
     TranslationDeferred,
     TranslationDraft,
     TranslationFinal,
@@ -150,6 +152,7 @@ impl ProviderObservation {
         use LiveTranslateServerEvent as E;
         use ProviderEventKind as K;
         let (event_kind, utterance_id, source_characters, translation_characters) = match event {
+            E::SubtitleSourceBoundary { .. } => (K::SourceBoundary, None, 0, 0),
             E::SessionCreated => (K::SessionCreated, None, 0, 0),
             E::SessionUpdated => (K::SessionUpdated, None, 0, 0),
             E::UtteranceRegistered { .. } => (K::Ignored, None, 0, 0),
@@ -195,6 +198,9 @@ impl ProviderObservation {
                 translation.chars().count(),
             ),
             E::SubtitlePreviewCleared => (K::PreviewCleared, None, 0, 0),
+            E::SubtitlePreviewWithdrawn {
+                source_utterance_id,
+            } => (K::PreviewWithdrawn, Some(*source_utterance_id), 0, 0),
             E::SubtitleIdentifiedPreviewPair {
                 source,
                 translation,

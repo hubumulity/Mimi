@@ -1,21 +1,24 @@
 // Browser geometry regression. Serve the repository with npm run dev, then
 // import this function from an ego-browser nodejs round with its managed Page.
 // Platform bridges and device state are fixtures, not native-device evidence.
-export async function verifyProfileActionsLayout(page, baseUrl = "http://127.0.0.1:1420") {
+export async function verifyProfileActionsLayout(page, baseUrl = "http://127.0.0.1:1420", { platforms = ["macos", "windows", "linux"], states = ["idle", "paused", "confirmation"], widths = [520, 828, 952, 1600], languages = ["en", "zh", "zh-TW", "ja", "de", "fr", "ko", "th"], themes = ["light", "dark"] } = {}) {
   await page.goto(new URL("/scripts/fixtures/settings-layout.html", baseUrl).href);
   await page.waitForFunction(() => window.layoutReady === true);
   await page.cdp("Page.bringToFront", {});
   await page.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
   const failures = [];
   let checked = 0;
-  for (const width of [520, 952]) for (const language of ["en", "zh", "zh-TW", "ja", "de", "fr", "ko", "th"]) for (const theme of ["light", "dark"]) {
+  for (const width of widths) for (const language of languages) for (const theme of themes) {
     await page.cdp("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: false });
     await page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
-    for (const platform of ["macos", "windows", "linux"]) for (const state of ["idle", "paused", "confirmation"]) {
+    for (const platform of platforms) for (const state of states) {
       const next = { width, language, theme, platform, state: state === "paused" ? "paused" : "idle", listProfiles: true,
         profileName: "Long configuration 名称 音声設定 ".repeat(6), deviceName: "Fixture headphones", profileDeleteConfirmation: state === "confirmation" };
       const issues = await page.evaluate(async next => {
         await window.applyLayoutCase(next);
+        // A viewport change intentionally dismisses menus. Let its resize/scroll
+        // events finish before testing a subsequently opened menu.
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const issues = [];
         const rect = node => node.getBoundingClientRect();
         const overlaps = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
@@ -23,7 +26,13 @@ export async function verifyProfileActionsLayout(page, baseUrl = "http://127.0.0
           const identity = row.querySelector(".service-row__main"), actions = row.querySelector(".service-row__actions");
           if (row.scrollWidth > row.clientWidth + 1 || overlaps(rect(identity), rect(actions))) issues.push("row identity/actions overflow or overlap");
           const buttons = [...actions.querySelectorAll("button")];
-          if (buttons.length !== 4 || identity.tagName !== "DIV") issues.push("four explicit actions missing");
+          if (buttons.length !== 3 || identity.tagName !== "DIV") issues.push("common actions or More missing");
+          if (buttons.some(button => Math.abs(rect(button).top - rect(buttons[0]).top) > 1)) issues.push("row actions split into multiple lines");
+          const icon = identity.querySelector(":scope > .provider-icon");
+          const copy = identity.querySelector(".service-row__copy");
+          for (const artwork of icon.querySelectorAll("img, svg")) {
+            if (rect(artwork).width > 0 && (rect(artwork).right > rect(copy).left - 4 || rect(artwork).width > rect(icon).width + 1)) issues.push("provider artwork crowds the profile name");
+          }
           if (Boolean(row.querySelector(".profile-active-badge")) !== (row.dataset.active === "true")) issues.push("current configuration marker missing");
           for (let index = 0; index < buttons.length; index++) {
             const button = buttons[index], bounds = rect(button);
@@ -33,8 +42,18 @@ export async function verifyProfileActionsLayout(page, baseUrl = "http://127.0.0
             for (const other of buttons.slice(index + 1)) if (overlaps(bounds, rect(other))) issues.push("row actions overlap");
             if (!button.disabled && getComputedStyle(button).cursor !== "pointer") issues.push("row action cursor");
           }
-          if (row.querySelector(".service-row__duplicate").disabled !== (next.state === "paused")
-            || row.querySelector(".service-row__delete").disabled !== (next.state === "paused")) issues.push("row mutation stop guard");
+          if (!next.profileDeleteConfirmation) {
+            row.querySelector(".service-row__more").click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const menu = document.querySelector('[role="menu"]');
+            if (!menu || rect(menu).left < 0 || rect(menu).right > innerWidth + 1 || rect(menu).bottom > innerHeight + 1) issues.push("action menu clipped or missing");
+            if (menu) {
+              const items = [...menu.querySelectorAll('[role="menuitem"]')];
+              if (items.length !== 2 || items.some(item => item.disabled !== (next.state === "paused"))) issues.push("row mutation stop guard");
+              menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+              await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+          }
           const name = row.querySelector("strong");
           if (!name.title || rect(name).width < 100) issues.push("long profile name squeezed");
         }
@@ -67,7 +86,7 @@ export async function verifyQwenMTModelLayout(page, baseUrl = "http://127.0.0.1:
         // Let pending viewport-resize handlers settle before opening the popup.
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const issues = [];
-        const picker = [...document.querySelectorAll('.service-stage--translation [role="combobox"]')].find(node => node.textContent.startsWith("Qwen-MT"));
+        const picker = [...document.querySelectorAll('.service-editor-module--models [role="combobox"]')].find(node => node.textContent.startsWith("Qwen-MT"));
         if (!picker) return ["model picker missing"];
         const row = picker.closest(".settings-field");
         const rect = node => node.getBoundingClientRect();

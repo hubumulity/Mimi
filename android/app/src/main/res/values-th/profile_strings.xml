@@ -1,0 +1,21 @@
+<resources>
+    <string name="profiles_add">เพิ่มการกำหนดค่า</string>
+    <string name="profiles_empty">เลือกบริการเพื่อสร้างการกำหนดค่าแรก</string>
+    <string name="profiles_name">ชื่อการกำหนดค่า</string>
+    <string name="profiles_save">บันทึก</string>
+    <string name="profiles_duplicate">ทำสำเนา</string>
+    <string name="profiles_delete">ลบ</string>
+    <string name="profiles_delete_title">ลบ “%1$s” หรือไม่</string>
+    <string name="profiles_delete_message">จะลบการกำหนดค่านี้และข้อมูลรับรอง โดยเก็บการกำหนดค่าอื่นไว้</string>
+    <string name="profiles_copy_name">%1$s (สำเนา)</string>
+    <string name="profiles_limit">บันทึกได้สูงสุด 20 การกำหนดค่า</string>
+    <string name="profiles_retry">ลองอีกครั้ง</string>
+    <string name="profile_none">ยังไม่ได้เลือกการกำหนดค่า</string>
+    <string name="profiles_list_help">บันทึกหลายการกำหนดค่าได้ แม้ใช้บริการเดียวกัน แตะการกำหนดค่าเพื่อใช้ หรือแตะการตั้งค่าเพื่อแก้ไข เมนูในหน้าแก้ไขมีตัวเลือกทำสำเนาและลบ</string>
+    <string name="profiles_translation_help_save">การทดสอบจะส่งตัวอย่างที่กำหนดไว้และไม่บันทึกการเปลี่ยนแปลง การสลับบริการจะเก็บแบบร่างในหน้าจอนี้ แตะบันทึกเพื่อบันทึกบริการที่เลือก คีย์จะถูกเข้ารหัสไว้ในอุปกรณ์นี้</string>
+    <string name="guide_add_provider">เพิ่ม %1$s</string>
+    <string name="profiles_load_failed">โหลดการกำหนดค่านี้ไม่ได้ โปรดเปิดการตั้งค่าแล้วลองอีกครั้ง</string>
+    <string name="profiles_add_short">เพิ่ม</string>
+    <string name="profiles_use_named">ใช้ %1$s</string>
+    <string name="profiles_duplicated">ทำสำเนาการกำหนดค่าแล้ว</string>
+</resources>

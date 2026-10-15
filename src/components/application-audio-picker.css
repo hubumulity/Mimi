@@ -10,6 +10,24 @@
   gap: 6px;
 }
 .application-audio-picker__controls .mimi-select { flex: 1; }
+/* App artwork includes transparent padding. Match its visible size inside the
+   shared 20px slot, including options rendered in the portaled menu. */
+.mimi-select__icon .application-audio-picker__symbol {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid #8884;
+  border-radius: 4px;
+  background: #8881;
+}
+.mimi-select__icon .application-audio-picker__symbol svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.7;
+}
 .application-audio-picker__refresh {
   display: inline-flex;
   flex: 0 0 32px;

@@ -516,7 +516,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       activeProfileId: current.profiles.length ? current.activeProfileId : id,
       profiles: [
         ...current.profiles,
-        { id, name, provider, credentialState: "missing", ...(isCustomSpeechProvider(provider) ? { speechCredentialState: "missing" as const, textCredentialState: "missing" as const } : {}) },
+        { id, name, provider, credentialState: "missing", ...(provider === "alibabaCloud" ? { alibabaRealtimeMode: "liveTranslate" as const, alibabaWorkspaceId: "" } : {}), ...(isCustomSpeechProvider(provider) ? { speechCredentialState: "missing" as const, textCredentialState: "missing" as const } : {}) },
       ],
     };
     set({ settings: snapshot });

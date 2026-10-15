@@ -305,6 +305,13 @@ impl Default for Preferences {
 }
 
 impl Preferences {
+    pub fn apply_windows_audio_source(&mut self, source: String) {
+        if self.windows_audio_source != source {
+            self.record_session_audio = false;
+        }
+        self.windows_audio_source = source;
+    }
+
     pub fn apply_system_audio_target(
         &mut self,
         target: crate::core::system_audio_target::SystemAudioTarget,
@@ -1068,7 +1075,7 @@ impl SettingsStore {
     }
 
     #[cfg(test)]
-    fn at_path(app_config_dir: PathBuf, secret: Box<dyn SecretStore>) -> Self {
+    pub(crate) fn at_path(app_config_dir: PathBuf, secret: Box<dyn SecretStore>) -> Self {
         // Existing provider/storage regressions exercise an explicitly configured
         // installation. First-run tests call load_with_secret without this fixture.
         if !app_config_dir.join(PROFILE_CATALOG_FILE).exists()
@@ -1180,13 +1187,6 @@ impl SettingsStore {
         ))
     }
 
-    /// Safe fallback used only for best-effort broadcasts after the initial
-    /// `settings_get` has already reported a catalog error.
-    pub fn profile_catalog_or_default(&self) -> (String, Vec<ServiceProfile>) {
-        let catalog = self.catalog.lock().unwrap();
-        (catalog.active_profile_id.clone(), catalog.profiles.clone())
-    }
-
     pub fn active_profile(&self) -> Result<ServiceProfile, String> {
         let (active_id, profiles) = self.profile_catalog()?;
         profiles
@@ -1195,17 +1195,49 @@ impl SettingsStore {
             .ok_or_else(|| PROFILE_CATALOG_UNAVAILABLE.to_string())
     }
 
+    /// New desktop Alibaba configurations start with integrated translation.
+    /// Legacy profiles and duplicate operations retain their stored mode.
+    pub fn create_profile_for_setup(
+        &self,
+        provider: ProviderKind,
+        name: &str,
+    ) -> Result<ServiceProfile, String> {
+        let mode = if provider == ProviderKind::AlibabaCloud {
+            crate::core::provider::AlibabaRealtimeMode::LiveTranslate
+        } else {
+            crate::core::provider::AlibabaRealtimeMode::Disabled
+        };
+        self.create_profile_with_mode(provider, name, mode)
+    }
+
+    #[cfg(test)]
     pub fn create_profile(
         &self,
         provider: ProviderKind,
         name: &str,
     ) -> Result<ServiceProfile, String> {
-        let profile = ServiceProfile::new(
+        self.create_profile_with_mode(
+            provider,
+            name,
+            crate::core::provider::AlibabaRealtimeMode::Disabled,
+        )
+    }
+
+    fn create_profile_with_mode(
+        &self,
+        provider: ProviderKind,
+        name: &str,
+        mode: crate::core::provider::AlibabaRealtimeMode,
+    ) -> Result<ServiceProfile, String> {
+        let mut profile = ServiceProfile::new(
             format!("profile-{}", uuid::Uuid::new_v4().simple()),
             name,
             provider,
         )
         .map_err(|error| error.to_string())?;
+        profile
+            .set_alibaba_realtime(mode, "")
+            .map_err(|error| error.to_string())?;
         self.mutate_catalog_with_normalization(Some(&profile.id), |catalog| {
             if catalog.profiles.len() >= MAXIMUM_PROFILE_COUNT {
                 return Err("No more service profiles can be added.".to_string());
@@ -1381,11 +1413,19 @@ impl SettingsStore {
             let mut updated = current.clone();
             if alibaba_realtime_mode.is_some() || alibaba_workspace_id.is_some() {
                 let workspace = alibaba_workspace_id.unwrap_or(&current.alibaba_workspace_id);
+                let mode = alibaba_realtime_mode.unwrap_or(current.alibaba_realtime_mode);
+                // Creation can persist an unfinished setup. An explicit mode /
+                // workspace edit must still validate before committing any fields.
+                if mode != crate::core::provider::AlibabaRealtimeMode::Disabled
+                    && !crate::core::provider::alibaba_workspace_id_is_valid(workspace.trim())
+                {
+                    return Err(
+                        crate::core::provider::ServiceProfileError::InvalidAlibabaWorkspaceId
+                            .to_string(),
+                    );
+                }
                 updated
-                    .set_alibaba_realtime(
-                        alibaba_realtime_mode.unwrap_or(current.alibaba_realtime_mode),
-                        workspace,
-                    )
+                    .set_alibaba_realtime(mode, workspace)
                     .map_err(|error| error.to_string())?;
             }
             if let Some(model) = qwen_mt_model {
@@ -2214,9 +2254,28 @@ impl SettingsStore {
             )
         };
         self.retry_profile_credential_errors(profile, true, false);
-        let previous = self
-            .load_api_key_for_profile(profile)
-            .map_err(SecretStoreError::public_error)?;
+        let previous = match self.load_api_key_for_profile(profile) {
+            Ok(previous) => previous,
+            Err(SecretStoreError::MigrationRequired) => {
+                // A complete explicit value can retire its unread pending import.
+                // The unknown old value must never become a missing-key rollback.
+                let (Some(endpoint), Some(model)) = (&entered_endpoint, &entered_model) else {
+                    return Err(SecretStoreError::MigrationRequired.public_error());
+                };
+                if api_key.trim().is_empty() {
+                    return Err(SecretStoreError::MigrationRequired.public_error());
+                }
+                let value = ProviderCredentials::CustomSpeech {
+                    endpoint: endpoint.clone(),
+                    model: model.clone(),
+                    api_key: api_key.into(),
+                }
+                .encode_for_keychain(profile.provider)
+                .map_err(|error| error.to_string())?;
+                return self.save_api_key_for_profile(profile, &value, true);
+            }
+            Err(error) => return Err(error.public_error()),
+        };
         let previous_credentials = previous
             .as_deref()
             .map(|value| ProviderCredentials::decode_for_profile(profile, value))
@@ -3996,6 +4055,45 @@ mod read_only_manual_probe_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn new_alibaba_setup_defaults_to_livetranslate_and_survives_restart() {
+        use crate::core::provider::AlibabaRealtimeMode;
+        let directory = tempfile::tempdir().unwrap();
+        let fake = FakeSecretStore::default();
+        let store = fresh_store(directory.path(), &fake);
+        let legacy = store
+            .create_profile(ProviderKind::AlibabaCloud, "Legacy")
+            .unwrap();
+        let profile = store
+            .create_profile_for_setup(ProviderKind::AlibabaCloud, "New")
+            .unwrap();
+        assert_eq!(
+            profile.alibaba_realtime_mode,
+            AlibabaRealtimeMode::LiveTranslate
+        );
+        assert!(profile.alibaba_workspace_id.is_empty());
+        assert_eq!(
+            store.profile(&legacy.id).unwrap().alibaba_realtime_mode,
+            AlibabaRealtimeMode::Disabled
+        );
+        let copy = store.duplicate_profile(&legacy.id, "Copy").unwrap();
+        assert_eq!(copy.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
+        let other = store
+            .create_profile_for_setup(ProviderKind::OpenAIRealtime, "Other")
+            .unwrap();
+        assert_eq!(other.alibaba_realtime_mode, AlibabaRealtimeMode::Disabled);
+        drop(store);
+        let reopened = fresh_store(directory.path(), &fake);
+        assert_eq!(
+            reopened.profile(&profile.id).unwrap().alibaba_realtime_mode,
+            AlibabaRealtimeMode::LiveTranslate
+        );
+        assert_eq!(
+            reopened.profile(&legacy.id).unwrap().alibaba_realtime_mode,
+            AlibabaRealtimeMode::Disabled
+        );
+    }
+
     #[test]
     fn alibaba_realtime_metadata_switch_reuses_key_and_preserves_text_destination() {
         use crate::core::provider::AlibabaRealtimeMode;
@@ -6922,6 +7020,35 @@ mod tests {
     }
 
     #[test]
+    fn playback_stream_selection_persists_only_identity_and_revokes_recording_consent() {
+        use crate::core::system_audio_target::SystemAudioTarget;
+        for input in [AudioInput::System, AudioInput::Microphone, AudioInput::Both] {
+            let mut preferences = Preferences {
+                audio_input: input,
+                record_session_audio: true,
+                ..Default::default()
+            };
+            let target = SystemAudioTarget::Application {
+                id: "opaque-stream-lifetime".into(),
+                name: "App · stream".into(),
+            };
+            preferences.apply_system_audio_target(target.clone());
+            assert!(!preferences.record_session_audio);
+            assert_eq!(preferences.audio_input, input);
+            let value = serde_json::to_value(&preferences).unwrap();
+            assert_eq!(value["system_audio_target"]["kind"], "application");
+            let restored: Preferences = serde_json::from_value(value).unwrap();
+            assert_eq!(restored.system_audio_target, target);
+            preferences.record_session_audio = true;
+            preferences.apply_system_audio_target(target);
+            assert!(
+                preferences.record_session_audio,
+                "repeating an unchanged selection is a no-op"
+            );
+        }
+    }
+
+    #[test]
     fn audio_input_legacy_default_and_explicit_selection_round_trip() {
         let legacy: super::Preferences = serde_json::from_str("{}").unwrap();
         assert_eq!(legacy.audio_input, AudioInput::System);
@@ -7020,6 +7147,58 @@ mod tests {
             restored.windows_audio_source,
             preferences.windows_audio_source
         );
+    }
+
+    #[test]
+    fn windows_source_changes_require_fresh_recording_opt_in_and_persist_it() {
+        for input in [AudioInput::System, AudioInput::Microphone, AudioInput::Both] {
+            for recording in [None, Some(false), Some(true)] {
+                let directory = tempfile::tempdir().unwrap();
+                let store = SettingsStore::at_path(
+                    directory.path().into(),
+                    Box::new(FakeSecretStore::default()),
+                );
+                store
+                    .save_preferences_for_active_profile(|prefs| {
+                        prefs.audio_input = input;
+                        prefs.windows_audio_source = "wasapi:synthetic-first".into();
+                        prefs.record_session_audio = true;
+                    })
+                    .unwrap();
+                store
+                    .save_preferences_for_active_profile(|prefs| {
+                        prefs.apply_audio_preferences(None, recording);
+                        prefs.apply_windows_audio_source("wasapi:synthetic-second".into());
+                    })
+                    .unwrap();
+                let changed = store.preferences();
+                assert_eq!(changed.audio_input, input);
+                assert_eq!(changed.windows_audio_source, "wasapi:synthetic-second");
+                assert!(!changed.record_session_audio);
+                let reloaded = SettingsStore::at_path(
+                    directory.path().into(),
+                    Box::new(FakeSecretStore::default()),
+                );
+                assert!(!reloaded.preferences().record_session_audio);
+                reloaded
+                    .save_preferences_for_active_profile(|prefs| {
+                        prefs.apply_audio_preferences(None, Some(true));
+                    })
+                    .unwrap();
+                reloaded
+                    .save_preferences_for_active_profile(|prefs| {
+                        prefs.apply_windows_audio_source("wasapi:synthetic-second".into());
+                    })
+                    .unwrap();
+                assert!(reloaded.preferences().record_session_audio);
+                reloaded
+                    .save_preferences_for_active_profile(|prefs| {
+                        prefs.apply_windows_audio_source(String::new());
+                    })
+                    .unwrap();
+                assert!(!reloaded.preferences().record_session_audio);
+            }
+        }
     }
 
     #[test]
@@ -8166,7 +8345,7 @@ mod tests {
         store.secret_cache.lock().unwrap().clear();
         fake.state.lock().unwrap().loads.clear();
         store.select_profile(&profile.id).unwrap();
-        let snapshot = crate::commands::SettingsSnapshotPayload::from_store(&store);
+        let snapshot = crate::commands::SettingsSnapshotPayload::try_from_store(&store).unwrap();
         let payload = snapshot
             .profiles
             .iter()
@@ -8595,7 +8774,7 @@ mod tests {
                 .saved_fields
                 .is_empty());
             let snapshot = serde_json::to_string(
-                &crate::commands::SettingsSnapshotPayload::from_store(&store),
+                &crate::commands::SettingsSnapshotPayload::try_from_store(&store).unwrap(),
             )
             .unwrap();
             for private in [
@@ -8763,7 +8942,7 @@ mod tests {
             Some("https://example.com/private-path/translate")
         );
         let snapshot = serde_json::to_string(
-            &crate::commands::SettingsSnapshotPayload::from_store(&store),
+            &crate::commands::SettingsSnapshotPayload::try_from_store(&store).unwrap(),
         )
         .unwrap();
         assert!(!snapshot.contains("private-path"));
@@ -11306,7 +11485,8 @@ mod tests {
             assert_eq!(reloaded.preferences().show_subtitle_timestamps, enabled);
             assert_eq!(reloaded.configuration().unwrap(), original_configuration);
             assert_eq!(
-                crate::commands::SettingsSnapshotPayload::from_store(&reloaded)
+                crate::commands::SettingsSnapshotPayload::try_from_store(&reloaded)
+                    .unwrap()
                     .show_subtitle_timestamps,
                 enabled
             );
@@ -11562,14 +11742,10 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             r#"{"schemaVersion":99,"profiles":[]}"#
         );
-        let fallback = crate::commands::SettingsSnapshotPayload::from_store(&store);
-        assert!(fallback
-            .profiles
-            .iter()
-            .all(|profile| profile.credential_state == CredentialState::Unavailable));
-        let fallback_json = serde_json::to_value(fallback).unwrap();
-        assert!(fallback_json.get("error").is_none());
-        assert!(fallback_json.get("credentialError").is_none());
+        assert_eq!(
+            crate::commands::SettingsSnapshotPayload::try_from_store(&store).unwrap_err(),
+            PROFILE_CATALOG_UNAVAILABLE
+        );
 
         let _ = std::fs::remove_dir_all(directory);
     }

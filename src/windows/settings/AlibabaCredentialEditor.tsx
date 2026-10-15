@@ -86,7 +86,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
   const credentials: ProviderCredentialsInput | null = integratedRealtime
     ? draft.apiKey.trim() ? { kind: "apiKey", apiKey: draft.apiKey.trim() } : null
     : buildAlibabaTranslationCredentials(profile, { ...draft, endpoint: endpointDraft, model: modelDraft }, translation, clearTranslationToken);
-  const dirty = !saved || editingKey || translation !== savedTranslation || endpointChanged || !!draft.token || modelChanged || clearTranslationToken;
+  const dirty = !saved || !!draft.apiKey || translation !== savedTranslation || endpointChanged || !!draft.token || modelChanged || clearTranslationToken;
   const compatible = isChatCompletionsTranslation(translation);
   const keepsSavedDestination = saved && translation === savedTranslation;
   const awaitingSavedDestination = !nativeTranslation && keepsSavedDestination && (translationState.loading || !!translationState.error);
@@ -191,15 +191,17 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
     {!textOnly && <section className="service-stage" aria-labelledby={`${inputId}-recognition-title`}>
       <header className="service-stage__heading">
         <h3 id={`${inputId}-recognition-title`}>{integratedRealtime ? I18N.settings.voiceTranslation : I18N.settings.speechRecognition}</h3>
-        {profile.provider === "alibabaCloud" && saved && !editingKey && <div className="service-stage__actions"><AlibabaSetupLink page="apiKey" disabled={disabled || busy} /></div>}
       </header>
       <div className="settings-field service-stage__selector">
         <span>{I18N.settings.serviceProvider}</span>
-        <span className="service-stage__provider"><ProviderIcon provider="alibabaCloud" size={32} />Alibaba Cloud</span>
+        <span className="service-stage__provider"><ProviderIcon provider="alibabaCloud" size={32} />{I18N.settings.providerAlibaba}</span>
       </div>
-      {(!saved || editingKey) && <div className="settings-field">
-        <span className="service-stage__field-label alibaba-setup-field-label"><label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>{profile.provider === "alibabaCloud" && <AlibabaSetupLink page="apiKey" disabled={disabled || busy} />}</span>
+      {<div className="settings-field">
+        <label htmlFor={`${inputId}-apiKey`}>{I18N.settings.apiKey}</label>
+        <div className="alibaba-setup-control">
         <SavedCredentialInput key={`${profile.id}:${revealEpoch}`} profileId={profile.id} field={profile.provider === "deepLX" ? "asrApiKey" : "apiKey"} label={I18N.settings.apiKey} hasSavedValue={recognitionState.state?.savedFields.includes(profile.provider === "deepLX" ? "asrApiKey" : "apiKey") ?? false} active={visible && !busy && !confirmingDelete} id={`${inputId}-apiKey`} type="password" autoComplete="new-password" spellCheck={false} disabled={disabled} value={draft.apiKey} placeholder={I18N.settings.apiKeyPlaceholder} aria-describedby={noteId} onValueChange={(value) => { setEditingKey(true); setDraft((current) => ({ ...current, apiKey: value })); }} />
+          {profile.provider === "alibabaCloud" && <AlibabaSetupLink page="apiKey" disabled={disabled || busy} />}
+        </div>
       </div>}
     </section>}
     {!integratedRealtime && <section className="service-stage service-stage--translation" aria-labelledby={`${inputId}-translation-title`}>
@@ -254,12 +256,11 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
   return <div className="credential-panel" aria-busy={busy}>
     {!textOnly && <div className="service-credential-toolbar">
       <CredentialStorageHelp id={noteId} profile={profile} />
-      {typeof connectionCheck === "function" ? connectionCheck(speechCheckDraft) : connectionCheck}
-      {saved && !dirty && <span className="credential-panel__saved-actions">
-        <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled} onClick={() => setEditingKey(true)}><Icon name="key" />{I18N.settings.replaceCredentials}</button>
+      {saved && <span className="credential-panel__saved-actions">
         <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled || confirmingDelete} onClick={onRequestDelete}><Icon name="trash" />{I18N.settings.deleteCredentials}</button>
       </span>}
-    </div>}
+
+      {typeof connectionCheck === "function" ? connectionCheck(speechCheckDraft) : connectionCheck}</div>}
     {!textOnly && profile.credentialState === "unavailable" && (feedback?.tone !== "error" || feedback.message === I18N.settings.profileActionFailed) && <p role="status" className="credential-unavailable">{credentialUnavailableHelp()}</p>}
     <form className="credential-form service-stages" onSubmit={submit}>
       {stages}
@@ -267,7 +268,7 @@ export function AlibabaCredentialEditor({ profile, inputId, disabled, busy, visi
       {feedback && <div ref={feedbackRef} tabIndex={-1}><InlineFeedback tone={feedback.tone}>{feedback.message}</InlineFeedback></div>}
       {dirty && <span className="credential-form__actions">
         {saved && <button type="button" className="settings-button settings-button--quiet settings-button--compact" disabled={disabled} onClick={discard}>{I18N.settings.cancel}</button>}
-        <button type="submit" className="settings-button settings-button--primary settings-button--compact" disabled={disabled || awaitingSavedDestination || !credentials || (!textOnly && editingKey && !draft.apiKey.trim())}><Icon name={nativeTranslation ? "checkmark" : "key"} />{textOnly ? I18N.settings.saveTranslationConfiguration : saved ? I18N.settings.replaceCredentials : I18N.settings.saveAndUse}</button>
+        <button type="submit" className="settings-button settings-button--primary settings-button--compact" disabled={disabled || awaitingSavedDestination || !credentials || (!textOnly && editingKey && !draft.apiKey.trim())}><Icon name={nativeTranslation ? "checkmark" : "key"} />{textOnly ? I18N.settings.saveTranslationConfiguration : saved ? I18N.settings.replaceCredentials : integratedRealtime && !profile.alibabaWorkspaceId?.trim() ? I18N.settings.saveCredentials : I18N.settings.saveAndUse}</button>
       </span>}
     </form>
     {!textOnly && confirmingDelete && <DestructiveConfirmation message={I18N.settings.deleteCredentialsConfirm} disabled={disabled} onCancel={onCancelDelete} onConfirm={() => { discard(); void onConfirmDelete(); }} />}

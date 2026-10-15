@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SubtitleSessionControls } from "./SubtitleSessionControls";
 import { Icon } from "../../components/Icon";
 import { Switch } from "../../components/Switch";
@@ -29,7 +29,8 @@ import { SettingsQuitFooter } from "./SettingsQuitFooter";
 import { SettingsHelp } from "./SettingsHelp";
 import { SettingsConfirmation } from "./DestructiveConfirmation";
 import { SettingsInitializationStatus } from "./SettingsInitializationStatus";
-import { AudioInputSettings } from "./AudioInputSettings";
+import { VoiceSettings } from "./VoiceSettings";
+import { settingsPageCopy } from "./SettingsPageCopy";
 import { SettingsToastRegion } from "./SettingsToast";
 import { useSettingsToast } from "./useSettingsToast";
 import "./settings.css";
@@ -38,11 +39,12 @@ const DevelopmentDebugger = __MIMI_DEVELOPMENT_BUILD__
   ? lazy(() => import("./DevelopmentDebugger").then(module => ({ default: module.DevelopmentDebugger })))
   : null;
 
-type SettingsCategory = "subtitles" | "service" | "general" | "export" | "diagnostics" | "guide";
+type SettingsCategory = "subtitles" | "voice" | "service" | "general" | "export" | "diagnostics" | "guide";
 
 const CATEGORY_SECTION_IDS: Record<SettingsCategory, string> = {
   subtitles: "subtitle-settings",
   service: "service-profiles",
+  voice: "voice-settings",
   general: "application-settings",
   export: "session-export",
   diagnostics: "diagnostics",
@@ -103,18 +105,15 @@ export function SettingsView() {
   const categories: readonly {
     id: SettingsCategory;
     label: string;
-    icon: "captions-bubble" | "languages" | "gear" | "download";
+    icon: "captions-bubble" | "languages" | "layers" | "gear" | "download";
   }[] = [
     {
       id: "subtitles",
       label: I18N.settings.subtitleTitle,
       icon: "captions-bubble",
     },
-    {
-      id: "service",
-      label: I18N.settings.serviceProfilesTitle,
-      icon: "languages",
-    },
+    { id: "voice", label: settingsPageCopy().voice, icon: "languages" },
+    { id: "service", label: settingsPageCopy().models, icon: "layers" },
     { id: "export", label: I18N.settings.sessionExportTitle, icon: "download" },
     {
       id: "general",
@@ -125,7 +124,8 @@ export function SettingsView() {
 
   const pageDescriptions: Record<SettingsCategory, string> = {
     subtitles: I18N.settings.subtitlePageDescription,
-    service: I18N.settings.servicePageDescription,
+    service: settingsPageCopy().modelsHelp,
+    voice: settingsPageCopy().voiceHelp,
     general: I18N.settings.generalPageDescription,
     export: I18N.settings.exportPageDescription,
     diagnostics: `${I18N.settings.diagnosticsPageDescription}\n${I18N.settings.diagnosticsHelp}`,
@@ -140,6 +140,10 @@ export function SettingsView() {
     window.history.replaceState(null, "", `#${CATEGORY_SECTION_IDS[category]}`);
   }, []);
 
+  useLayoutEffect(() => {
+    if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+  }, [activeCategory]);
+
   useEffect(() => {
     if (diagnosticNavigationFocus.current === null) return;
     document.getElementById(diagnosticNavigationFocus.current)?.focus();
@@ -147,7 +151,7 @@ export function SettingsView() {
   }, [activeCategory]);
 
   const navigateToSettings = useCallback((target: SettingsNavigationTarget = "service") => {
-    const category = target === "export" ? "export" : "service";
+    const category = target === "export" ? "export" : target === "voice" ? "voice" : "service";
     selectCategory(category);
     if (target === "activeProfile") {
       profileEditorSequence.current += 1;
@@ -199,7 +203,7 @@ export function SettingsView() {
       <aside className="settings-sidebar">
         <div className="settings-sidebar-scroll">
           <div className="settings-brand">
-            <span className="settings-brand__name">mimi</span>
+            <span className="settings-brand__name">Mimi</span>
             <span className="settings-brand__label">{I18N.settings.windowTitle}</span>
           </div>
           <nav
@@ -437,8 +441,11 @@ export function SettingsView() {
               </div>
             )}
 
+            {activeCategory === "voice" && <div id="voice-settings-panel" className="settings-category-panel">
+              {!initializationReady ? <SettingsInitializationStatus status={initializationStatus} error={initializationError} onRetry={() => { void initialize(); }} /> : <VoiceSettings onOpenModels={() => selectCategory("service")} onOpenAppleResources={() => navigateToSettings("appleSpeechResources")} />}
+            </div>}
             <div id="service-profiles-panel" className={`settings-category-panel${activeCategory !== "service" ? " is-inactive" : ""}`}>
-                <ServiceProfiles settings={settings} appleResourcesRequest={appleResourcesRequest} profileEditorRequest={profileEditorRequest} sessionIsActive={sessionIsActive} sessionIsPaused={sessionIsPaused} sessionStatusKind={sessionStatusKind} visible={activeCategory === "service"} overview={<AudioInputSettings />} />
+                <ServiceProfiles settings={settings} appleResourcesRequest={appleResourcesRequest} profileEditorRequest={profileEditorRequest} sessionIsActive={sessionIsActive} sessionIsPaused={sessionIsPaused} sessionStatusKind={sessionStatusKind} visible={activeCategory === "service"} />
               </div>
 
             <div id="diagnostics-panel" className={`settings-category-panel${activeCategory !== "diagnostics" ? " is-inactive" : ""}`}>
@@ -579,8 +586,10 @@ function settingsCategoryFromHash(hash: string): SettingsCategory | null {
   switch (hash.replace(/^#/, "")) {
     case CATEGORY_SECTION_IDS.subtitles:
       return "subtitles";
-    case "network-proxy":
     case "translation-languages":
+    case CATEGORY_SECTION_IDS.voice:
+      return "voice";
+    case "network-proxy":
     case CATEGORY_SECTION_IDS.service:
       return "service";
     case CATEGORY_SECTION_IDS.general:

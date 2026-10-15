@@ -2,15 +2,43 @@
 
 [返回 README](../README.md) · [English](provider-setup.md) · [使用与常见问题](usage.zh-CN.md)
 
-这份指南说明各项服务去哪里开通、凭证从哪里拿，以及在 Mimi 里填写什么。只需配置你要使用的服务，不必全部开通。首次使用可选择 README 推荐的火山引擎、阿里云或 Google Gemini。
+这份指南帮你选服务、拿到凭证并完成配置。只需开通你要用的一家。
 
-阿里 LiveTranslate 配置核对日期：**2026-10-13**；其他服务说明最后核对日期：**2026-10-06**。下文以当前桌面版为主，Android 差异单独注明。控制台菜单、模型开放范围、试用额度和计费规则可能变化，请以对应官方文档和自己账号的状态为准。
+<a id="choose"></a>
+
+## 怎么选
+
+| 你想怎么用 | 对应选择 |
+| --- | --- |
+| 用一家服务完成识别和翻译 | [火山引擎](#volcano-engine)、[Gemini](#google-gemini)、[腾讯云](#tencent-cloud)、[百度](#baidu-translate)、[OpenAI](#openai-realtime)；已有 Azure 部署可用 [Azure OpenAI](#azure-openai) |
+| 用阿里云同声传译 | [同声传译](#alibaba-livetranslate)由同一个服务输出原文和译文；当前开发版的桌面与安卓均支持 |
+| 需要搭配 DeepL 等文字翻译服务 | [阿里云的「ASR + MT」](#alibaba-cloud)可单独更换翻译服务 |
+| 在 Mac 本地处理 | [Apple Speech](#apple-speech)识别人声，[Apple 翻译](#apple-translation)翻译文字；需 Apple 芯片、macOS 26+ 和对应语言包 |
+| 已有自己的识别接口 | [自定义识别](#custom-recognition)，文字翻译另选；必须支持相应的实时语音协议 |
+| 使用 xAI 账号 | [xAI Grok](#xai-grok)按讲话停顿分段翻译 |
+
+语言范围和费用各不相同，按需要的语言、已有账号和预算选择。DeepL、Index-Translate 等[文字翻译服务](#text-translation)只处理文字，不能单独听声音。
+
+阿里 LiveTranslate 配置核对日期：**2026-10-13**；其他服务说明最后核对日期：**2026-10-06**。下文以当前源码为准；旧版「语音与翻译」对应现在的「模型与服务」，实验功能可能尚未发布。Android 差异单独注明。控制台菜单、模型开放范围、试用额度和计费规则可能变化，请以对应官方文档和自己账号的状态为准。
+
+<a id="setup"></a>
+
+## 在 Mimi 中完成配置
+
+1. 停止字幕，在桌面的「**设置 → 模型与服务**」或安卓的「**服务**」中添加配置。首次使用直接选择服务；已有配置时点击「添加配置」。
+2. 按下文获取凭证，在对应字段分别填写并保存。凭证不需要拼成 JSON，也不要把整段示例代码粘进去。
+3. 选择识别语言和翻译语言，运行配置旁的连接检查。使用独立文字翻译时，分别检查识别与翻译。
+4. 播放一小段包含人声的内容，再开启「实时字幕」确认实际出字。连接检查通过只说明该次检查成功，不代表所有语言或长时间使用都已验证。
+
+云端识别会接收所选音源的音频，远程文字翻译会接收识别文字。两路音源同时运行会分别产生服务用量。**Mimi 免费不等于服务 API 免费**：开始前查看服务是否开通、可用额度和付费方式；连接检查也可能产生少量 API 用量。不要在 Issue、日志或截图中公开真实凭证。
+
+<a id="services"></a>
 
 ## 先找到你的服务
 
 | Mimi 中的服务 | 开通 / 管理入口 | 需要准备 |
 | --- | --- | --- |
-| [Alibaba Cloud / 阿里云](#alibaba-cloud) | [北京 API Key](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) | 北京地域的百炼 API Key；[LiveTranslate 同声](#alibaba-livetranslate)另需对应业务空间 ID |
+| [Alibaba Cloud / 阿里云](#alibaba-cloud) | [北京 API Key](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) | 北京地域的百炼 API Key；[同声传译](#alibaba-livetranslate)另需对应业务空间 ID |
 | [Volcano Engine / 火山引擎](#volcano-engine) | [豆包语音 API Key 管理](https://console.volcengine.com/speech/new/setting/apikeys?projectName=default) | 已开通同声传译 2.0 的同一项目内的 API Key |
 | [Google Gemini](#google-gemini) | [Google AI Studio](https://aistudio.google.com/api-keys) | 可调用 Gemini Live 翻译模型的 API Key |
 | [Tencent Cloud / 腾讯云](#tencent-cloud) | [ASR 控制台](https://console.cloud.tencent.com/asr) | AppID、SecretID、SecretKey |
@@ -19,99 +47,43 @@
 | [Azure OpenAI](#azure-openai) | [Azure Portal](https://portal.azure.com/) / [Microsoft Foundry](https://ai.azure.com/) | 资源端点、翻译部署名、转写部署名、API Key |
 | [xAI Grok](#xai-grok) | [xAI Console](https://console.x.ai/) | 所选团队的 xAI API Key |
 | [Apple Speech](#apple-speech) | 在 Mimi 内选择语言并下载 | 符合条件的 Mac；识别无需 Key |
-| [自定义识别（阿里云兼容）](#custom-recognition) | 你使用的 DashScope 兼容服务 | 完整 WebSocket URL、识别模型、API Key |
+| [自定义识别（DashScope 协议）](#custom-recognition) | 你使用的 DashScope 兼容服务 | 完整 WebSocket URL、识别模型、API Key |
 | [自定义识别（OpenAI 实时兼容）](#custom-recognition) | 你使用的 Realtime 兼容服务 | 完整 WebSocket URL、识别模型、API Key |
 
 只想配置文字翻译？跳到 [Apple 翻译](#apple-translation)、[DeepL](#deepl)、[DeepLX](#deeplx)、[ChatMock](#chatmock)、[OpenAI 兼容接口 / Index-Translate](#openai-compatible)，或[仅显示原文](#original-only)。想确认具体调用哪个模型，见[当前模型与调用方式](#current-models)。
 
-<a id="current-models"></a>
-
-## 当前模型与调用方式
-
-下表列出桌面端的默认和可选调用方式。模型 ID 用于确认权限和理解用量；内置配置会自动选用，只有 Azure 部署和自定义服务需要自己填写名称。服务商可更新同名模型，模型 ID 本身不能保证识别质量或某个语言的可用性。
-
-| 桌面服务 | 识别 / 原文与翻译所用模型或接口 | 在 Mimi 中如何选择 |
-| --- | --- | --- |
-| Alibaba Cloud | 识别：`qwen-audio-3.0-asr-flash-streaming`；默认文字翻译：`qwen-mt-lite` | 内置固定；可单独更换文字翻译服务 |
-| Alibaba Cloud — 可选 LiveTranslate 同声 | `qwen3.8-livetranslate-flash-realtime`；原文和译文来自同一实时会话 | 在「识别与翻译」中选择「LiveTranslate（同声传译）」；见[配置步骤](#alibaba-livetranslate) |
-| Google Gemini | `gemini-3.5-live-translate-preview`；原文和译文来自同一 Live 会话，没有另填 ASR 模型 | 内置固定 |
-| Volcano Engine | 豆包同声传译 2.0，资源 ID `volc.service_type.10053`；`/api/v4/ast/v2/translate` | 内置服务接口；请求未指定公开模型 ID |
-| Tencent Cloud | ASR 实时语音翻译；翻译模型 `hunyuan-translation-lite` | 内置固定；识别由该服务提供，未单独指定 ASR 模型 ID |
-| Baidu Translate | 实时语音翻译 `/ws/realtime_speech_trans` | 内置服务接口；请求未指定公开模型 ID |
-| OpenAI Realtime | 翻译：`gpt-realtime-translate`；原文转写：`gpt-realtime-whisper` | 内置固定，使用专用 Realtime 翻译接口 |
-| Azure OpenAI | 翻译：用户部署的 `gpt-realtime-translate`；原文：用户指定的兼容实时转写部署 | 填写两个实际部署名；Mimi 不替用户选择转写模型 |
-| xAI Grok | Voice：`grok-voice-latest`；原文转写：`grok-transcribe` | 内置固定；回合式翻译 |
-| Apple Speech | macOS `SpeechTranscriber` 与已下载语言包；文字翻译单独配置 | 选择本机语言包；无云端模型 ID |
-| 自定义 DashScope / OpenAI Realtime 识别 | 识别使用用户填入的模型 ID；文字翻译单独配置 | 端点、模型与识别 Key 均由用户填写 |
-
-桌面阿里当前默认使用 `qwen-mt-lite`，不会因识别语言不同自动切换到 `qwen-mt-flash` 或 `qwen-mt-plus`。默认识别经 WebSocket 持续送入音频，远程独立文字翻译通过 HTTP 发送识别文字，Apple 翻译则在本地执行；更换文字翻译不会更换识别模型。
-
-模型与路由依据：[共享服务选择](../shared/mimi-runtime/src/clients/translation_client.rs) · [当前翻译模式](../shared/mimi-runtime/src/core/configuration.rs) · [各家协议实现](../shared/mimi-runtime/src/core/protocols/) · [Qwen-MT 默认模型](../shared/mimi-runtime/src/core/protocols/qwen_mt.rs)
-
-### Android 的阿里云链路
-
-| Android 使用方式 | 当前默认模型与调用方式 |
-| --- | --- |
-| 内置识别 + 翻译 | 共享 Audio3 识别（`qwen-audio-3.0-asr-flash-streaming`）＋Qwen-MT，默认 Lite |
-| 独立文字翻译 / 不翻译 | 使用同一 Audio3 识别；启用翻译时调用所选文字服务 |
-
-Android 正式会话与桌面使用同一个共享 Rust 服务工厂。旧 Kotlin 传输类保留用于离线回归，其中的模型不是当前正式链路的默认模型。保存的高级设置不会覆盖内置链路不支持的端点或模型。实现见[共享服务选择](../shared/mimi-runtime/src/clients/translation_client.rs)和[平台差异（英文）](development/platform-parity.md)。
-
-### 独立文字翻译用什么模型
-
-| 文字翻译服务 | Mimi 实际选择 |
-| --- | --- |
-| Alibaba Cloud（桌面与 Android 默认） | `qwen-mt-lite` |
-| Apple 翻译 | macOS Translation 框架与已下载的系统资源；无云端模型 ID |
-| DeepL | 官方文本翻译 API；Mimi 不指定 `model_type` 或模型 ID |
-| DeepLX | 配置地址提供的 `/translate` 服务；Mimi 不选择其上游模型 |
-| ChatMock / OpenAI 兼容接口 | 使用用户填写的模型 ID，没有统一内置默认模型 |
-| Index-Translate 示例 | `Index-Translate-35B-A3B`，通过 OpenAI 兼容接口配置 |
-| 跳过翻译 / 不翻译 | 不调用文字翻译模型 |
-
-请求依据：[DeepL](../src-tauri/src/core/protocols/deepl.rs) · [DeepLX](../src-tauri/src/core/protocols/deeplx.rs) · [OpenAI 兼容文字翻译](../src-tauri/src/core/protocols/openai_compatible.rs) · [Index 官方示例](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py)
-
-## 在 Mimi 中完成配置
-
-1. 停止字幕，打开「**设置 → 语音与翻译**」，添加对应服务的配置。
-2. 按下文获取凭证，在对应字段分别填写并保存。凭证不需要拼成 JSON，也不要把整段示例代码粘进去。
-3. 选择识别语言和翻译语言，运行配置旁的连接检查。使用独立文字翻译时，分别检查识别与翻译。
-4. 播放一小段包含人声的内容，再开启「实时字幕」确认实际出字。连接检查通过只说明该次检查成功，不代表所有语言或长时间使用都已验证。
-
-云端识别会接收所选音源的音频，远程文字翻译会接收识别文字。两路音源同时运行会分别产生服务用量。**Mimi 免费不等于服务 API 免费**：开始前查看服务是否开通、可用额度和付费方式；连接检查也可能产生少量 API 用量。不要在 Issue、日志或截图中公开真实凭证。
-
 <a id="alibaba-cloud"></a>
 
-## Alibaba Cloud（阿里云百炼）
+## 阿里云（百炼）
+
+阿里云有两种模式：**同声传译**由同一个服务输出原文和译文；**先识别，再翻译**可搭配其他文字翻译服务。当前开发版新建配置默认选同声传译，已有配置保留原模式。
 
 入口：[北京地域 API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key) · [北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace) · [官方开通说明](https://help.aliyun.com/zh/model-studio/faq-about-alibaba-cloud-model-studio) · [获取 API Key](https://help.aliyun.com/zh/model-studio/get-api-key)
 
 1. 登录阿里云，按控制台要求完成实名认证，在百炼中选择**华北 2（北京）**，按提示开通该地域的模型服务。
 2. 在北京地域进入 API Key 管理，使用要调用的业务空间下已有的可用 Key；不需要为每个模型单独创建 Key。
 3. 如果业务空间或 Key 限制了可调用模型，确认下表中的实际模型已获授权。
-4. 在 Mimi 添加 **Alibaba Cloud**，将 Key 填入「语音识别 → API Key」并保存。默认文字翻译同样使用该百炼凭证。
+4. 在 Mimi 添加 **阿里云**。使用同声模式时，按[下方步骤](#alibaba-livetranslate)填写业务空间 ID 和 Key；选择「ASR + MT」时，在「语音识别 → API Key」填入 Key。此模式的内置文字翻译使用同一百炼凭证。
 
 | 使用方式 | 当前需要的模型权限 |
 | --- | --- |
-| 桌面端默认识别 + 翻译 | `qwen-audio-3.0-asr-flash-streaming` 和 `qwen-mt-lite` |
-| 桌面端使用独立文字翻译或跳过翻译 | 识别仍使用 `qwen-audio-3.0-asr-flash-streaming`；翻译按所选服务配置 |
-| 桌面端可选 LiveTranslate 同声 | 所选北京业务空间中的 `qwen3.8-livetranslate-flash-realtime` |
-| Android 默认识别 + 翻译 | `qwen-audio-3.0-asr-flash-streaming` 和 `qwen-mt-lite`（与桌面共享默认链路） |
-| Android 使用独立文字翻译或不翻译 | `qwen-audio-3.0-asr-flash-streaming`；翻译按所选服务配置 |
+| ASR + MT | `qwen-audio-3.0-asr-flash-streaming` 和 `qwen-mt-lite` |
+| ASR + MT 使用独立文字翻译或跳过翻译 | 识别仍使用 `qwen-audio-3.0-asr-flash-streaming`；翻译按所选服务配置 |
+| 同声传译 | 所选北京业务空间中的 `qwen3.8-livetranslate-flash-realtime` |
 
-这里需要的是**百炼 / DashScope API Key**，不要填阿里云 AccessKey ID / AccessKey Secret。默认 ASR + MT 使用 `dashscope.aliyuncs.com`，可选 LiveTranslate 使用北京业务空间专属域名；两者均没有地域或端点输入框，其他地域的 Key 不能直接混用。地域对应关系见[官方地域说明](https://help.aliyun.com/zh/model-studio/regions)，平台差异见[平台差异（英文）](development/platform-parity.md)。
+这里需要的是**百炼 / DashScope API Key**，不要填阿里云 AccessKey ID / AccessKey Secret。「ASR + MT」使用 `dashscope.aliyuncs.com`，LiveTranslate 使用北京业务空间专属域名；两者均没有地域或端点输入框，其他地域的 Key 不能直接混用。地域对应关系见[官方地域说明](https://help.aliyun.com/zh/model-studio/regions)，平台差异见[平台差异（英文）](development/platform-parity.md)。
 
-计费：两个平台的默认链路均包含语音识别和文字翻译两部分。更换文字翻译服务后，云端识别仍会产生用量，是否扣费取决于识别模型的试用余量和计费状态。查看[百炼模型计费](https://help.aliyun.com/zh/model-studio/model-pricing)及所用模型的试用状态。
+计费：语音识别和翻译都可能产生费用。更换文字翻译服务后，云端识别仍会产生用量，是否扣费取决于识别模型的试用余量和计费状态。查看[百炼模型计费](https://help.aliyun.com/zh/model-studio/model-pricing)及所用模型的试用状态。
 
 <a id="alibaba-livetranslate"></a>
 
-### 在桌面端配置 LiveTranslate 同声传译
+### 配置同声传译（桌面与安卓）
 
-使用阿里同声字幕时，优先试「**LiveTranslate（同声传译）**」。这个实验模式使用 `qwen3.8-livetranslate-flash-realtime`，在同一音频会话中返回原文和译文，只显示文字，不播放译音。目前支持**北京地域、自动识别源语言、中文或英文翻译目标**。已有 ASR + MT 配置保持不变，Android 暂无选择入口。
+当前源码中的「**同声传译**」在桌面和安卓中使用共享实现，使用阿里云 LiveTranslate 模型 `qwen3.8-livetranslate-flash-realtime`，在同一音频会话中返回原文和译文，只显示文字，不播放译音。目前支持**北京地域、自动识别源语言、60 种文字翻译目标及只显示原文**。已有「ASR + MT」配置保持不变。
 
-1. 打开[北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace)和 [API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key)，也可以在 Mimi 的阿里设置中点击「**获取业务空间 ID**」「**获取 API Key**」。复制现有业务空间 ID 和同一空间的 Key。若看到 `llm-xxx.cn-beijing.maas.aliyuncs.com` 这样的 API Host，ID 只填 `llm-xxx`；已保存的匹配 Key 可以复用。
-2. 停止字幕，在「**设置 → 语音与翻译 → Alibaba Cloud → 识别与翻译**」选择「**LiveTranslate（同声传译）**」，填入业务空间 ID、API Key，保存并选用该配置。
-3. 识别语言选「**自动识别**」，翻译选「**中文或英文**」，播放一小段非敏感样本，再开启「**实时字幕**」，试完后停止。「现有 ASR + MT」仍可选，切回后会恢复已保存的独立文字翻译服务。
+1. 打开[北京业务空间管理](https://bailian.console.aliyun.com/cn-beijing/settings/workspace)和 [API Key 管理](https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key)，桌面也可以在阿里设置中点击「**获取业务空间 ID**」「**获取 API Key**」。复制现有业务空间 ID 和同一空间的 Key。若看到 `llm-xxx.cn-beijing.maas.aliyuncs.com` 这样的 API Host，ID 只填 `llm-xxx`；已保存的匹配 Key 可以复用。
+2. 停止字幕，桌面打开「**设置 → 模型与服务**」，安卓打开「**服务**」，添加或编辑阿里云配置，选择「**同声传译**」，填入业务空间 ID、API Key，保存并选用该配置。
+3. 识别语言选「**自动识别**」，在界面可选项中选择所需翻译语言，播放一小段非敏感样本，再开启「**实时字幕**」，试完后停止。「ASR + MT」仍可选，切回后会恢复已保存的独立文字翻译服务。
 
 若提示无权限，检查业务空间中该模型的「模型调用」权限，以及 Key 的自定义模型范围和 IP 限制。**API 调用可能收费**，开始前查看试用余量、有效期和付费状态。「原文」只隐藏译文，仍可能产生翻译用量。连接检查不代表字幕质量或长会话稳定性已经验证。
 
@@ -249,7 +221,7 @@ Apple Speech 只在**Apple 芯片、macOS 26 或更新版本、系统识别引�
 
 这两项供已经有兼容语音服务的用户使用，不对应另一个统一的开通网站。
 
-1. 根据服务的官方协议，添加「**自定义识别（阿里云兼容）**」（DashScope 协议）或「**自定义识别（OpenAI 实时兼容）**」。
+1. 根据服务的官方协议，添加「**自定义识别（DashScope 协议）**」或「**自定义识别（OpenAI 实时兼容）**」。
 2. 从服务提供方获取**完整 WebSocket URL、已部署的识别模型 ID、API Key**。这三个字段在当前 Mimi 中都需要填写；文字翻译可免 Key 的规则不适用于此处。
 3. 远程地址使用 `wss://`；只有本机回环地址允许 `ws://`。地址不附带用户名、密码、查询参数或片段。OpenAI 转写所需连接参数由 Mimi 添加。
 4. 先开启「跳过翻译」，检查识别并试听一小段；确认能识别后，再配置独立文字翻译。
@@ -260,9 +232,9 @@ Apple Speech 只在**Apple 芯片、macOS 26 或更新版本、系统识别引�
 
 ## 独立文字翻译
 
-桌面端的 **Alibaba Cloud、Apple Speech、两种自定义识别**支持独立文字翻译。其他内置语音服务使用各自的翻译链路。Android 目前只在 Alibaba Cloud 配置中提供独立文字翻译。
+桌面端的 **阿里云的「ASR + MT」、Apple Speech、两种自定义识别**支持独立文字翻译。其他内置语音服务使用各自的翻译链路。Android 目前只在阿里云配置中提供独立文字翻译。
 
-先在「语音识别」部分完成配置，再在「文字翻译」选择服务。选择 DeepL、DeepLX、ChatMock 或 OpenAI 兼容接口时，Mimi 不会拿识别 Key 代替翻译凭证。默认 Alibaba Cloud 翻译已在[阿里云章节](#alibaba-cloud)说明。
+先在「语音识别」部分完成配置，再在「文字翻译」选择服务。选择 DeepL、DeepLX、ChatMock 或 OpenAI 兼容接口时，Mimi 不会拿识别 Key 代替翻译凭证。默认阿里云翻译已在[阿里云章节](#alibaba-cloud)说明。
 
 <a id="apple-translation"></a>
 
@@ -321,13 +293,15 @@ Apple Speech 只在**Apple 芯片、macOS 26 或更新版本、系统识别引�
 
 该接口需要支持非流式 Chat Completions，并返回 `choices[0].message.content`。服务地址可填 `/v1` 等 API 基础路径，也可填完整 `/chat/completions` 路径；Mimi 只补 `/chat/completions`，**不会自动补 `/v1`**。例如：`https://example.com/v1` 会请求 `https://example.com/v1/chat/completions`。远程服务使用 HTTPS，本机回环地址可使用 HTTP；地址不接受用户名、密码、查询参数或片段。
 
-截至核对日期，B 站 [Index-Translate 的官方示例](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py)提供以下免费、免认证的公开文字翻译接口：
+截至 2026-10-13，B 站 [Index-Translate 的官方示例](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py)提供以下免费、免认证的公开文字翻译接口：
 
 | Mimi 字段 | 填写内容 |
 | --- | --- |
 | 服务地址 | `https://index-translate.bilibili.com/v1` |
 | 模型名称 | `Index-Translate-35B-A3B` |
 | API Key | 留空 |
+
+保存后，运行文字翻译连接检查。
 
 如果同一地址以前保存过 Key，请使用「**移除翻译密钥**」再保存；单纯留空输入框可能保留旧 Key。免费接口的持续可用性以上游为准。Index-Translate 只翻译文字，云端语音识别仍可能产生费用。
 
@@ -345,6 +319,8 @@ Android 的八个内置云语音服务使用上文对应凭证，但没有 Apple
 
 手机里的 `127.0.0.1` 指手机自己。连接电脑上的 ChatMock / DeepLX 时，通常使用电脑的 HTTPS 服务地址；Android 的本机 HTTP 需要主动允许。模拟器和 USB 开发连接方法见 [Android 指南（英文）](../android/README.md#independent-text-translation)。
 
+<a id="troubleshooting"></a>
+
 ## 配好后还是不能用？
 
 | 情况 | 先检查 |
@@ -357,3 +333,54 @@ Android 的八个内置云语音服务使用上文对应凭证，但没有 Apple
 | 某一种语言失败 | 对照[语音与语言设置](speech-language-setup.md#中文)确认具体模型与 API 的支持范围；界面可选不等于账号已获权限 |
 
 仍有问题时，请提供 Mimi 版本、系统、服务名称、语言组合和脱敏错误信息，到 [Issues](https://github.com/yuxino/mimi/issues) 反馈。音频权限与安装问题见[使用指南](usage.zh-CN.md)。
+
+<a id="current-models"></a>
+
+## 当前模型与调用方式
+
+下表列出桌面端的默认和可选调用方式。模型 ID 用于确认权限和理解用量；内置配置会自动选用，只有 Azure 部署和自定义服务需要自己填写名称。服务商可更新同名模型，模型 ID 本身不能保证识别质量或某个语言的可用性。
+
+| 桌面服务 | 识别 / 原文与翻译所用模型或接口 | 在 Mimi 中如何选择 |
+| --- | --- | --- |
+| 阿里云 — 先识别，再翻译 | 识别：`qwen-audio-3.0-asr-flash-streaming`；默认文字翻译：`qwen-mt-lite` | 内置固定；可单独更换文字翻译服务 |
+| 阿里云 — LiveTranslate 同声 | `qwen3.8-livetranslate-flash-realtime`；原文和译文来自同一实时会话 | 在「识别与翻译」中选择「同声传译」；见[配置步骤](#alibaba-livetranslate) |
+| Google Gemini | `gemini-3.5-live-translate-preview`；原文和译文来自同一 Live 会话，没有另填 ASR 模型 | 内置固定 |
+| Volcano Engine | 豆包同声传译 2.0，资源 ID `volc.service_type.10053`；`/api/v4/ast/v2/translate` | 内置服务接口；请求未指定公开模型 ID |
+| Tencent Cloud | ASR 实时语音翻译；翻译模型 `hunyuan-translation-lite` | 内置固定；识别由该服务提供，未单独指定 ASR 模型 ID |
+| Baidu Translate | 实时语音翻译 `/ws/realtime_speech_trans` | 内置服务接口；请求未指定公开模型 ID |
+| OpenAI Realtime | 翻译：`gpt-realtime-translate`；原文转写：`gpt-realtime-whisper` | 内置固定，使用专用 Realtime 翻译接口 |
+| Azure OpenAI | 翻译：用户部署的 `gpt-realtime-translate`；原文：用户指定的兼容实时转写部署 | 填写两个实际部署名；Mimi 不替用户选择转写模型 |
+| xAI Grok | Voice：`grok-voice-latest`；原文转写：`grok-transcribe` | 内置固定；回合式翻译 |
+| Apple Speech | macOS `SpeechTranscriber` 与已下载语言包；文字翻译单独配置 | 选择本机语言包；无云端模型 ID |
+| 自定义 DashScope / OpenAI Realtime 识别 | 识别使用用户填入的模型 ID；文字翻译单独配置 | 端点、模型与识别 Key 均由用户填写 |
+
+阿里云「ASR + MT」的内置文字翻译默认使用 `qwen-mt-lite`，不会因识别语言不同自动切换到 `qwen-mt-flash` 或 `qwen-mt-plus`。该模式的识别经 WebSocket 持续送入音频，远程独立文字翻译通过 HTTP 发送识别文字，Apple 翻译则在本地执行；更换文字翻译不会更换识别模型。
+
+模型与路由依据：[桌面新建配置与旧配置](../src-tauri/src/settings_store.rs) · [共享服务选择](../shared/mimi-runtime/src/clients/translation_client.rs) · [当前翻译模式](../shared/mimi-runtime/src/core/configuration.rs) · [各家协议实现](../shared/mimi-runtime/src/core/protocols/) · [Qwen-MT 默认模型](../shared/mimi-runtime/src/core/protocols/qwen_mt.rs)
+
+### Android 的阿里云链路
+
+| Android 使用方式 | 当前默认模型与调用方式 |
+| --- | --- |
+| 内置识别 + 翻译 | 共享 Audio3 识别（`qwen-audio-3.0-asr-flash-streaming`）＋Qwen-MT，默认 Lite |
+| 独立文字翻译 / 不翻译 | 使用同一 Audio3 识别；启用翻译时调用所选文字服务 |
+
+Android 正式会话与桌面使用同一个共享 Rust 服务工厂。旧 Kotlin 传输类保留用于离线回归，其中的模型不是当前正式链路的默认模型。保存的高级设置不会覆盖内置链路不支持的端点或模型。实现见[共享服务选择](../shared/mimi-runtime/src/clients/translation_client.rs)和[平台差异（英文）](development/platform-parity.md)。
+
+### 独立文字翻译用什么模型
+
+| 文字翻译服务 | Mimi 实际选择 |
+| --- | --- |
+| 阿里云分步模式（桌面 / Android） | `qwen-mt-lite` |
+| Apple 翻译 | macOS Translation 框架与已下载的系统资源；无云端模型 ID |
+| DeepL | 官方文本翻译 API；Mimi 不指定 `model_type` 或模型 ID |
+| DeepLX | 配置地址提供的 `/translate` 服务；Mimi 不选择其上游模型 |
+| ChatMock / OpenAI 兼容接口 | 使用用户填写的模型 ID，没有统一内置默认模型 |
+| Index-Translate 示例 | `Index-Translate-35B-A3B`，通过 OpenAI 兼容接口配置 |
+| 跳过翻译 / 不翻译 | 不调用文字翻译模型 |
+
+请求依据：[DeepL](../src-tauri/src/core/protocols/deepl.rs) · [DeepLX](../src-tauri/src/core/protocols/deeplx.rs) · [OpenAI 兼容文字翻译](../src-tauri/src/core/protocols/openai_compatible.rs) · [Index 官方示例](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py)
+
+配置完成后，按[启动步骤](#setup)开启字幕。录音权限、字幕样式和保存记录见[使用指南](usage.zh-CN.md)。
+
+[返回服务列表](#services) · [返回首页](../README.md)

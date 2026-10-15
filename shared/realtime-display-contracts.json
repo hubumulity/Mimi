@@ -750,6 +750,397 @@
           }
         }
       ]
+    },
+    {
+      "id": "volcano-proven-order-keeps-newer-source-through-first-late-end",
+      "historyLimit": 6,
+      "steps": [
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:B",
+              "source_order": 300
+            }
+          },
+          "expected": {
+            "source": "",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:B",
+              "role": "source",
+              "text": "Synthetic B",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:A",
+              "source_order": 400
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:A",
+              "source_order": 100
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:A",
+              "role": "source",
+              "text": "Synthetic A.",
+              "is_final": true
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "identified_final_pair",
+              "utterance_id": "volcano:A",
+              "source": "Synthetic A.",
+              "translation": "合成 A。"
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 1
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:B",
+              "role": "translation",
+              "text": "合成 B",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "合成 B",
+            "confirmed": false,
+            "historyCount": 1
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "identified_final_pair",
+              "utterance_id": "volcano:B",
+              "source": "Synthetic B.",
+              "translation": "合成 B。"
+            }
+          },
+          "expected": {
+            "source": "Synthetic B.",
+            "translation": "合成 B。",
+            "confirmed": true,
+            "historyCount": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "volcano-empty-boundary-keeps-completed-owner-without-history",
+      "historyLimit": 0,
+      "steps": [
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:A",
+              "source_order": 100
+            }
+          },
+          "expected": {
+            "source": "",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:A",
+              "role": "source",
+              "text": "Synthetic A",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic A",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:B",
+              "source_order": 300
+            }
+          },
+          "expected": {
+            "source": "Synthetic A",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:A",
+              "role": "source",
+              "text": "Synthetic A.",
+              "is_final": true
+            }
+          },
+          "expected": {
+            "source": "Synthetic A.",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "identified_final_pair",
+              "utterance_id": "volcano:A",
+              "source": "Synthetic A.",
+              "translation": "合成 A。"
+            }
+          },
+          "expected": {
+            "source": "Synthetic A.",
+            "translation": "合成 A。",
+            "confirmed": true,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:C",
+              "source_order": 500
+            }
+          },
+          "expected": {
+            "source": "Synthetic A.",
+            "translation": "合成 A。",
+            "confirmed": true,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:B",
+              "role": "source",
+              "text": "Synthetic B",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:B",
+              "role": "translation",
+              "text": "合成 B",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic B",
+            "translation": "合成 B",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "identified_final_pair",
+              "utterance_id": "volcano:B",
+              "source": "Synthetic B.",
+              "translation": "合成 B。"
+            }
+          },
+          "expected": {
+            "source": "Synthetic B.",
+            "translation": "合成 B。",
+            "confirmed": true,
+            "historyCount": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "volcano-invalid-order-metadata-remains-restorable",
+      "historyLimit": 0,
+      "steps": [
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:zero",
+              "source_order": 0
+            }
+          },
+          "expected": {
+            "source": "",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:A",
+              "source_order": 100
+            }
+          },
+          "expected": {
+            "source": "",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "source_boundary",
+              "utterance_id": "volcano:collision",
+              "source_order": 100
+            }
+          },
+          "expected": {
+            "source": "",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "utterance_text",
+              "utterance_id": "volcano:A",
+              "role": "source",
+              "text": "Synthetic A",
+              "is_final": false
+            }
+          },
+          "expected": {
+            "source": "Synthetic A",
+            "translation": "",
+            "confirmed": false,
+            "historyCount": 0
+          }
+        },
+        {
+          "operation": {
+            "type": "apply",
+            "event": {
+              "type": "identified_final_pair",
+              "utterance_id": "volcano:A",
+              "source": "Synthetic A.",
+              "translation": "合成 A。"
+            }
+          },
+          "expected": {
+            "source": "Synthetic A.",
+            "translation": "合成 A。",
+            "confirmed": true,
+            "historyCount": 0
+          }
+        }
+      ]
     }
   ]
 }

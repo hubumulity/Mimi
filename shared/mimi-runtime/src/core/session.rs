@@ -163,7 +163,8 @@ impl SourceSessionController {
         if self.state.status == SessionStatus::Stopping
             && !matches!(
                 event,
-                LiveTranslateServerEvent::SubtitleFinalPair { .. }
+                LiveTranslateServerEvent::SubtitleSourceBoundary { .. }
+                    | LiveTranslateServerEvent::SubtitleFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. }
                     | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
                     | LiveTranslateServerEvent::UtteranceRegistered { .. }
@@ -173,6 +174,16 @@ impl SourceSessionController {
         }
 
         match event {
+            LiveTranslateServerEvent::SubtitleSourceBoundary {
+                utterance_id,
+                source_order,
+            } => {
+                self.subtitle_reducer
+                    .apply(crate::core::models::SubtitleEvent::SourceBoundary {
+                        utterance_id,
+                        source_order,
+                    });
+            }
             LiveTranslateServerEvent::SessionCreated => {}
             LiveTranslateServerEvent::SessionUpdated => self.did_connect(),
             LiveTranslateServerEvent::UtteranceRegistered { utterance_id } => {
@@ -281,6 +292,14 @@ impl SourceSessionController {
                 self.clear_preview_pending();
                 self.subtitle_reducer
                     .apply(crate::core::models::SubtitleEvent::ClearPreview);
+            }
+            LiveTranslateServerEvent::SubtitlePreviewWithdrawn {
+                source_utterance_id,
+            } => {
+                self.subtitle_reducer
+                    .apply(crate::core::models::SubtitleEvent::WithdrawPreview {
+                        source_utterance_id,
+                    });
             }
             LiveTranslateServerEvent::UtteranceText {
                 utterance_id,

@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="brand_description">Icône du personnage mimi</string>
+    <string name="brand_description">Icône du personnage Mimi</string>
     <string name="home_kicker">Sous-titres et traduction en direct</string>
     <string name="home_title">Sous-titres en direct</string>
     <string name="home_description">Affiche des sous-titres pour le son lu par les autres applications. Certaines applications bloquent la capture audio.</string>

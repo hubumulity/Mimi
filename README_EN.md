@@ -19,68 +19,36 @@
   </p>
 </div>
 
-<p align="center">Mimi is a live subtitle translation app for computer or microphone audio. Watch films, follow streams, or take lessons with subtitles floating over your screen.</p>
+![Mimi bilingual subtitle illustration with fictional dialogue](docs/assets/readme-preview.png)
 
-![Mimi's bilingual subtitle window over an original illustrated scene](docs/assets/readme-preview.png)
+Interface illustration with sample dialogue. [Watch subtitles and Immersive Mode (older UI)](docs/demos/README.md).
 
-## Features
+## Live subtitles and translation
 
-- Choose system audio, microphone, or both. System audio is the default; microphone capture requires explicit selection.
-- Translate audio from a selected app on macOS or Windows 11.
-- Show original text, translations, or both.
-- Adjust subtitle position, size, and color, or let mouse clicks pass through the window.
-- Save subtitles or audio locally and export TXT / WAV when needed. Saving and recording are off by default.
-- Supports macOS 13+ (Apple silicon and Intel) and Windows / Linux x86_64.
+- **Floating subtitles** for films, streams, and classes. Show both languages, translations only, or originals only.
+- **Choose your audio**: computer audio, microphone, or both. Select an app on macOS / Windows 11, or an individual playback stream on Linux.
+- **Adjust the display**: change position, font size, and color. Immersive Mode shows only text; click-through lets you use the app underneath.
+- **Save subtitles and audio**: on desktop, save subtitles as TXT or record selected audio as WAV. Both options are off until you enable them.
 
 ## Get started
 
-For your first setup, **we recommend Volcano Engine, Alibaba Cloud or Google Gemini**.
+[Download for desktop](https://github.com/yuxino/mimi/releases/latest) · [Android setup](android/README.md#start)
 
-For Google Gemini, use a stable network connection. Check your available quota, billing, and API keys in [Google AI Studio](https://aistudio.google.com/).
+Desktop supports macOS 13+ (Apple silicon and Intel), Windows x64, and Linux x86_64.
 
-For activation links, credential instructions, and the models Mimi currently uses, see the **[provider setup guide](docs/provider-setup.md)**.
+1. **Set up a service** in Settings → Models & Services. The [setup guide](docs/provider-setup.md#choose) explains how to choose a service and get its credentials.
+2. **Choose audio and languages** in Audio & Languages: select your audio source, spoken language, and translation language.
+3. **Start subtitles** on the Subtitles page. Turn on Live Subtitles, grant the requested permissions, and play your content.
 
-Alibaba simultaneous interpretation is optional on desktop; ASR + MT remains the default. See [LiveTranslate setup](docs/provider-setup.md#alibaba-livetranslate) for the Beijing workspace ID, API key, and settings steps.
+Mimi is free; cloud services may charge. Cloud recognition or translation sends audio or recognized text to the selected service. See the [setup guide](docs/provider-setup.md#apple-speech) for Apple local service requirements.
 
-1. Open Settings → Speech & Translation, add a configuration, enter the requested provider credentials, and save.
-2. Choose the recognition and translation languages.
-3. Play something and turn on Live Subtitles under Subtitles. On macOS 14.2+, capturing All Applications or a selected application supports System Audio Recording Only; existing screen grants are reused. Older macOS versions require Screen & System Audio Recording.
+## Need help?
 
-Cloud speech services require your own credentials and receive your audio; usage charges may apply. Apple Speech recognizes audio locally on supported Macs. Remote text translation sends recognized text to your chosen service; Apple Translation keeps text on the Mac.
-
-[Setup & help](docs/usage.md) · [Android](android/README.md) · [Report a bug](https://github.com/yuxino/mimi/issues) · [Contributing](.github/CONTRIBUTING.md)
-
-<a id="apple-local-recognition"></a>
-
-### Apple local recognition
-
-**Apple Speech** appears when the system supports it: Apple silicon, macOS 26 or later, and an available system transcriber. It needs no speech API key. Stop subtitles and choose the language under **Recognition Language**. If it is missing, click **Download and use**; Mimi downloads its Apple resources and selects that language when ready. For an already downloaded language, click **Set recognition language**, then start subtitles. No System Settings detour is needed. Automatic language detection is not offered. See [Apple Speech setup](docs/provider-setup.md#apple-speech).
-
-**Apple Translation** is a separate on-device text service on supported Apple silicon Macs running macOS 26 or later. Select it under **Text Translation**, save the configuration, and choose an explicit source and target language. Mimi shows whether the pair is ready; use **Download or enable languages** to open Apple’s setup confirmation. Translation models are separate from speech models. Existing models are reused; Apple downloads missing models when you confirm. Checks and subtitle sessions never request a download. No text API key or text proxy is needed.
-
-To show only the original text with Apple Speech, select **No translation (original only)**. You can also use a remote text translator such as [Index-Translate](#try-index-translate); that service receives recognized text.
-
-### Try Index-Translate
-
-Bilibili's [Index-Translate](https://github.com/bilibili/Index-Translate#inference) currently offers a free public translation API (as of October 5, 2026). It can provide text translation for Alibaba Cloud or Apple Speech recognition.
-
-In **Settings → Speech & Translation**, open an **Alibaba Cloud** or **Apple Speech** configuration and select **OpenAI-compatible API** under **Text translation**. Use the values from the [official example](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py#L40-L41):
-
-| Field | Value |
-| --- | --- |
-| Service address | `https://index-translate.bilibili.com/v1` |
-| Model name | `Index-Translate-35B-A3B` |
-| API Key | Leave empty; the public API currently requires no authentication. |
-
-Save, then run the connection check beside **Text translation**. If this address already has a saved key, remove it with **Remove translation key** and save again.
-
-Index-Translate handles text translation only. When using Alibaba Cloud, keep its speech-recognition credentials configured; recognition may still incur charges. Apple Speech recognition needs no key. Free API availability is subject to the upstream service.
-
-## FAQ
-
-**macOS keeps asking for recording permission even though it is enabled?** Quit Mimi, then remove and re-add only its entry in System Settings → Privacy & Security → Screen & System Audio Recording. Use `/Applications/mimi.app` for the release app or `/Applications/mimi-dev.app` for development, enable it, and reopen the same app. See [permission recovery](docs/usage.md#macos-permissions-after-an-update).
+The [usage guide](docs/usage.md) covers installation, permissions, subtitle display, and saved sessions. For missing subtitles or connection failures, start with [recognition errors](docs/usage.md#errors). If that does not help, [report an issue](https://github.com/yuxino/mimi/issues).
 
 ## Contributors
+
+Want to help improve Mimi? Start with the [contribution guide](.github/CONTRIBUTING.md).
 
 Thanks to everyone who writes code, reports issues, tries Mimi, or shares it (๑•̀ㅂ•́)و✧
 
@@ -88,7 +56,7 @@ Special thanks to [@yebuwudong](https://github.com/yebuwudong) for the [Android 
 
 Thanks also to [@Chtholly000](https://github.com/Chtholly000) for improving [Gemini's continuous captions and planned connection rotation](https://github.com/yuxino/Mimi/pull/176).
 
-Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [overlay controls not following the subtitle window on Wayland](https://github.com/yuxino/Mimi/pull/242).
+Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [Wayland overlay controls](https://github.com/yuxino/Mimi/pull/242) and adding [individual playback stream capture on Linux](https://github.com/yuxino/Mimi/pull/275).
 
 Thanks to [@wangmian0](https://github.com/wangmian0) for [disabling thinking mode in DeepSeek live subtitle translation](https://github.com/yuxino/Mimi/pull/270).
 

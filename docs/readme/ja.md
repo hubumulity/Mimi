@@ -19,68 +19,36 @@
   </p>
 </div>
 
-<p align="center">Mimi は、パソコンやマイクの音声をリアルタイムで翻訳する字幕アプリです。映画、ライブ配信、オンライン授業などの音声を、画面上に浮かぶ字幕で読めます。</p>
+![サンプルの会話を使った Mimi の二言語字幕イメージ](../assets/readme-preview.png)
 
-![オリジナルのイラストに重ねて表示した Mimi の二言語字幕ウィンドウ](../assets/readme-preview.png)
+サンプルの会話による画面イメージです。[字幕とイマーシブモードのデモ（旧 UI）](../demos/README.md)。
 
-## 機能
+## 聞きながら字幕で読む
 
-- システム音声、マイク、または両方を選択できます。初期設定はシステム音声で、マイクは自分で選んだ場合にのみ使用します。
-- 特定のアプリの音声を翻訳できます（macOS / Windows 11）。
-- 原文、翻訳、または両方を表示できます。
-- 字幕の位置、サイズ、色を調整できます。マウスのクリックを字幕ウィンドウの背面に通すこともできます。
-- 必要に応じて字幕や音声を端末に保存し、TXT / WAV で書き出せます。保存と録音は初期設定ではオフです。
-- Apple シリコンと Intel の Mac（macOS 13 以降）、Windows / Linux x86_64 に対応しています。
+- **再生中の内容を理解する**：映画、配信、授業の音声をフローティング字幕に。二言語、訳文のみ、原文のみを選べます。
+- **音源を選ぶ**：初期設定はパソコンの音声。マイクや両方の音源も自分で有効にできます。macOS / Windows 11 ではアプリを指定できます。Linux では個別の再生ストリームを選べます。
+- **読みやすく調整する**：位置、文字サイズ、色を変更。イマーシブモードは字幕だけを表示し、クリック透過で背後のアプリを操作できます。
+- **字幕と音声を保存する**：デスクトップ版では字幕を TXT、選択した音源の録音を WAV で保存できます。どちらも自分で有効にするまで保存・録音しません。
 
 ## はじめに
 
-初めて使う場合は、**Volcano Engine、Alibaba Cloud、Google Gemini をおすすめします**。
+[デスクトップ版をダウンロード](https://github.com/yuxino/mimi/releases/latest) · [Android の設定手順（英語）](../../android/README.md#start)
 
-Google Gemini を使う場合は、安定したネットワーク接続を用意してください。利用可能な割り当て、料金、API キーは [Google AI Studio](https://aistudio.google.com/) で確認できます。
+デスクトップ版は macOS 13+（Apple シリコン・Intel）、Windows x64、Linux x86_64 に対応しています。
 
-各サービスの有効化、認証情報の取得、Mimi が現在使用しているモデルについては、[**サービス設定ガイド（英語）**](../provider-setup.md)をご覧ください。
+1. **サービスを設定する**：「設定 → モデルとサービス」で音声サービスを追加します。サービスの選び方とキーの取得方法は[設定ガイド（英語）](../provider-setup.md#choose)をご覧ください。
+2. **音源と言語を選ぶ**：音声と言語の設定で、取り込む音源、認識言語、翻訳先の言語を選びます。
+3. **字幕を開始する**：「字幕」ページでライブ字幕をオンにし、必要な権限を許可してから、見たいコンテンツを再生します。
 
-1. 「設定 → 音声と翻訳」を開き、設定を追加して、サービスの認証情報を入力・保存します。
-2. 認識言語と翻訳先の言語を選びます。
-3. 音声を再生し、「字幕」ページで「リアルタイム字幕」をオンにします。macOS 14.2 以降では、すべてのアプリまたは特定のアプリの音声を取得する際に、システム音声のみの録音権限を使用できます。既存の画面収録権限がある場合は引き続き使用します。それより前の macOS では、画面とシステム音声の収録権限が必要です。
+Mimi は無料ですが、クラウドサービスは有料の場合があります。クラウドでの認識・翻訳では、音声や認識した文字を選択したサービスに送信します。Apple のローカルサービスの利用条件は[設定ガイド（英語）](../provider-setup.md#apple-speech)をご覧ください。
 
-クラウド音声認識には自分で用意したサービスの認証情報が必要で、音声はそのサービスに送信されます。利用料金が発生する場合があります。対応する Mac では、Apple Speech で端末内の音声認識を行えます。外部の文字翻訳サービスを使う場合は、認識したテキストがそのサービスに送信されます。Apple Translation は Mac 内でテキストを処理します。
+## 困ったときは
 
-[使い方とよくある質問](../usage.ja.md) · [Android（英語）](../../android/README.md) · [不具合を報告](https://github.com/yuxino/mimi/issues) · [開発への参加（中国語・英語）](../../.github/CONTRIBUTING.md)
-
-<a id="apple-local-recognition"></a>
-
-### Apple によるローカル音声認識
-
-**Apple Speech** は、Apple シリコン、macOS 26 以降、利用可能なシステム音声認識エンジンがそろった Mac で表示されます。音声認識用の API キーは不要です。字幕を停止して「認識言語」で言語を選んでください。未ダウンロードの場合は「ダウンロードして使用」を押すと、Mimi が Apple のリソースをダウンロードし、準備ができた時点で認識言語に設定します。ダウンロード済みの場合は「認識言語に設定」を押してから字幕を開始してください。システム設定を開く必要はありません。言語の自動判定には対応していません。詳しくは [Apple Speech の設定手順（英語）](../provider-setup.md#apple-speech)をご覧ください。
-
-**Apple Translation** は、Apple シリコンと macOS 26 以降に対応した Mac で使える、独立した端末内の文字翻訳サービスです。「文字翻訳」で選んで設定を保存し、認識言語と翻訳先を指定してください。Mimi に言語の組み合わせの準備状態が表示されます。「言語パックをダウンロード／有効化」を押すと、Apple の確認画面が開きます。翻訳用と音声認識用の言語パックは別々です。既存のパックは再利用し、不足しているものは確認後に Apple がダウンロードします。接続確認や字幕の開始ではダウンロードされません。文字翻訳用の API キーやプロキシは不要です。
-
-Apple Speech で原文だけを表示する場合は、「翻訳なし（原文のみ）」を選びます。[Index-Translate](#try-index-translate) などの外部の文字翻訳サービスと組み合わせることもできます。その場合、認識したテキストは外部サービスに送信されます。
-
-<a id="try-index-translate"></a>
-
-### Index-Translate を試す
-
-Bilibili の [Index-Translate](https://github.com/bilibili/Index-Translate#inference) は、無料の公開翻訳 API を提供しています（2026 年 10 月 5 日時点）。Alibaba Cloud または Apple Speech で認識したテキストの翻訳に使用できます。
-
-「**設定 → 音声と翻訳**」で「**Alibaba Cloud**」または「**Apple Speech**」の設定を開き、「**文字翻訳**」で「**OpenAI 互換 API**」を選びます。[公式のサンプル](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py#L40-L41)に従って、次の値を入力してください。
-
-| 項目 | 入力する値 |
-| --- | --- |
-| サービス URL | `https://index-translate.bilibili.com/v1` |
-| モデル名 | `Index-Translate-35B-A3B` |
-| API Key | 空欄のままにします。公開 API は現在、認証を必要としません。 |
-
-保存してから、「文字翻訳」の接続確認を行ってください。この URL にキーを保存したことがある場合は、「翻訳キーを削除」を選んでから保存してください。
-
-Index-Translate は文字翻訳のみを行います。Alibaba Cloud と組み合わせる場合は、音声認識の認証情報も必要で、認識には利用料金が発生する場合があります。Apple Speech の音声認識にはキーは不要です。無料 API の今後の提供状況は、提供元によって変わる可能性があります。
-
-## よくある質問
-
-**録音の権限を許可しているのに、macOS が何度も許可を求める場合は？** Mimi を終了し、「システム設定 → プライバシーとセキュリティ → 画面収録とシステムオーディオ録音」で、Mimi の項目だけを削除して追加し直してください。正式版は `/Applications/mimi.app`、開発版は `/Applications/mimi-dev.app` を使用します。権限をオンにしてから、同じアプリを開き直してください。詳しくは[権限の復旧手順](../usage.ja.md#macos-permissions-after-an-update)をご覧ください。
+[使い方ガイド](../usage.ja.md)でインストール、権限、字幕表示、保存を説明しています。字幕が出ない・接続できない場合は[音声認識のエラー](../usage.ja.md#errors)を確認し、解決しなければ[問題を報告](https://github.com/yuxino/mimi/issues)してください。
 
 ## 貢献者
+
+開発に参加する方は[貢献ガイド（英語・中国語）](../../.github/CONTRIBUTING.md)をご覧ください。
 
 コードの作成、不具合の報告、試用、紹介をしてくださる皆さん、ありがとうございます (๑•̀ㅂ•́)و✧
 
@@ -88,7 +56,7 @@ Index-Translate は文字翻訳のみを行います。Alibaba Cloud と組み�
 
 [@Chtholly000](https://github.com/Chtholly000) さんによる [Gemini の連続字幕と計画的な接続切り替えの改善](https://github.com/yuxino/Mimi/pull/176)にも感謝します。
 
-[@EmmetZ](https://github.com/EmmetZ) さんは、[Wayland で字幕ウィンドウの移動に操作パネルが追従しない問題](https://github.com/yuxino/Mimi/pull/242)を修正してくださいました。
+[@EmmetZ](https://github.com/EmmetZ) さんによる [Wayland の字幕操作パネルの修正](https://github.com/yuxino/Mimi/pull/242)と [Linux での個別再生ストリームの音声取得](https://github.com/yuxino/Mimi/pull/275)に感謝します。
 
 [@wangmian0](https://github.com/wangmian0) さんは、[DeepSeek によるリアルタイム字幕翻訳の思考モードを無効化](https://github.com/yuxino/Mimi/pull/270)してくださいました。
 

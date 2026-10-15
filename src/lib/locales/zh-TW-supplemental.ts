@@ -10,6 +10,15 @@ export const SUPPLEMENTAL = {
     failed: "無法載入應用程式，請重新整理再試一次。", saveFailed: "擷取應用程式未能切換，請檢視字幕狀態後再試一次。",
     help: "僅擷取所選應用程式的聲音，瀏覽器分頁屬於同一個應用程式。選擇應用程式不會將它靜音。Windows 上重新開啟應用程式後需要重新選擇。",
   },
+  playbackStream_copy: {
+    title: "擷取音訊串流", all: "全部系統音訊", application: "音訊串流",
+    search: "搜尋音訊串流", refresh: "重新整理音訊串流", loading: "正在載入音訊串流…",
+    empty: "找不到音訊串流，請先播放聲音再重新整理。", noMatch: "沒有符合的音訊串流。", missing: "無法使用",
+    unavailable: "所選音訊串流已無法使用，請播放聲音後重新選擇，或選擇全部系統音訊。",
+    unsupported: "音訊串流擷取需要 Linux 上的 PulseAudio 或 PipeWire-Pulse。",
+    failed: "無法載入音訊串流，請重新整理後重試。", saveFailed: "無法切換音訊串流，請檢查字幕狀態後重試。",
+    help: "每次擷取一條播放串流，同一應用程式的多條串流分別列出。不變更播放路由或音量。串流關閉或 Mimi 重新啟動後需重新選擇。",
+  },
   captureStatus_copy: {
     title: "音訊輸入", system: "系統聲音", microphone: "麥克風", output: "系統輸出", device: "擷取裝置",
     idle: "尚未擷取音訊", paused: "已暫停", connecting: "連線中", stopping: "停止中", error: "出錯",

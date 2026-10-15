@@ -316,6 +316,8 @@ export interface AppleTranslationSupport {
 export type AppleTranslationStatus = "installed" | "supported" | "unsupported" | "unavailable";
 
 export interface LanguageCapabilitiesSnapshot {
+  /** Selected model used to derive this native catalog. */
+  qwenMtModel?: QwenMTModel;
   profileId: string;
   provider: ServiceProvider;
   textTranslation: TextTranslation;
@@ -509,7 +511,7 @@ export function sourceLanguageDisplayName(language: SourceLanguage, locale = lan
 
 export function targetLanguageDisplayName(language: TargetLanguage, locale = languageDisplayLocale()): string {
   if (language === "original") {
-    return { "zh-TW": "原文（不翻譯）", zh: "原文（不翻译）", en: "Original (no translation)", ja: "原文（翻訳しない）", de: "Original (ohne Übersetzung)", fr: "Original (sans traduction)", ko: "원문 (번역 안 함)", th: "ต้นฉบับ (ไม่แปล)" }[locale];
+    return { "zh-TW": "只顯示原文", zh: "只显示原文", en: "Original only", ja: "原文のみ", de: "Nur Original", fr: "Original uniquement", ko: "원문만", th: "แสดงต้นฉบับเท่านั้น" }[locale];
   }
   if (language === "zh") return { "zh-TW": "簡體中文", zh: "简体中文", en: "Simplified Chinese", ja: "簡体中国語", de: "Chinesisch (vereinfacht)", fr: "Chinois simplifié", ko: "중국어 간체", th: "จีนตัวย่อ" }[locale];
   if (language === "tl") return { "zh-TW": "塔加洛語", zh: "塔加洛语", en: "Tagalog", ja: "タガログ語", de: "Tagalog", fr: "Tagalog", ko: "타갈로그어", th: "ตากาล็อก" }[locale];

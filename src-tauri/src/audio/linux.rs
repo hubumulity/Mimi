@@ -22,7 +22,7 @@ use pulse::def::BufferAttr;
 use pulse::mainloop::standard::{IterateResult, Mainloop};
 use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, PeekResult, State as StreamState, Stream};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
-const START_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const START_TIMEOUT: Duration = Duration::from_secs(5);
 const FRAGMENT_MS: usize = 20;
 const MAX_BUFFER_MS: usize = 250;
 
@@ -54,7 +54,7 @@ impl Drop for CaptureState {
 }
 
 #[derive(Default)]
-struct WorkerControl {
+pub(super) struct WorkerControl {
     cancelled: AtomicBool,
     finished: AtomicBool,
 }
@@ -84,13 +84,14 @@ impl LinuxSystemAudioCapture {
         Self::default()
     }
 
+    #[cfg(test)]
     pub async fn start(
         &self,
         audio_ingress: AudioIngress,
         failure_tx: CaptureFailureSender,
         format: AudioCaptureFormat,
     ) -> Result<(), SystemAudioCaptureError> {
-        self.start_input(audio_ingress, failure_tx, format, AudioSource::System)
+        self.start_target(audio_ingress, failure_tx, format, None)
             .await
     }
 
@@ -101,6 +102,38 @@ impl LinuxSystemAudioCapture {
         format: AudioCaptureFormat,
         input: AudioSource,
     ) -> Result<(), SystemAudioCaptureError> {
+        self.start_selected(audio_ingress, failure_tx, format, input, None)
+            .await
+    }
+
+    pub async fn start_target(
+        &self,
+        audio_ingress: AudioIngress,
+        failure_tx: CaptureFailureSender,
+        format: AudioCaptureFormat,
+        token: Option<String>,
+    ) -> Result<(), SystemAudioCaptureError> {
+        self.start_selected(
+            audio_ingress,
+            failure_tx,
+            format,
+            AudioSource::System,
+            token,
+        )
+        .await
+    }
+
+    async fn start_selected(
+        &self,
+        audio_ingress: AudioIngress,
+        failure_tx: CaptureFailureSender,
+        format: AudioCaptureFormat,
+        input: AudioSource,
+        token: Option<String>,
+    ) -> Result<(), SystemAudioCaptureError> {
+        if let Some(token) = &token {
+            super::linux_streams::resolve(token)?;
+        }
         AudioCaptureFormat::pcm16_mono(format.sample_rate_hz)?;
         let control = self.reserve_worker()?;
         let mut cancel_start = CancelStartOnDrop(Some(Arc::clone(&control)));
@@ -118,7 +151,8 @@ impl LinuxSystemAudioCapture {
                 // Constructed first, dropped last: finished means libpulse
                 // has disconnected and released the stream and context.
                 let _finished = FinishWorkerOnDrop(Arc::clone(&worker_control));
-                let mut capture = match PulseCapture::connect(&worker_control, format, input) {
+                let mut capture = match PulseCapture::connect(&worker_control, format, input, token)
+                {
                     Ok(capture) => capture,
                     Err(error) => {
                         let _ = ready_tx.send(Err(input_error(input, error)));
@@ -220,11 +254,13 @@ struct PulseCapture {
     source_index: u32,
     chunk_bytes: usize,
     max_buffer_bytes: usize,
+    target: Option<(String, u32, u32)>,
+    target_deleted: Rc<Cell<bool>>,
 }
 
 /// Disconnect on every exit path, including a cancelled or timed-out
 /// introspection before a stream exists. Context's own Drop only unrefs it.
-struct ConnectedContext(Context);
+pub(super) struct ConnectedContext(pub(super) Context);
 
 impl Deref for ConnectedContext {
     type Target = Context;
@@ -251,6 +287,7 @@ impl PulseCapture {
         control: &WorkerControl,
         format: AudioCaptureFormat,
         input: AudioSource,
+        token: Option<String>,
     ) -> Result<Self, SystemAudioCaptureError> {
         let deadline = Instant::now() + START_TIMEOUT;
         let mut mainloop =
@@ -272,9 +309,53 @@ impl PulseCapture {
             }
         })?;
 
+        let target = token
+            .map(|token| {
+                super::linux_streams::resolve(&token).map(|(index, sink)| (token, index, sink))
+            })
+            .transpose()?;
+        let target_deleted = Rc::new(Cell::new(false));
+        if let Some((_, index, _)) = &target {
+            use pulse::context::subscribe::{Facility, InterestMaskSet, Operation};
+            let index = *index;
+            let deleted = Rc::clone(&target_deleted);
+            context.set_subscribe_callback(Some(Box::new(move |facility, operation, actual| {
+                if facility == Some(Facility::SinkInput)
+                    && actual == index
+                    && matches!(operation, Some(Operation::Removed | Operation::New))
+                {
+                    deleted.set(true);
+                }
+            })));
+            let subscribed = Rc::new(Cell::new(None));
+            let result = Rc::clone(&subscribed);
+            let _subscription =
+                context.subscribe(InterestMaskSet::SINK_INPUT, move |ok| result.set(Some(ok)));
+            if !wait_for(&mut mainloop, control, deadline, || {
+                check_context(&context)?;
+                Ok(subscribed.take())
+            })? {
+                return Err(SystemAudioCaptureError::NativeStartFailed);
+            }
+        }
         let (source_index, source_name) = match input {
             AudioSource::System => {
-                let monitor = resolve_monitor(&mut mainloop, &context, control, deadline)?;
+                let monitor = if let Some((token, index, sink)) = &target {
+                    let monitor = resolve_stream_monitor(
+                        &mut mainloop,
+                        &context,
+                        control,
+                        deadline,
+                        *index,
+                        *sink,
+                    )?;
+                    if super::linux_streams::resolve(token)? != (*index, *sink) {
+                        return Err(SystemAudioCaptureError::ApplicationUnavailable);
+                    }
+                    monitor
+                } else {
+                    resolve_monitor(&mut mainloop, &context, control, deadline)?
+                };
                 (monitor.source_index, monitor.source_name)
             }
             AudioSource::Microphone => {
@@ -305,6 +386,11 @@ impl PulseCapture {
             minreq: u32::MAX,
             fragsize: chunk_bytes as u32,
         };
+        if let Some((_, index, _)) = &target {
+            stream
+                .set_monitor_stream(*index)
+                .map_err(|_| SystemAudioCaptureError::ApplicationUnavailable)?;
+        }
         stream
             .connect_record(
                 Some(&source_name),
@@ -324,6 +410,14 @@ impl PulseCapture {
                 _ => Ok(None),
             }
         })?;
+        if target_deleted.get() {
+            return Err(SystemAudioCaptureError::ApplicationUnavailable);
+        }
+        if let Some((token, index, sink)) = &target {
+            if super::linux_streams::resolve(token)? != (*index, *sink) {
+                return Err(SystemAudioCaptureError::NativeStartFailed);
+            }
+        }
         if stream.get_device_index() != Some(source_index)
             || stream.get_sample_spec() != Some(&spec)
         {
@@ -337,6 +431,8 @@ impl PulseCapture {
             source_index,
             chunk_bytes,
             max_buffer_bytes,
+            target,
+            target_deleted,
         })
     }
 
@@ -350,6 +446,7 @@ impl PulseCapture {
         // than 20 ms without waiting, padding, or carrying it into a restart.
         let mut frames = PcmFrameAssembler::new(self.chunk_bytes, self.max_buffer_bytes);
         let mut last_poll_finished_at = Instant::now();
+        let mut last_target_revision = None;
         while !control.cancelled.load(Ordering::SeqCst) && !failure_tx.has_reported() {
             let poll_started_at = Instant::now();
             let poll_result = self.mainloop.iterate(false);
@@ -364,12 +461,45 @@ impl PulseCapture {
                     iterate_ms
                 );
             }
+            if self.target.is_some() && self.context.get_state() != ContextState::Ready {
+                return Err(SystemAudioCaptureFailure::ApplicationUnavailable);
+            }
+            if self.target_deleted.get() {
+                return Err(SystemAudioCaptureFailure::ApplicationUnavailable);
+            }
             if !matches!(poll_result, IterateResult::Success(_))
                 || self.context.get_state() != ContextState::Ready
                 || self.stream.get_state() != StreamState::Ready
                 || self.stream.get_device_index() != Some(self.source_index)
             {
+                // The record stream may fail before its deletion subscription
+                // is dispatched. Query that same context before choosing recovery.
+                if self.context.get_state() == ContextState::Ready {
+                    if let Some((_, index, _)) = &self.target {
+                        if matches!(
+                            resolve_stream_sink(
+                                &mut self.mainloop,
+                                &self.context,
+                                control,
+                                Instant::now() + START_TIMEOUT,
+                                *index
+                            ),
+                            Err(SystemAudioCaptureError::ApplicationUnavailable)
+                        ) {
+                            return Err(SystemAudioCaptureFailure::ApplicationUnavailable);
+                        }
+                    }
+                }
                 return Err(SystemAudioCaptureFailure::NativeStopped);
+            }
+            if let Some((token, index, sink)) = &self.target {
+                match super::linux_streams::resolve_if_changed(token, &mut last_target_revision) {
+                    Err(_) => return Err(SystemAudioCaptureFailure::ApplicationUnavailable),
+                    Ok(Some(actual)) if actual != (*index, *sink) => {
+                        return Err(SystemAudioCaptureFailure::NativeStopped)
+                    }
+                    _ => {}
+                }
             }
             loop {
                 if control.cancelled.load(Ordering::SeqCst) {
@@ -403,7 +533,7 @@ impl PulseCapture {
     }
 }
 
-fn wait_for<T>(
+pub(super) fn wait_for<T>(
     mainloop: &mut Mainloop,
     control: &WorkerControl,
     deadline: Instant,
@@ -474,6 +604,86 @@ fn resolve_monitor(
     })?
     .ok_or(SystemAudioCaptureError::NoPlaybackDevice)?;
 
+    verify_monitor(mainloop, context, control, deadline, monitor)
+}
+
+fn resolve_stream_sink(
+    mainloop: &mut Mainloop,
+    context: &Context,
+    control: &WorkerControl,
+    deadline: Instant,
+    index: u32,
+) -> Result<u32, SystemAudioCaptureError> {
+    let sink = Rc::new(RefCell::new(None));
+    let result = Rc::clone(&sink);
+    let _query = context
+        .introspect()
+        .get_sink_input_info(index, move |item| match item {
+            ListResult::Item(info) => *result.borrow_mut() = Some(Some(info.sink)),
+            ListResult::End | ListResult::Error => {
+                if result.borrow().is_none() {
+                    *result.borrow_mut() = Some(None);
+                }
+            }
+        });
+    wait_for(mainloop, control, deadline, || {
+        check_context(context)?;
+        Ok(sink.borrow_mut().take())
+    })?
+    .ok_or(SystemAudioCaptureError::ApplicationUnavailable)
+}
+
+fn resolve_stream_monitor(
+    mainloop: &mut Mainloop,
+    context: &Context,
+    control: &WorkerControl,
+    deadline: Instant,
+    index: u32,
+    expected_sink: u32,
+) -> Result<MonitorSource, SystemAudioCaptureError> {
+    let sink = resolve_stream_sink(mainloop, context, control, deadline, index)?;
+    if sink != expected_sink {
+        return Err(SystemAudioCaptureError::NativeStartFailed);
+    }
+    let monitor = Rc::new(RefCell::new(None));
+    let result = Rc::clone(&monitor);
+    let _query = context
+        .introspect()
+        .get_sink_info_by_index(sink, move |item| match item {
+            ListResult::Item(info) => {
+                *result.borrow_mut() = Some(
+                    info.monitor_source_name
+                        .as_deref()
+                        .filter(|name| valid_device_name(name))
+                        .filter(|_| info.monitor_source != u32::MAX)
+                        .map(|name| MonitorSource {
+                            sink_index: info.index,
+                            source_index: info.monitor_source,
+                            source_name: name.to_owned(),
+                        }),
+                )
+            }
+            ListResult::End | ListResult::Error => {
+                if result.borrow().is_none() {
+                    *result.borrow_mut() = Some(None);
+                }
+            }
+        });
+    let monitor = wait_for(mainloop, control, deadline, || {
+        check_context(context)?;
+        Ok(monitor.borrow_mut().take())
+    })?
+    .ok_or(SystemAudioCaptureError::NoPlaybackDevice)?;
+    verify_monitor(mainloop, context, control, deadline, monitor)
+}
+
+fn verify_monitor(
+    mainloop: &mut Mainloop,
+    context: &Context,
+    control: &WorkerControl,
+    deadline: Instant,
+    monitor: MonitorSource,
+) -> Result<MonitorSource, SystemAudioCaptureError> {
     // Validate the native monitor relationship. Names ending in '.monitor'
     // are not sufficient evidence that a source is not a microphone.
     let source = Rc::new(RefCell::new(None));
@@ -552,7 +762,7 @@ fn is_microphone_source(index: u32, monitor_of_sink: Option<u32>) -> bool {
     index != u32::MAX && monitor_of_sink.is_none()
 }
 
-fn check_context(context: &Context) -> Result<(), SystemAudioCaptureError> {
+pub(super) fn check_context(context: &Context) -> Result<(), SystemAudioCaptureError> {
     if context.get_state() == ContextState::Ready {
         Ok(())
     } else {
@@ -646,6 +856,268 @@ mod tests {
     use std::io::Write;
     use std::process::{Child, Command, Stdio};
     use tokio::sync::mpsc;
+
+    #[tokio::test]
+    #[ignore = "requires the isolated PulseAudio or PipeWire-Pulse harness"]
+    async fn native_playback_stream_lists_corked_connections_and_retires_them() {
+        isolated_audio_directory();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        struct PausedPlayback {
+            cancelled: Arc<AtomicBool>,
+            thread: Option<std::thread::JoinHandle<()>>,
+        }
+        impl Drop for PausedPlayback {
+            fn drop(&mut self) {
+                self.cancelled.store(true, Ordering::SeqCst);
+                self.thread.take().unwrap().join().unwrap();
+            }
+        }
+        let stopping = Arc::clone(&cancelled);
+        let (ready, response) = oneshot::channel();
+        let thread = std::thread::spawn(move || {
+            let control = WorkerControl::default();
+            let deadline = Instant::now() + START_TIMEOUT;
+            let mut mainloop = Mainloop::new().unwrap();
+            let mut context =
+                ConnectedContext(Context::new(&mainloop, "mimi-paused-test").unwrap());
+            context
+                .connect(None, ContextFlags::NOAUTOSPAWN, None)
+                .unwrap();
+            wait_for(&mut mainloop, &control, deadline, || {
+                Ok((context.get_state() == ContextState::Ready).then_some(()))
+            })
+            .unwrap();
+            let mut properties = pulse::proplist::Proplist::new().unwrap();
+            properties.set_str("application.name", "").unwrap();
+            properties
+                .set_str("node.name", "Synthetic PipeWire Player")
+                .unwrap();
+            let mut stream = Stream::new_with_proplist(
+                &mut context,
+                "paused-test",
+                &Spec {
+                    format: Format::S16le,
+                    channels: 1,
+                    rate: 48_000,
+                },
+                None,
+                &mut properties,
+            )
+            .unwrap();
+            stream
+                .connect_playback(
+                    Some("mimi-output"),
+                    None,
+                    StreamFlags::START_CORKED,
+                    None,
+                    None,
+                )
+                .unwrap();
+            wait_for(&mut mainloop, &control, deadline, || {
+                Ok((stream.get_state() == StreamState::Ready).then_some(()))
+            })
+            .unwrap();
+            // Some servers publish the sink input only after a buffer is queued.
+            stream
+                .write_copy(&[0; 960], 0, pulse::stream::SeekMode::Relative)
+                .unwrap();
+            ready.send(stream.get_index().unwrap()).unwrap();
+            while !stopping.load(Ordering::SeqCst) {
+                assert!(matches!(mainloop.iterate(false), IterateResult::Success(_)));
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            stream.disconnect().unwrap();
+        });
+        let playback = PausedPlayback {
+            cancelled,
+            thread: Some(thread),
+        };
+        let index = tokio::time::timeout(Duration::from_secs(6), response)
+            .await
+            .unwrap()
+            .unwrap();
+        let snapshot = super::super::linux_streams::list("en".into())
+            .await
+            .unwrap();
+        let target = snapshot
+            .applications
+            .iter()
+            .find(|app| app.name.ends_with("paused-test"))
+            .unwrap();
+        assert!(target.name.starts_with("Synthetic PipeWire Player · "));
+        assert_eq!(
+            super::super::linux_streams::resolve(&target.id).unwrap().0,
+            index
+        );
+        let again = super::super::linux_streams::list("en".into())
+            .await
+            .unwrap();
+        assert!(again.applications.iter().any(|app| app.id == target.id));
+        drop(playback);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while super::super::linux_streams::resolve(&target.id).is_ok() {
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
+        })
+        .await
+        .expect("a closed paused stream must retire without a manual refresh");
+    }
+
+    /// The same application owns two independently listed streams. The other
+    /// tone must be rejected even on the selected stream's non-default output.
+    #[tokio::test]
+    #[ignore = "requires the isolated PulseAudio or PipeWire-Pulse harness"]
+    async fn native_playback_stream_isolation_move_pause_delete_and_stale_token() {
+        isolated_audio_directory();
+        let module = pactl(&[
+            "load-module",
+            "module-null-sink",
+            "sink_name=mimi-stream-output",
+        ]);
+        let (_target_audio, target_playback) = play_test_frequency_on("mimi-stream-output", 997.0);
+        let (_other_audio, other_playback) = play_test_frequency_on("mimi-stream-output", 613.0);
+        let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snapshot = super::super::linux_streams::list("en".into())
+                    .await
+                    .unwrap();
+                if snapshot
+                    .applications
+                    .iter()
+                    .filter(|app| app.name.starts_with("mimi-stream-test"))
+                    .count()
+                    == 2
+                {
+                    break snapshot;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("both synthetic streams must be discovered");
+        let target = snapshot
+            .applications
+            .iter()
+            .find(|app| app.name.ends_with("tone-997"))
+            .unwrap();
+        let again = super::super::linux_streams::list("en".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            again.applications, snapshot.applications,
+            "refresh must preserve live tokens"
+        );
+        let (index, _) = super::super::linux_streams::resolve(&target.id).unwrap();
+        let capture = LinuxSystemAudioCapture::new();
+        for rate in [16_000, 24_000] {
+            let (pipeline, mut rx) = recording_pipeline();
+            let (failure, mut failures) = CaptureFailureSender::channel();
+            capture
+                .start_target(
+                    pipeline.ingress().unwrap(),
+                    failure,
+                    AudioCaptureFormat::pcm16_mono(rate).unwrap(),
+                    Some(target.id.clone()),
+                )
+                .await
+                .unwrap();
+            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            assert!(matches!(
+                super::super::linux_streams::expired_refresh_for_test().await,
+                Err(SystemAudioCaptureError::ApplicationListFailed)
+            ));
+            assert_eq!(
+                super::super::linux_streams::resolve(&target.id).unwrap().0,
+                index,
+                "a healthy discovery connection must retain the selected token after a query timeout"
+            );
+            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            assert!(failures.try_recv().is_err());
+            let refreshed = super::super::linux_streams::list("en".into())
+                .await
+                .unwrap();
+            assert!(refreshed.applications.iter().any(|app| app.id == target.id));
+            // Assert frequency exclusion explicitly, not merely the dominant peak.
+            let mut window = Vec::new();
+            while window.len() < rate as usize {
+                window.extend(
+                    tokio::time::timeout(Duration::from_secs(3), rx.recv())
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+            assert!(matches_frequency(&window, rate, 997.0));
+            assert!(!matches_frequency(&window, rate, 613.0));
+            stop_and_assert_quiet(&capture, &pipeline, &mut rx).await;
+            assert!(failures.try_recv().is_err());
+        }
+        // Pause/resume uses native stop/start with the same live identity.
+        let (pipeline, mut rx) = recording_pipeline();
+        let (failure, mut failures) = CaptureFailureSender::channel();
+        capture
+            .start_target(
+                pipeline.ingress().unwrap(),
+                failure,
+                AudioCaptureFormat::pcm16_mono(16_000).unwrap(),
+                Some(target.id.clone()),
+            )
+            .await
+            .unwrap();
+        expect_monitor_frequency(&mut rx, 16_000, 997.0).await;
+        assert_eq!(
+            observe_native_failure(&mut rx, &mut failures, move || {
+                pactl(&["move-sink-input", &index.to_string(), "mimi-output"]);
+            })
+            .await,
+            Some(SystemAudioCaptureFailure::NativeStopped),
+            "a live move uses the existing recovery path"
+        );
+        stop_and_assert_quiet(&capture, &pipeline, &mut rx).await;
+        // Recovery resolves the new monitor; the unrelated stream stays behind.
+        let (pipeline, mut rx) = recording_pipeline();
+        let (failure, mut failures) = CaptureFailureSender::channel();
+        capture
+            .start_target(
+                pipeline.ingress().unwrap(),
+                failure,
+                AudioCaptureFormat::pcm16_mono(16_000).unwrap(),
+                Some(target.id.clone()),
+            )
+            .await
+            .unwrap();
+        expect_monitor_frequency(&mut rx, 16_000, 997.0).await;
+        assert_eq!(
+            observe_native_failure(&mut rx, &mut failures, move || drop(target_playback)).await,
+            Some(SystemAudioCaptureFailure::ApplicationUnavailable)
+        );
+        stop_and_assert_quiet(&capture, &pipeline, &mut rx).await;
+        let (pipeline, _rx) = recording_pipeline();
+        let (failure, _) = CaptureFailureSender::channel();
+        assert_eq!(
+            capture
+                .start_target(
+                    pipeline.ingress().unwrap(),
+                    failure,
+                    AudioCaptureFormat::pcm16_mono(16_000).unwrap(),
+                    Some(target.id.clone())
+                )
+                .await,
+            Err(SystemAudioCaptureError::ApplicationUnavailable)
+        );
+        pipeline.stop();
+        let remaining = super::super::linux_streams::list("en".into())
+            .await
+            .unwrap();
+        assert!(!remaining.applications.iter().any(|app| app.id == target.id));
+        assert!(remaining
+            .applications
+            .iter()
+            .any(|app| app.name.ends_with("tone-613")));
+        drop(other_playback);
+        pactl(&["unload-module", module.trim()]);
+        eprintln!("linux native playback-stream isolated=true refreshTimeoutPreserved=true moved=true resumed=true deleted=true stale=true");
+    }
 
     #[test]
     fn only_the_selected_sinks_real_monitor_is_accepted() {
@@ -922,7 +1394,7 @@ mod tests {
     ) -> (tempfile::NamedTempFile, TestPlayback) {
         let mut audio = tempfile::NamedTempFile::new().unwrap();
         // Synthetic PCM only; never write the audio captured from a device.
-        let pcm: Vec<u8> = (0..(48_000 * 8))
+        let pcm: Vec<u8> = (0..(48_000 * 30))
             .flat_map(|index| {
                 let phase = std::f64::consts::TAU * frequency * f64::from(index) / 48_000.0;
                 let sample = ((phase.sin() * 6_000.0) as i16).to_le_bytes();
@@ -934,6 +1406,8 @@ mod tests {
         let child = Command::new("paplay")
             .args(["--raw", "--format=s16le", "--rate=48000", "--channels=2"])
             .arg(format!("--device={sink}"))
+            .arg("--client-name=mimi-stream-test")
+            .arg(format!("--stream-name=tone-{frequency}"))
             .arg(audio.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -1101,6 +1575,29 @@ mod tests {
         .expect("capture must retain the selected monitor's dominant tone");
     }
 
+    // Keep the bounded test transport responsive while commands and native
+    // notifications settle. Otherwise a stalled test sink can report its own
+    // backpressure before the device/target failure under observation.
+    async fn observe_native_failure(
+        rx: &mut mpsc::Receiver<Vec<u8>>,
+        failures: &mut mpsc::Receiver<SystemAudioCaptureFailure>,
+        change: impl FnOnce() + Send + 'static,
+    ) -> Option<SystemAudioCaptureFailure> {
+        let change = tokio::task::spawn_blocking(change);
+        let (_, failure) = tokio::join!(
+            async { change.await.expect("test device change must complete") },
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    tokio::select! {
+                        failure = failures.recv() => return failure,
+                        Some(_) = rx.recv() => {},
+                    }
+                }
+            })
+        );
+        failure.expect("device/target loss must report a bounded failure")
+    }
+
     async fn stop_and_assert_quiet(
         capture: &LinuxSystemAudioCapture,
         pipeline: &AudioSendPipeline,
@@ -1220,12 +1717,12 @@ mod tests {
             drop(playback);
             let (_other_audio, other_playback) = play_test_frequency_on("mimi-output", 613.0);
             // Set the fallback first; removal must still report failure.
-            pactl(&["set-default-sink", "mimi-output"]);
-            drop(sink);
             assert_eq!(
-                tokio::time::timeout(Duration::from_secs(3), failures.recv())
-                    .await
-                    .expect("removed monitor must report a bounded failure"),
+                observe_native_failure(&mut rx, &mut failures, move || {
+                    pactl(&["set-default-sink", "mimi-output"]);
+                    drop(sink);
+                })
+                .await,
                 Some(SystemAudioCaptureFailure::NativeStopped)
             );
             stop_and_assert_quiet(&capture, &pipeline, &mut rx).await;
@@ -1267,27 +1764,40 @@ mod tests {
         let directory = isolated_audio_directory();
         async fn start_private_server(directory: &std::path::Path) -> TestPlayback {
             let socket = directory.join("pulse.sock");
-            let child = Command::new("pulseaudio")
-                .args([
-                    "--daemonize=no",
-                    "--exit-idle-time=-1",
-                    "--use-pid-file=no",
-                    "-n",
-                ])
-                .arg(format!(
-                    "--load=module-native-protocol-unix socket={} auth-anonymous=1",
-                    socket.display()
-                ))
-                .arg("--load=module-null-sink sink_name=mimi-output")
-                .arg(format!(
-                    "--log-target=file:{}/restarted-pulse.log",
-                    directory.display()
-                ))
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap();
+            let pipewire =
+                std::env::var("MIMI_TEST_AUDIO_SERVER_KIND").as_deref() == Ok("pipewire");
+            let child = if pipewire {
+                Command::new("pipewire-pulse")
+                    .arg("-c")
+                    .arg(directory.join("config/pipewire-pulse.conf"))
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap()
+            } else {
+                Command::new("pulseaudio")
+                    .args([
+                        "--daemonize=no",
+                        "--exit-idle-time=-1",
+                        "--use-pid-file=no",
+                        "-n",
+                    ])
+                    .arg(format!(
+                        "--load=module-native-protocol-unix socket={} auth-anonymous=1",
+                        socket.display()
+                    ))
+                    .arg("--load=module-null-sink sink_name=mimi-output")
+                    .arg(format!(
+                        "--log-target=file:{}/restarted-pulse.log",
+                        directory.display()
+                    ))
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap()
+            };
             let server = TestPlayback(child);
             tokio::time::timeout(Duration::from_secs(10), async {
                 loop {
@@ -1306,6 +1816,9 @@ mod tests {
             })
             .await
             .expect("private replacement server must become ready");
+            if pipewire {
+                pactl(&["load-module", "module-null-sink", "sink_name=mimi-output"]);
+            }
             pactl(&["set-default-sink", "mimi-output"]);
             server
         }
@@ -1324,8 +1837,42 @@ mod tests {
                 .unwrap();
             let (_audio, playback) = play_test_tone();
             expect_monitor_frequency(&mut rx, rate, 997.0).await;
-            drop(playback);
+            let snapshot = super::super::linux_streams::list("en".into())
+                .await
+                .unwrap();
+            let old_token = snapshot
+                .applications
+                .iter()
+                .find(|app| app.name.ends_with("tone-997"))
+                .unwrap()
+                .id
+                .clone();
+            let selected = LinuxSystemAudioCapture::new();
+            let (selected_pipeline, mut selected_rx) = recording_pipeline();
+            let (selected_failure, mut selected_failures) = CaptureFailureSender::channel();
+            selected
+                .start_target(
+                    selected_pipeline.ingress().unwrap(),
+                    selected_failure,
+                    AudioCaptureFormat::pcm16_mono(rate).unwrap(),
+                    Some(old_token.clone()),
+                )
+                .await
+                .unwrap();
+            // Keep both bounded sinks consumed while waiting for the selected tone.
+            tokio::select! {
+                _ = expect_monitor_frequency(&mut selected_rx, rate, 997.0) => {},
+                _ = async { while rx.recv().await.is_some() {} } => panic!("system lane ended early"),
+            }
             drop(server);
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(3), selected_failures.recv())
+                    .await
+                    .unwrap(),
+                Some(SystemAudioCaptureFailure::ApplicationUnavailable)
+            );
+            stop_and_assert_quiet(&selected, &selected_pipeline, &mut selected_rx).await;
+            drop(playback);
             assert_eq!(
                 tokio::time::timeout(Duration::from_secs(3), failures.recv())
                     .await
@@ -1367,6 +1914,11 @@ mod tests {
             expect_native_silence(&restarted, &mut restarted_rx, rate, "server-restored").await;
             let (_audio, playback) = play_test_tone();
             expect_monitor_frequency(&mut restarted_rx, rate, 997.0).await;
+            let snapshot = super::super::linux_streams::list("en".into())
+                .await
+                .unwrap();
+            assert!(!snapshot.applications.iter().any(|app| app.id == old_token));
+            assert!(super::super::linux_streams::resolve(&old_token).is_err());
             stop_and_assert_quiet(&capture, &restarted, &mut restarted_rx).await;
             assert!(failures.try_recv().is_err());
             drop(playback);

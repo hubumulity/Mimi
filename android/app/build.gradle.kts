@@ -49,12 +49,27 @@ val verifySharedRuntimeArchitecture = tasks.register<Exec>("verifySharedRuntimeA
     commandLine(pythonExecutable.get(), "scripts/check-shared-runtime.py")
     // No output/cache marker: check current production sources on every build.
 }
+val verifySharedProviderCopy = tasks.register<Exec>("verifySharedProviderCopy") {
+    workingDir(repositoryRoot)
+    commandLine(pythonExecutable.get(), "-B", "scripts/sync-provider-copy.py", "--check")
+    inputs.files(repositoryRoot.resolve("shared/provider-copy.json"),
+        repositoryRoot.resolve("shared/translation-contracts.json"),
+        repositoryRoot.resolve("scripts/sync-provider-copy.py"),
+        repositoryRoot.resolve("src/lib/generated/providerCopy.ts"),
+        repositoryRoot.resolve("src/lib/i18n.ts"),
+        repositoryRoot.resolve("src/windows/settings/AlibabaRealtimeSettings.tsx"))
+    inputs.files(fileTree(repositoryRoot.resolve("src/lib/locales")) { include("*.ts") },
+        fileTree("src/main/res") { include("values*/*.xml") })
+    // Verify every build; generation is explicit and never silently fixes drift.
+}
 tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(verifySharedRuntimeArchitecture)
+    dependsOn(verifySharedProviderCopy)
 }
 
 val buildSharedCoreHost = tasks.register<Exec>("buildSharedCoreHost") {
     dependsOn(verifySharedRuntimeArchitecture)
+    dependsOn(verifySharedProviderCopy)
     workingDir(repositoryRoot)
     commandLine(pythonExecutable.get(), "scripts/build-shared-core.py", "--platform", "host",
         "--profile", "debug", "--target-dir", sharedCoreTarget.absolutePath,
@@ -117,6 +132,7 @@ for (variant in listOf("debug", "release")) {
     val output = layout.buildDirectory.dir("generated/shared-core/$variant/jniLibs")
     val nativeBuild = tasks.register<Exec>("buildSharedCore$suffix") {
         dependsOn(verifySharedRuntimeArchitecture)
+        dependsOn(verifySharedProviderCopy)
         workingDir(repositoryRoot)
         commandLine(pythonExecutable.get(), "scripts/build-shared-core.py", "--platform", "android",
             "--profile", variant, "--target-dir", sharedCoreTarget.absolutePath,

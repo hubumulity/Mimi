@@ -4,15 +4,17 @@
 
 ## English
 
+For ordinary service setup, use the [service guide](provider-setup.md#choose). This page covers custom protocols and language parameters.
+
 A third-party service can use a language selected in Mimi **only if its endpoint, protocol and model accept the parameter Mimi sends**. Choosing a language does not add it to a model. Speech recognition and text translation are separate stages.
 
 ### Configure a custom recognition service
 
-1. Open **Settings → Speech & Translation**, add **Custom Recognition (DashScope Compatible)** or **Custom Recognition (OpenAI Realtime Compatible)** according to the service's documented protocol.
+1. Open **Settings → Models & Services**, add **Custom Recognition (DashScope Protocol)** or **Custom Recognition (OpenAI Realtime Compatible)** according to the service's documented protocol.
 2. Enter its **full WebSocket URL**, deployed **recognition model ID**, and API key. A website, HTTP file-transcription endpoint, or Chat Completions endpoint cannot be used as live recognition.
-3. Save recognition settings and select the profile. Optionally declare the recognition languages documented by that deployment; leave the range undeclared if unknown. The declaration is saved with this profile and filters the language picker, but does not query or change the model. An empty declaration leaves only Service default. Enable **Skip translation** to test recognition alone. The recognition language below belongs to this active profile.
+3. Save recognition settings and select the profile. Optionally declare the recognition languages documented by that deployment; leave the range undeclared if unknown. The declaration is saved with this profile and filters the language picker, but does not query or change the model. An empty declaration leaves only Service default. Select **Translate to → Original only** in **Audio & Languages** to test recognition alone. Choose its current recognition and translation languages in **Audio & Languages**.
 4. Choose **Service default** to omit language parameters. Use a specific language only when the service documents that code and parameter. Saving only stores the configuration. A successful recognition check confirms the setup exchange, not recognition quality or support for every displayed language.
-5. Use **Check recognition** beside recognition. Once recognition works, configure and check text translation separately, then disable Skip translation if needed.
+5. Use **Check recognition** beside recognition. Once recognition works, configure and check text translation separately, then choose a translation target in Audio & Languages.
 
 Examples of configuration values (use your own service key; region/account availability still applies):
 
@@ -49,17 +51,46 @@ The checked automatic modes were already exposed. No universal Auto option is in
 
 Shared wire fixtures are consumed by desktop Rust and Android tests. The encodable registry and provider catalogs are checked separately so adding one service’s language cannot silently broaden another. Custom recognition editors and declarations remain desktop features; Android’s differing Alibaba models remain explicit platform differences. No paid cloud audio request was made for this audit.
 
+### Recheck — 2026-10-13
+
+The Android Alibaba row in the October 6 audit is historical. Current Android and desktop’s Recognize, then translate mode both use Audio3 + Qwen-MT through the shared factory; see [current models](provider-setup.md#current-models). Both platforms now expose the LiveTranslate mode and workspace editor.
+
+Desktop and Android Alibaba LiveTranslate use `qwen3.8-livetranslate-flash-realtime` with
+automatic source detection and **60 text translation targets plus Original**.
+The initial desktop experiment's Chinese/English-only gate was narrower than
+the [current official text-output catalog](https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime#supported-languages).
+Mimi requests text only, so the audio-output subset does not restrict its
+subtitle targets. Canonical `no` and `tl` encode as `nb` and `fil`.
+
+DeepLX now exposes its 38 documented canonical source choices, including the
+six previously omitted regional/Traditional Chinese choices. Its
+[current endpoint documentation](https://deeplx.owo.network/endpoints/free.html#supported-languages)
+validates the same source/target registry. Preserve DeepL's separate catalog.
+
+Rechecked the exact Audio3, Qwen-MT Lite/Flash/Plus, OpenAI, Gemini, Azure,
+xAI, Tencent, DeepL and DeepLX API documentation against the existing
+request catalogs. Tencent and Volcano retain source-dependent direction rules;
+custom compatible models remain deployment-dependent and Apple remains a
+native runtime catalog. The current Volcano and Baidu documents did not expose their language tables in the
+browser fetch, so their existing shared matrices/fixtures were revalidated without
+claiming a fresh remote catalog. Azure's complete list remains the model-identity
+inference described above. Rust contracts cover every new LiveTranslate target
+and alias; actual JVM JNI creates each configuration without connecting.
+No real/paid provider requests or audio capture were made for this recheck.
+
 ## 中文
+
+配置内置服务请看[服务配置指南](provider-setup.zh-CN.md#choose)。本页只讲自定义接口和语言参数。
 
 **三方服务可以配置语言，前提是该地址、协议和识别模型支持 Mimi 发出的参数。** 选语言不能给模型增加语种；识别语言与翻译目标是两回事。
 
 ### 怎么接入
 
-1. 打开「设置 → 语音与翻译」，按服务文档选择「自定义识别（阿里云兼容）」或「自定义识别（OpenAI 实时兼容）」。
-2. 填入完整 WebSocket 地址、实际部署的识别模型 ID 和密钥，点击「保存识别配置」。不能填网页地址、HTTP 文件转写接口或 Chat Completions 地址。上方表格给出了官方地址与模型示例；不要把翻译模型填进识别模型。
-3. 可按该部署的文档声明它支持的识别语言；不确定时保持未声明。声明只保存在这项配置中并筛选语言选项，不会查询或改变模型；声明为空时只保留「服务默认」。使用这项服务配置，先开启「跳过翻译」，只测试语音转文字，再在下方选择「识别语言」。
+1. 打开「设置 → 模型与服务」，按服务文档选择「自定义识别（DashScope 协议）」或「自定义识别（OpenAI 实时兼容）」。
+2. 填入完整 WebSocket 地址、实际部署的识别模型 ID 和密钥，点击「保存识别配置」。不能填网页地址、HTTP 文件转写接口或 Chat Completions 地址。地址和模型名以所用服务的文档为准；不要把翻译模型填进识别模型。
+3. 可按该部署的文档声明它支持的识别语言；不确定时保持未声明。声明只保存在这项配置中并筛选语言选项，不会查询或改变模型；声明为空时只保留「服务默认」。使用这项服务配置，先在「声音与语言 → 翻译成」选择「只显示原文」，只测试语音转文字，再到「声音与语言」选择当前「识别语言」。
 4. 「服务默认」代表不发送语言参数，是否自动检测取决于对端。选择英语等具体语言会发送对应参数；请先确认该模型接受这个代码。保存只写入配置；识别检查成功仅说明本次建立会话成功，不证明识别质量或所有候选语言均可用。
-5. 点击识别旁的检查操作。识别正常后，再独立配置并检查文字翻译，按需关闭「跳过翻译」。
+5. 点击识别旁的检查操作。识别正常后，再独立配置并检查文字翻译，再到「声音与语言」选择翻译目标。
 
 阿里兼容接入发送 `language_hints: ["en"]`；OpenAI 独立转写通常发送 `transcription.language: "en"`，`gpt-live-transcribe` 系列改用 `transcription.languages: ["en"]`。自动/服务默认时省略这些字段。模型名只用于选择字段形状，不能证明任意兼容地址支持该能力。区域地址与账户权限请以服务自己的文档为准；这里不会自动探测私有地址。
 
@@ -79,3 +110,33 @@ Shared wire fixtures are consumed by desktop Rust and Android tests. The encodab
 核对到的通用自动识别模式原本均已有入口；没有给要求明确输入的接口虚构「自动」选项。火山补齐 20 种普通语言、粤语与上海话输入，以及「中英互译」模式；识别或翻译一侧必须为中英，方言仅作输入。中英互译同时发送 `zhen`，不等于任意语种自动识别。Azure 的完整 13 项依据相同模型身份与模型发布方文档推导，尚未逐项调用 Azure 验证。
 
 这些结论来自官方资料、实际请求编码及桌面／Android 共用合成用例，不代表每种语言的云端账号、语音质量或完整字幕会话均已实测。本轮语言目录审计没有发送云端付费音频。Apple 语言包下载与文字检查的原生实测另记于集成记录。
+
+### 2026-10-13 复核
+
+10 月 6 日审计中的 Android 阿里模型描述属于历史状态。当前 Android 与桌面的「先识别，再翻译」模式均通过共享工厂使用 Audio3 + Qwen-MT，见[当前模型](provider-setup.zh-CN.md#current-models)；两端现均提供 LiveTranslate 模式与业务空间设置。
+
+桌面与安卓阿里同声实际使用 `qwen3.8-livetranslate-flash-realtime`，输入自动识别，
+字幕翻译支持官方 60 种文本目标及「只显示原文」。原先仅中英的实验限制已移除；
+只请求文本，因此不受语音输出语种子集限制。挪威语 `no`、菲律宾语 `tl` 分别发送
+`nb`、`fil`。DeepLX 来源补齐此前遗漏的六个地区／繁体中文选项，共 38 个，
+按其当前接口的同一来源／目标目录验证。
+
+其余目录与上方官方出处重新比对，腾讯与火山仍按来源筛选合法方向；自定义模型
+范围仍取决于部署，Apple 仍读取系统实际目录。火山、百度当前页面未能通过文档抓取取得语种表，保留其现有共享矩阵并重跑合成用例，不声称已重新取得远端目录；Azure
+完整目录仍为上方所述模型身份推导。新语种和别名均有 Rust 请求用例及实际 JVM
+JNI 的不连接验证。本次没有进行真实／付费接口调用或音频采集。
+
+
+The ASR + MT language picker follows the selected Qwen model: Lite keeps its
+31 targets; Flash/Plus expose the 80 targets currently representable by Mimi,
+out of their documented 92. The remaining 12 dialect/language codes need a
+separate canonical-language expansion and are not shown as supported. Flash/Plus
+allow all 30 Audio3 recognition hints plus automatic input. Norwegian uses Mimi's
+canonical `no` while the model registry uses `nb`; request options identify
+Norwegian Bokmål. Native capability snapshots include the selected model so a
+previous catalog cannot survive switching models.
+
+ASR + MT 的语言选项随 Qwen 模型切换：Lite 保留 31 个目标；Flash/Plus 显示
+Mimi 目前能表示的 80 个目标，官方模型支持 92 个，其余 12 个方言／语种代码
+需要另行补齐通用语言定义，当前不显示为已支持。Flash/Plus 可使用 Audio3
+的全部 30 个识别提示及自动识别；挪威语的 `no`／`nb` 映射也已修正。

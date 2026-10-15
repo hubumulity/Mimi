@@ -6,12 +6,21 @@
 
 Provider activation links, credential fields, and current models are in the [provider setup guide](provider-setup.md).
 
-Choose the desktop interface language in Settings → General: Simplified Chinese, Traditional Chinese, English, Japanese, German, Korean, French or Thai. The system option follows your system language; changing the interface language keeps current edits and subtitle state. Recognition and translation languages are separate choices.
+Find what you need:
+
+- [Install and update](#start)
+- [Subtitle display](#subtitles)
+- [Audio and saved sessions](#saving)
+- [Recognition errors](#errors)
+
+Older versions call Models & Services “Speech & Translation”.
+
+<a id="start"></a>
 
 ## Install and update
 
 1. Download the macOS Apple silicon or Intel DMG, a Windows x64 EXE, MSI, or portable ZIP, or a Linux x86_64 .deb / AppImage from the [latest release](https://github.com/yuxino/mimi/releases/latest), or build from source.
-2. Open Settings → Speech & Translation, add a configuration, enter the requested provider credentials, and save. Choose the recognition and translation languages.
+2. Open Settings → Models & Services, add a configuration, enter the requested provider credentials, and save. Choose the recognition and translation languages.
 3. Play something and turn on Live Subtitles under Subtitles. You can also start from the native menu of the mimi menu bar/system tray icon. On macOS 14.2+, capturing All Applications or a selected application supports System Audio Recording Only. Existing screen grants are reused without requesting a separate audio-only grant. macOS 13–14.1 requires Screen & System Audio Recording.
 
 The mimi tray icon uses the system menu for starting/stopping subtitles, display mode, Settings and Quit; macOS also offers Show in Dock. Configure services, languages, locking and immersive mode in Settings. Supported Macs can use free local Apple speech recognition without an API key; prepare its language resources and choose text translation separately.
@@ -52,9 +61,11 @@ Desktop credentials are stored in a private plaintext file protected by file per
 
 ## Service configurations
 
-Each desktop service configuration can remember a recognition/translation language pair. Activate the configuration and choose the languages, then open its details in Settings → Speech & Translation and use **Remember current languages**. To change or remove the saved pair, use **Update to current languages** or **Remove saved pair** explicitly.
+Each desktop service configuration can remember a recognition/translation language pair. Activate the configuration and choose the languages, then open its details in Settings → Models & Services and use **Remember current languages**. To change or remove the saved pair, use **Update to current languages** or **Remove saved pair** explicitly.
 
 Switching to or reapplying a configuration restores its saved pair. Temporary language changes do not overwrite it. The floating controls show the saved pair below the configuration name. Click the service information in the subtitle header to open the current configuration details.
+
+<a id="saving"></a>
 
 ## Audio and saved sessions
 
@@ -68,7 +79,11 @@ Starting another desktop session keeps the bounded confirmed subtitles already o
 
 Transcript retention is limited to 10,000 confirmed pairs / 2 MiB of text and audio to 64 MiB. Reaching a limit stops retention and shows a notice. Transcript timestamps mark confirmation time; WAV omits pauses and reconnect gaps, so the two are not synchronized.
 
+<a id="subtitles"></a>
+
 ## Subtitle display
+
+Choose the desktop interface language in Settings → General: Simplified Chinese, Traditional Chinese, English, Japanese, German, Korean, French or Thai. The system option follows your system language; changing the interface language keeps current edits and subtitle state. Recognition and translation languages are separate choices.
 
 In Settings, choose one of the five subtitle color swatches (white by default), or use the custom swatch after them to open the desktop color picker. System audio and microphone have separate color settings. The preview and floating subtitles update immediately, including immersive mode. In bilingual mode, the original stays visually softer than the translation.
 
@@ -84,11 +99,13 @@ When Show subtitles earlier is enabled, the overlay shows drafts that may still
 change. Turn it off to wait for confirmed results; uninterrupted speech can take
 longer to appear. This display choice does not turn a draft into saved history.
 
+<a id="errors"></a>
+
 ## Recognition errors
 
 Recognition errors stay visible in the subtitle window alongside existing
 subtitles. Open the floating control panel for the full explanation and recovery
-actions. A recognized configuration error offers Speech & Translation settings;
+actions. A recognized configuration error offers Models & Services settings;
 temporary connection or service errors offer Retry. Correcting or switching the
 affected configuration returns the failed session to idle without starting audio.
 Start Live Subtitles again when ready.

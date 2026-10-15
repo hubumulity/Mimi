@@ -76,7 +76,34 @@ checks the command path, not GNOME/KDE shortcut setup or native Wayland focus.
 
 ## Audio and troubleshooting
 
-System audio (the default) opens only the current default output's monitor.
+All system audio (the default) opens only the current default output's monitor.
+The shared picker in Settings and the floating controls can instead select one
+existing playback stream, shown as application name · stream name. Multiple
+streams from the same application are separate choices, including paused streams
+that keep their server connection. Refresh after starting playback if the list
+is empty. Selection changes neither playback routing nor volume.
+
+Native PipeWire clients may omit `application.name`; the same playback stream's
+`node.name` is then used so its application remains searchable. Missing both
+properties falls back to the localized unknown-application label.
+
+UI-only mode (`MIMI_UI_TEST=1`) returns a synthetic `Test Player · Test stream`
+and never queries the desktop sound server. To test real discovery, quit that
+instance normally and launch a regular development build with
+`env -u MIMI_UI_TEST npm run tauri:dev`, then open or refresh the picker.
+Opening the list does not start capture.
+
+Linux uses the existing application target, picker, IPC, capture status and
+failure/recovery policy. Its adapter interprets the opaque application ID as one
+live playback stream; keep this platform detail out of new shared target types.
+
+Stream identities survive refresh and output moves for that live stream. They
+expire when the stream closes, the audio server disconnects, or Mimi restarts;
+select a stream again. A live output move reconnects to the stream's new monitor.
+Unavailable targets fail without capturing the system mix. Switching revokes
+recording consent, preserves confirmed subtitles and pause. Microphone-only
+sessions do not start system capture when their future target changes.
+
 Mimi verifies the source belongs to that output and never falls back to a
 microphone. Enabling Microphone in Settings opens the default non-monitor
 input; an output monitor is rejected. Both sources can be enabled together,
@@ -115,6 +142,35 @@ npm ci
 ./scripts/check.sh
 ./scripts/build-linux-packages.sh --config src-tauri/tauri.ci.conf.json
 ```
+
+Native audio regression uses `./scripts/linux-audio-smoke.sh` with a private
+PulseAudio server and synthetic devices. It covers single-stream frequency
+isolation, paused stream identity, output moves, server loss and independent
+input lanes. It never connects to the desktop sound server or a speech provider.
+The CI workflow and dependency installer retain the existing PulseAudio setup;
+local PipeWire verification does not add a cloud dependency or CI job.
+
+When classifying selected-stream failures, do not assume subscription callbacks
+precede record-stream failure. If the capture context is still connected, query
+the target's existence before deciding whether to recover. Keep deletion and
+output-move cases in both server suites; neither may fall back to system mix.
+Keep the bounded test PCM receiver consumed during blocking device commands and
+while waiting for failure notifications. Otherwise the test transport can cause
+backpressure before the native failure being checked; preserve the expected
+failure category and timeout instead of accepting that unrelated error.
+
+Keep stream-registry validation out of the stable 5 ms capture path: use its
+atomic revision to skip the mutex when unchanged. Publish a new revision after
+both subscription events and completed metadata refreshes; an event alone may
+still expose the previous sink. Retain the capture context's own deletion
+subscription. Metadata waits must wake for explicit requests, use a bounded
+idle interval while connected, and block without polling after disconnection.
+Do not retire live stream identities solely because an enumeration query fails
+or times out on a healthy, subscribed connection. Cancel that query, preserve
+subscription-based removal, and retry after the idle wait. Explicit and
+background refreshes must share this failure policy; actual connection loss
+still retires every old token. Cover a forced query timeout during active
+single-stream capture, subsequent refresh, deletion and server loss.
 
 The CI config disables updater signing for development bundles. Formal release
 builds use the existing signing key and verify the AppImage signature before

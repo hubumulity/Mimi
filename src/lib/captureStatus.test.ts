@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import { applicationAudioCopy } from "./applicationAudio";
+import { expect, it, vi } from "vitest";
 import { capturePresentation, captureStatusForSource, type CaptureLifecycle, type CaptureStatus } from "./captureStatus";
 
 const listening: CaptureLifecycle = { status: { kind: "listening" }, isActive: true, isPaused: false };
@@ -59,4 +60,17 @@ it.each(["en", "zh", "ja"] as const)("marks disabled inputs off without stale ob
   expect(view.help).not.toContain("Synthetic old microphone");
   expect(view.help).not.toContain({ en: "input level", zh: "输入音量", ja: "入力音量" }[language]);
   expect(capturePresentation(value, { ...listening, status: { kind: "error", message: "synthetic-error" } }, language, "microphone", false).observation).toBe(view.observation);
+});
+
+it.each(["en", "zh", "zh-TW", "ja", "de", "fr", "ko", "th"] as const)("presents a selected Linux stream on the system lane in %s", language => {
+  vi.stubGlobal("navigator", { userAgent: "Linux" });
+  const stream: CaptureStatus = { ...system, kind: "application", strategy: "selected_application",
+    actualDeviceName: "Player · Media #7", systemOutputDeviceName: null };
+  const view = capturePresentation(stream, listening, language);
+  const text = applicationAudioCopy(language);
+  expect(view.help).toContain(text.help);
+  expect(view.deviceDescription).toBe(text.application + ": Player · Media #7");
+  expect(captureStatusForSource(stream, "system", "system")?.kind).toBe("application");
+  expect(captureStatusForSource(stream, "system", "microphone")).toBeNull();
+  vi.unstubAllGlobals();
 });

@@ -2,7 +2,7 @@
 import { act } from "react";
 import { SettingsToastRegion } from "./SettingsToast";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ApplicationAudio } from "./ApplicationAudio";
 import { useStore } from "../../lib/store";
@@ -19,13 +19,20 @@ let host: HTMLDivElement, root: Root;
 const switchTarget = vi.fn();
 const save = vi.fn();
 const applications = [{ id: "com.example.player", name: "Player" }, { id: "com.example.chat", name: "Chat" }];
+describe.each(["Macintosh", "Linux"] as const)("shared settings picker: %s", platform => {
+function text() { return applicationAudioCopy(); }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("navigator", { userAgent: "Macintosh" });
+  vi.stubGlobal("navigator", { userAgent: platform });
   Element.prototype.scrollIntoView = vi.fn();
   setStoredUiLanguage("en");
   applicationIconCache.clear();
-  vi.mocked(invoke).mockReset(); vi.mocked(invoke).mockResolvedValue({ supported: true, applications });
+  vi.mocked(invoke).mockReset(); vi.mocked(invoke).mockImplementation(async (_command, args) => ({
+    supported: true,
+    applications: args && "cachedOnly" in args && args.cachedOnly
+      ? [useStore.getState().settings.systemAudioTarget].filter(target => target.kind === "application")
+      : applications,
+  }));
   save.mockReset();
   switchTarget.mockReset(); switchTarget.mockImplementation(async (target: SystemAudioTarget) => {
     useStore.setState(state => ({ settings: mergeSettingsSnapshot(state.settings, { systemAudioTarget: target }) }));
@@ -38,8 +45,8 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); useStore.setState(initial, true); setStoredUiLanguage("system"); vi.unstubAllGlobals(); });
 async function render() { await act(async () => root.render(<><ApplicationAudio /><SettingsToastRegion /></>)); }
-function trigger() { return host.querySelector<HTMLButtonElement>(`button[aria-label="${applicationAudioCopy().title}"]`)!; }
-function refresh() { return host.querySelector<HTMLButtonElement>(`button[aria-label="${applicationAudioCopy().refresh}"]`)!; }
+function trigger() { return host.querySelector<HTMLButtonElement>(`button[aria-label="${text().title}"]`)!; }
+function refresh() { return host.querySelector<HTMLButtonElement>(`button[aria-label="${text().refresh}"]`)!; }
 async function open() { if (trigger().getAttribute("aria-expanded") !== "true") await act(async () => trigger().click()); }
 async function choose(option: string) {
   await open();
@@ -48,15 +55,15 @@ async function choose(option: string) {
   await act(async () => node.click());
 }
 
-it.each(["en", "zh", "ja"] as const)("offers one picker and lists only after user intent in %s", async language => {
+it.each(["en", "zh", "zh-TW", "ja", "de", "fr", "ko", "th"] as const)("offers one picker and lists only after user intent in %s", async language => {
   setStoredUiLanguage(language); await render();
   expect(invoke).not.toHaveBeenCalled();
   expect(host.querySelectorAll('button[role="combobox"]')).toHaveLength(1);
-  expect(trigger().textContent).toContain(applicationAudioCopy().all);
+  expect(trigger().textContent).toContain(text().all);
   await open();
   expect(invoke).toHaveBeenCalledExactlyOnceWith("audio_applications");
   expect(switchTarget).not.toHaveBeenCalled();
-  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([applicationAudioCopy().all, "Player", "Chat"]);
+  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([text().all, "Player", "Chat"]);
   expect(document.querySelectorAll('[role="option"] .mimi-select__icon[aria-hidden="true"] svg')).toHaveLength(3);
   await choose("Player");
   expect(switchTarget).toHaveBeenCalledExactlyOnceWith({ kind: "application", ...applications[0] });
@@ -72,7 +79,7 @@ it("keeps the popup open while applications load and never offers a placeholder 
   expect(trigger().getAttribute("aria-expanded")).toBe("true");
   expect(host.querySelector('.application-audio-picker__feedback')).toBeNull();
   expect(refresh().getAttribute("aria-busy")).toBe("true");
-  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([applicationAudioCopy().all]);
+  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([text().all]);
   const input = document.querySelector<HTMLInputElement>('.mimi-select__search')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "play");
@@ -124,20 +131,20 @@ it("uses neutral fallback icons for unreadable images and never loads remote app
 
 it("searches applications and returns to all audio through the same picker", async () => {
   await render(); await open();
-  const input = document.querySelector<HTMLInputElement>('input[aria-label="Search applications"]')!;
+  const input = document.querySelector<HTMLInputElement>('.mimi-select__search')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "does-not-match");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(document.body.textContent).toContain(applicationAudioCopy().noMatch);
-  expect(document.body.textContent).not.toContain(applicationAudioCopy().empty);
+  expect(document.body.textContent).toContain(text().noMatch);
+  expect(document.body.textContent).not.toContain(text().empty);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "chat");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual(["Chat"]);
   await act(async () => document.querySelector<HTMLElement>('[role="option"]')!.click());
-  await choose(applicationAudioCopy().all);
+  await choose(text().all);
   expect(useStore.getState().settings.systemAudioTarget).toEqual({ kind: "system" });
 });
 
@@ -148,7 +155,7 @@ it("shows an unavailable saved app without making it selectable or changing it s
   expect(trigger().querySelector('.mimi-select__icon svg')).not.toBeNull();
   await act(async () => refresh().click());
   expect(trigger().textContent).toContain("Old player · Unavailable");
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(applicationAudioCopy().unavailable);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().unavailable);
   expect(switchTarget).not.toHaveBeenCalled();
   await open();
   expect([...document.querySelectorAll('[role="option"]')].some(node => node.textContent?.includes("Old player"))).toBe(false);
@@ -159,13 +166,13 @@ it("shows an unavailable saved app without making it selectable or changing it s
 it("reports list failures safely and allows refresh to an empty result with All applications still available", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("private-window-title"));
   await render(); await open();
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(applicationAudioCopy().failed);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().failed);
   expect(host.textContent).not.toContain("private-window-title");
   vi.mocked(invoke).mockResolvedValueOnce({ supported: true, applications: [] });
   await act(async () => refresh().click());
-  expect(refresh().title).toBe(applicationAudioCopy().empty);
+  expect(refresh().title).toBe(text().empty);
   expect(host.querySelector('[role="alert"]')).toBeNull();
-  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([applicationAudioCopy().all]);
+  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent)).toEqual([text().all]);
 });
 
 it("does not mark a new selection from another window missing using this window's old list", async () => {
@@ -174,11 +181,11 @@ it("does not mark a new selection from another window missing using this window'
     systemAudioTarget: { kind: "application", id: "example.new-player", name: "New player" },
   } })));
   expect(trigger().textContent).toContain("New player");
-  expect(trigger().textContent).not.toContain(applicationAudioCopy().missing);
+  expect(trigger().textContent).not.toContain(text().missing);
   expect(host.querySelector('[role="alert"]')).toBeNull();
-  expect(invoke).toHaveBeenCalledTimes(2); // New selections restore their icon silently.
+  expect(invoke).toHaveBeenCalledTimes(2); // Linux only reads already discovered choices.
   await act(async () => refresh().click());
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(applicationAudioCopy().unavailable);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().unavailable);
 });
 
 it("clears a failed switch after another window successfully changes the selected application", async () => {
@@ -199,7 +206,7 @@ it("keeps the error when the backend saves the new target but cannot reconnect i
   });
   await render(); await choose("Player");
   expect(trigger().textContent).toContain("Player");
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(applicationAudioCopy().unavailable);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().unavailable);
 });
 
 it("ignores an enumeration that was started for a different target", async () => {
@@ -219,11 +226,11 @@ it("blocks repeated switches without optimistic selection and recovers from a re
   switchTarget.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
   await render(); await choose("Player");
   expect(trigger().disabled).toBe(true);
-  expect(trigger().textContent).toContain(applicationAudioCopy().all);
+  expect(trigger().textContent).toContain(text().all);
   await act(async () => trigger().click());
   expect(switchTarget).toHaveBeenCalledOnce();
   await act(async () => reject(new Error("private-error")));
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(applicationAudioCopy().saveFailed);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().saveFailed);
   expect(useStore.getState().settings.systemAudioTarget.kind).toBe("system");
   await choose("Chat");
   expect(useStore.getState().settings.systemAudioTarget).toMatchObject({ kind: "application", name: "Chat" });
@@ -249,9 +256,44 @@ it.each([
   expect(switchTarget).not.toHaveBeenCalled();
 });
 
+if (platform === "Linux") it("shows a retired saved target using only native cached choices", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({ supported: true, applications: [] });
+  useStore.setState({ settings: { ...initial.settings,
+    systemAudioTarget: { kind: "application", id: "retired-token", name: "Player · stream" },
+  } });
+  await render();
+  expect(trigger().textContent).toContain(text().missing);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(text().unavailable);
+  expect(switchTarget).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("audio_applications", { cachedOnly: true });
+});
+
 it("leaves unsupported platforms on system audio without invoking capture APIs", async () => {
-  vi.stubGlobal("navigator", { userAgent: "Linux" }); await render();
+  vi.stubGlobal("navigator", { userAgent: "unsupported-platform" });
+  await render();
   expect(trigger().disabled).toBe(true);
-  expect(host.querySelector('.application-audio-picker')?.getAttribute("title")).toContain(applicationAudioCopy().unsupported);
+  expect(host.querySelector('.application-audio-picker')?.getAttribute("title")).toContain(text().unsupported);
   expect(invoke).not.toHaveBeenCalled();
+});
+
+it("honors the existing native list capability without new settings fields", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({ supported: false, applications: [] });
+  await render(); await open();
+  expect(trigger().disabled).toBe(true);
+  expect(refresh().disabled).toBe(true);
+  expect(switchTarget).not.toHaveBeenCalled();
+});
+
+if (platform === "Linux") it("does not let a delayed cached read replace an explicit refresh", async () => {
+  let complete!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  useStore.setState({ settings: { ...initial.settings, systemAudioTarget: { kind: "application", ...applications[0] } } });
+  await render(); await open();
+  await act(async () => complete({ supported: true, applications: [] }));
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenNthCalledWith(1, "audio_applications", { cachedOnly: true });
+  expect(invoke).toHaveBeenNthCalledWith(2, "audio_applications");
+});
+
 });

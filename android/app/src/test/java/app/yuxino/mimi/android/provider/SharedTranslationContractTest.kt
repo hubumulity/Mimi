@@ -37,6 +37,24 @@ class SharedTranslationContractTest {
         assertEquals(case.getString("id"), case.get("expected"), actual.get("candidate"))
     }
 
+    @Test fun volcanoProto3TimingContractsCrossActualJniWithoutProviderRequests() = cases("volcanoSubtitleTimingEvents") { case ->
+        val response = NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "volcano_decode")
+            .put("hex", case.getString("hex")))
+        val expected = case.get("expected")
+        val actual = response.get("event")
+        assertTrue(case.getString("id"), if (expected is JSONObject) expected.similar(actual) else expected == actual)
+    }
+
+    @Test fun invalidVolcanoDecodeRequestsHaveSanitizedNativeErrors() {
+        for (hex in listOf(JSONObject.NULL, 12, "0", "synthetic-private-marker", "日", "00".repeat(1_048_577))) {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "volcano_decode").put("hex", hex))
+            }
+            assertEquals("native_runtime_invalid_request", error.message)
+        }
+    }
+
+
     @Test fun invalidPreviewCandidateFieldsHaveSanitizedNativeErrors() {
         fun request() = JSONObject().put("operation", "preview_candidate").put("minimumCharacters", 12)
             .put("opening", true).put("draft", "synthetic-private-marker")

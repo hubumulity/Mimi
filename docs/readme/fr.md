@@ -19,67 +19,36 @@
   </p>
 </div>
 
-<p align="center">Mimi transforme les paroles provenant de votre ordinateur ou de votre microphone en sous-titres traduits en direct. Regardez des films, suivez des streams ou des cours avec les sous-titres flottant au-dessus de votre écran.</p>
+![Illustration des sous-titres bilingues de Mimi avec un dialogue fictif](../assets/readme-preview.png)
 
-![Fenêtre de sous-titres bilingues de Mimi sur une illustration originale](../assets/readme-preview.png)
+Illustration de l’interface avec un dialogue d’exemple. [Voir les sous-titres et le mode immersif (ancienne interface)](../demos/README.md).
 
-## Fonctionnalités
+## Lire tout en écoutant
 
-- Choisissez l’audio du système, le microphone ou les deux. L’audio du système est sélectionné par défaut ; le microphone doit être choisi explicitement.
-- Traduisez l’audio d’une application sélectionnée sur macOS ou Windows 11.
-- Affichez le texte original, la traduction ou les deux.
-- Ajustez la position, la taille et la couleur des sous-titres, ou laissez les clics de souris traverser la fenêtre.
-- Sauvegardez les sous-titres ou l’audio localement et exportez-les en TXT / WAV au besoin. La sauvegarde et l’enregistrement sont désactivés par défaut.
+- **Comprendre ce qui passe** : des sous-titres flottants pour les voix des films, diffusions et cours. Affichez les deux langues, la traduction seule ou l’original seul.
+- **Choisir la source** : le son de l’ordinateur par défaut ; activez vous-même le microphone ou les deux sources. Sélectionnez une application sous macOS / Windows 11. Sous Linux, choisissez un flux de lecture individuel.
+- **Adapter l’affichage** : réglez la position, la taille et la couleur. Le mode immersif ne garde que le texte ; la transparence aux clics permet d’utiliser l’application dessous.
+- **Enregistrer les sous-titres et le son** : sur ordinateur, sauvegardez les sous-titres en TXT ou enregistrez la source audio choisie en WAV. Ces deux options doivent être activées manuellement.
 
 ## Premiers pas
 
-Pour votre première configuration, **nous recommandons Volcano Engine, Alibaba Cloud ou Google Gemini**.
+[Télécharger pour ordinateur](https://github.com/yuxino/mimi/releases/latest) · [Installation sur Android (anglais)](../../android/README.md#start)
 
-Pour Google Gemini, utilisez une connexion réseau stable. Consultez votre quota disponible, la facturation et vos clés API dans [Google AI Studio](https://aistudio.google.com/).
+La version pour ordinateur prend en charge macOS 13+ (puce Apple et Intel), Windows x64 et Linux x86_64.
 
-Pour les liens d’activation, les instructions concernant les identifiants et les modèles actuellement utilisés par Mimi, consultez le **[guide de configuration des fournisseurs (anglais)](../provider-setup.md)**.
+1. **Configurez un service** dans Réglages → Modèles et services. Le [guide de configuration (anglais)](../provider-setup.md#choose) explique comment choisir un service et obtenir ses identifiants.
+2. **Choisissez le son et les langues** dans les réglages audio : source à capturer, langue parlée et langue de traduction.
+3. **Lancez les sous-titres** depuis la page Sous-titres. Activez les sous-titres en direct, accordez les autorisations demandées, puis lancez votre contenu.
 
-1. Ouvrez Réglages → Parole et traduction, ajoutez une configuration, saisissez les identifiants demandés par le fournisseur et enregistrez.
-2. Choisissez les langues de reconnaissance et de traduction.
-3. Lancez du son et activez Sous-titres en direct dans Sous-titres. Sous macOS 14.2 ou ultérieur, l’enregistrement de l’audio du système uniquement suffit pour toutes les applications ou une seule application. Les autorisations d’enregistrement de l’écran existantes restent valables. Les versions antérieures exigent l’enregistrement de l’écran et de l’audio du système.
+Mimi est gratuit ; les services cloud peuvent être payants. La reconnaissance ou la traduction dans le cloud transmet l’audio ou le texte reconnu au service choisi. Les conditions des services locaux Apple figurent dans le [guide de configuration (anglais)](../provider-setup.md#apple-speech).
 
-Les services vocaux cloud nécessitent vos propres identifiants et reçoivent votre audio ; des frais d’utilisation peuvent s’appliquer. Apple Speech reconnaît l’audio localement sur les Mac compatibles. La traduction du texte à distance envoie le texte reconnu au service de votre choix ; Apple Translation garde le texte sur le Mac.
+## Besoin d’aide ?
 
-[Configuration et aide](../usage.fr.md) · [Android (anglais)](../../android/README.md) · [Signaler un bug](https://github.com/yuxino/mimi/issues) · [Contribuer (chinois/anglais)](../../.github/CONTRIBUTING.md)
-
-<a id="apple-local-recognition"></a>
-
-### Reconnaissance locale Apple
-
-**Apple Speech** apparaît lorsque le système le permet : puce Apple, macOS 26 ou version ultérieure et moteur de transcription système disponible. Aucune clé API de reconnaissance vocale n’est nécessaire. Arrêtez les sous-titres et choisissez la langue dans **Langue de reconnaissance**. Si elle est manquante, cliquez sur **Télécharger et utiliser** ; Mimi télécharge les ressources Apple et sélectionne cette langue une fois prête. Pour une langue déjà téléchargée, cliquez sur **Définir la langue de reconnaissance**, puis démarrez les sous-titres. Inutile d’ouvrir les Réglages Système. La détection automatique de la langue n’est pas proposée. Consultez la [configuration d’Apple Speech (anglais)](../provider-setup.md#apple-speech).
-
-**Apple Translation** est un service distinct de traduction du texte sur l’appareil, disponible sur les Mac compatibles avec puce Apple sous macOS 26 ou version ultérieure. Sélectionnez-le dans **Traduction du texte**, enregistrez la configuration, puis choisissez une langue source et une langue cible précises. Mimi indique si la paire est prête ; **Télécharger ou activer les langues** ouvre la confirmation de configuration d’Apple. Les modèles de traduction sont séparés des modèles de reconnaissance vocale. Les modèles existants sont réutilisés ; Apple télécharge les modèles manquants après votre confirmation. Les vérifications et les sessions de sous-titres ne demandent jamais de téléchargement. Aucune clé API ni aucun proxy de traduction du texte n’est nécessaire.
-
-Pour afficher uniquement l’original avec Apple Speech, choisissez **Sans traduction (original uniquement)**. Vous pouvez aussi utiliser un service de traduction du texte à distance, comme [Index-Translate](#try-index-translate) ; ce service reçoit le texte reconnu.
-
-<a id="try-index-translate"></a>
-
-### Essayer Index-Translate
-
-Le projet [Index-Translate](https://github.com/bilibili/Index-Translate#inference) de Bilibili propose actuellement une API publique de traduction gratuite (au 5 octobre 2026). Elle peut traduire le texte reconnu par Alibaba Cloud ou Apple Speech.
-
-Dans **Réglages → Parole et traduction**, ouvrez une configuration **Alibaba Cloud** ou **Apple Speech** et choisissez **API compatible OpenAI** dans **Traduction du texte**. Utilisez les valeurs de l’[exemple officiel](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py#L40-L41) :
-
-| Champ | Valeur |
-| --- | --- |
-| Adresse du service | `https://index-translate.bilibili.com/v1` |
-| Nom du modèle | `Index-Translate-35B-A3B` |
-| Clé API | Laissez vide ; l’API publique ne nécessite actuellement aucune authentification. |
-
-Enregistrez, puis lancez la vérification de connexion à côté de **Traduction du texte**. Si une clé est déjà enregistrée pour cette adresse, supprimez-la avec **Supprimer la clé de traduction** et enregistrez de nouveau.
-
-Index-Translate assure uniquement la traduction du texte. Avec Alibaba Cloud, conservez les identifiants de reconnaissance vocale configurés ; la reconnaissance peut toujours être facturée. Apple Speech ne nécessite aucune clé de reconnaissance. La disponibilité de l’API gratuite dépend du service en amont.
-
-## Questions fréquentes
-
-**macOS redemande l’autorisation d’enregistrement alors qu’elle est activée ?** Quittez Mimi, puis supprimez et ajoutez de nouveau uniquement son entrée dans Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran et de l’audio du système. Utilisez `/Applications/mimi.app` pour la version publique ou `/Applications/mimi-dev.app` pour le développement, activez l’autorisation et rouvrez la même application. Consultez la [récupération des autorisations](../usage.fr.md#macos-permissions-after-an-update).
+Le [guide d’utilisation](../usage.fr.md) couvre l’installation, les autorisations, l’affichage et les sessions enregistrées. Si les sous-titres manquent ou si la connexion échoue, consultez les [erreurs de reconnaissance](../usage.fr.md#errors). Si le problème persiste, [signalez-le](https://github.com/yuxino/mimi/issues).
 
 ## Contributeurs
+
+Pour participer, consultez le [guide de contribution (anglais/chinois)](../../.github/CONTRIBUTING.md).
 
 Merci à toutes les personnes qui écrivent du code, signalent des problèmes, essaient Mimi ou le font connaître (๑•̀ㅂ•́)و✧
 
@@ -87,7 +56,7 @@ Un grand merci à [@yebuwudong](https://github.com/yebuwudong) pour l’[applica
 
 Merci aussi à [@Chtholly000](https://github.com/Chtholly000) pour les améliorations des [sous-titres continus de Gemini et du renouvellement planifié des connexions](https://github.com/yuxino/Mimi/pull/176).
 
-Merci à [@EmmetZ](https://github.com/EmmetZ) d’avoir corrigé [les commandes qui ne suivaient pas la fenêtre de sous-titres sous Wayland](https://github.com/yuxino/Mimi/pull/242).
+Merci à [@EmmetZ](https://github.com/EmmetZ) pour la [correction des commandes sous Wayland](https://github.com/yuxino/Mimi/pull/242) et la [capture de flux de lecture individuels sous Linux](https://github.com/yuxino/Mimi/pull/275).
 
 Merci à [@wangmian0](https://github.com/wangmian0) d’avoir [désactivé le mode de raisonnement de DeepSeek pour la traduction des sous-titres en direct](https://github.com/yuxino/Mimi/pull/270).
 

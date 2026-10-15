@@ -8,21 +8,15 @@ import app.yuxino.mimi.android.provider.TextTranslationProvider
 import app.yuxino.mimi.android.provider.TranslationConfiguration
 import app.yuxino.mimi.android.provider.validateTranslationConfiguration
 import app.yuxino.mimi.android.provider.buildRuntimeConfiguration
-import app.yuxino.mimi.android.provider.normalizeQwenMTModel
 import org.json.JSONObject
 
-/** EncryptedSharedPreferences-backed settings (API key stays in Android Keystore-backed storage). */
+/** App-private settings. Service metadata and encrypted, profile-scoped credentials are separate. */
 object SettingsStore {
     private const val FILE = "mimi_secure"
 
-    private const val KEY_PROVIDER = "provider"
-    private const val KEY_API_KEY = "api_key"
     private const val KEY_SOURCE_LANG = "source_lang"
     private const val KEY_TARGET_LANG = "target_lang"
     private const val KEY_FONT_SIZE = "font_size"
-    private const val KEY_BASE_URL_PREFIX = "base_url_"
-    private const val KEY_MODEL_PREFIX = "model_"
-    private const val KEY_QWEN_MT_MODEL = "qwen_mt_model_dashscope"
     private const val KEY_OVERLAY_OPACITY = "overlay_opacity"
     private const val KEY_OVERLAY_BG_ALPHA = "overlay_bg_alpha"
     private const val KEY_IMMERSIVE_SUBTITLES = "immersive_subtitles"
@@ -33,7 +27,6 @@ object SettingsStore {
     private const val KEY_TRANSLATION_COLOR = "translation_color"
     private const val KEY_OVERLAY_X = "overlay_x"
     private const val KEY_OVERLAY_Y = "overlay_y"
-    private const val KEY_OVERLAY_SAVED = "overlay_saved"
     private const val KEY_DISPLAY_MODE = "caption_display_mode"
     private const val KEY_OVERLAY_WIDTH = "overlay_width_percent"
     private const val KEY_OVERLAY_HEIGHT = "overlay_height_percent"
@@ -50,6 +43,10 @@ object SettingsStore {
     private fun get(context: Context): SharedPreferences {
         return prefs ?: synchronized(this) {
             prefs ?: run {
+                val freshInstall = isFreshCaptionInstall(
+                    java.io.File(context.applicationInfo.dataDir), context.filesDir,
+                    context.getSharedPreferences("first_run", Context.MODE_PRIVATE).contains("seen"),
+                )
                 val masterKey = MasterKey.Builder(context)
                     .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                     .build()
@@ -57,7 +54,12 @@ object SettingsStore {
                     context, FILE, masterKey,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                ).also { prefs = it }
+                ).also {
+                    if (freshInstall && !it.contains(KEY_HISTORY_LINES)) {
+                        check(it.edit().putInt(KEY_HISTORY_LINES, 3).commit()) { "appearance_save_failed" }
+                    }
+                    prefs = it
+                }
             }
         }
     }
@@ -79,156 +81,162 @@ object SettingsStore {
         return { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    fun provider(context: Context): String =
-        get(context).getString(KEY_PROVIDER, PROVIDER_DASHSCOPE) ?: PROVIDER_DASHSCOPE
+    const val MAX_SERVICE_PROFILES = ServiceProfileRepository.LIMIT
+    @Volatile private var profileRepository: ServiceProfileRepository? = null
 
-    fun setProvider(context: Context, value: String) =
-        get(context).edit().putString(KEY_PROVIDER, value).apply()
-
-    fun apiKey(context: Context, provider: String = provider(context)): String {
-        val prefs = get(context)
-        // Migrate the original shared key only to the provider it belonged to.
-        synchronized(this) {
-            if (prefs.contains(KEY_API_KEY)) {
-                val owner = this.provider(context)
-                val scopedKey = KEY_API_KEY + "_" + owner
-                val editor = prefs.edit()
-                if (!prefs.contains(scopedKey)) {
-                    editor.putString(scopedKey, prefs.getString(KEY_API_KEY, ""))
-                }
-                editor.remove(KEY_API_KEY).apply()
-            }
-            return prefs.getString(KEY_API_KEY + "_" + provider, "") ?: ""
+    private fun repository(context: Context): ServiceProfileRepository = synchronized(this) {
+        val repository = profileRepository ?: ServiceProfileRepository(AndroidProfilePersistence(context.applicationContext))
+            .also { profileRepository = it }
+        if (!repository.initialized()) {
+            val legacy = LegacyServiceProfiles.read(get(context).all)
+            check(repository.migrate(legacy.profiles, legacy.activeId)) { "profile_migration_failed" }
         }
+        // Retry retirement after an interrupted migration. The catalog is already durable.
+        val old = get(context)
+        val keys = old.all.keys.filter(LegacyServiceProfiles::ownsKey)
+        if (keys.isNotEmpty()) {
+            repository.profiles().forEach { repository.contents(it.id) }
+            val editor = old.edit()
+            keys.forEach(editor::remove)
+            check(editor.commit()) { "profile_migration_cleanup_failed" }
+        }
+        repository
     }
+
+    fun profiles(context: Context): List<ServiceProfile> = repository(context).profiles()
+    fun activeProfileId(context: Context): String? = repository(context).activeId()
+    fun activeProfile(context: Context): ServiceProfile? {
+        val repository = repository(context)
+        return repository.profiles().firstOrNull { it.id == repository.activeId() }
+    }
+    fun profileConfiguration(context: Context, id: String): app.yuxino.mimi.android.provider.ServiceConfiguration =
+        repository(context).contents(id).speech
+    fun profileTextTranslationProvider(context: Context, id: String): TextTranslationProvider =
+        repository(context).contents(id).selectedTranslation
+    fun profileQwenMtModel(context: Context, id: String): String = repository(context).contents(id).qwenMtModel
+    fun profileTranslationConfiguration(context: Context, id: String, provider: TextTranslationProvider? = null): TranslationConfiguration {
+        val contents = repository(context).contents(id)
+        val selected = provider ?: contents.selectedTranslation
+        return contents.translations[selected] ?: TranslationConfiguration(provider = selected)
+    }
+    fun profileConfigured(context: Context, id: String): Boolean {
+        val config = profileConfiguration(context, id)
+        return config.provider.configured(config.credentials) && (!config.usesAlibabaLiveTranslate || config.alibabaWorkspaceId.isNotBlank())
+    }
+
+    private fun canEditProfiles() = !app.yuxino.mimi.android.capture.MimiService.isRunning &&
+        !app.yuxino.mimi.android.capture.MimiService.isStopping
+
+    @Synchronized fun saveProfile(context: Context, id: String?, name: String,
+        config: app.yuxino.mimi.android.provider.ServiceConfiguration,
+        translation: TranslationConfiguration? = null, translationEnabled: Boolean? = null,
+        qwenMtModel: String? = null, activate: Boolean = false): String? {
+        if (!canEditProfiles()) return null
+        return try {
+            require(qwenMtModel == null || qwenMtModel in listOf("lite", "flash", "plus")) { "translation_model" }
+            require(config.alibabaRealtimeMode in listOf("asrMt", "liveTranslate")) { "speech_mode" }
+            val repository = repository(context)
+            val prior = id?.let(repository::contents)
+            val selected = if (translationEnabled == false) TextTranslationProvider.BUILTIN else translation?.provider
+                ?: prior?.selectedTranslation ?: TextTranslationProvider.BUILTIN
+            if (config.usesIndependentTextTranslation && translation != null && selected !in setOf(TextTranslationProvider.BUILTIN, TextTranslationProvider.NONE)) {
+                validateTranslationConfiguration(translation)
+            }
+            val drafts = prior?.translations.orEmpty().toMutableMap()
+            if (translation != null && translation.provider !in setOf(TextTranslationProvider.BUILTIN, TextTranslationProvider.NONE)) drafts[translation.provider] = translation
+            repository.save(id, name, ProfileContents(config, selected, drafts, qwenMtModel ?: prior?.qwenMtModel ?: "lite"), activate)
+        } catch (_: Exception) { null }
+    }
+
+    fun duplicateProfile(context: Context, id: String, name: String): String? =
+        if (!canEditProfiles()) null else runCatching { repository(context).duplicate(id, name) }.getOrNull()
+    fun renameProfile(context: Context, id: String, name: String): Boolean =
+        canEditProfiles() && runCatching { repository(context).rename(id, name) }.getOrDefault(false)
+    fun deleteProfile(context: Context, id: String): Boolean =
+        canEditProfiles() && runCatching { repository(context).delete(id) }.getOrDefault(false)
+    fun activateProfile(context: Context, id: String): Boolean =
+        canEditProfiles() && runCatching { profileConfigured(context, id) && repository(context).activate(id) }.getOrDefault(false)
+
+    private fun matchingProfile(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider): ServiceProfile? =
+        activeProfile(context)?.takeIf { it.provider == provider } ?: profiles(context).firstOrNull { it.provider == provider }
+
+    fun provider(context: Context): String = activeProfile(context)?.provider?.id ?: PROVIDER_DASHSCOPE
+
+    /** Compatibility for existing instrumentation; user-facing selection uses profile IDs. */
+    fun setProvider(context: Context, value: String) {
+        val profile = matchingProfile(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(value)) ?: return
+        check(canEditProfiles() && repository(context).activate(profile.id)) { "profile_activation_failed" }
+    }
+
+    fun apiKey(context: Context, provider: String = provider(context)): String =
+        configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider)).value("apiKey")
 
     fun setApiKey(context: Context, value: String, provider: String = provider(context)) {
-        apiKey(context, provider) // Complete any legacy migration first.
-        get(context).edit().putString(KEY_API_KEY + "_" + provider, value.trim()).apply()
+        val saved = configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider))
+        check(saveConfiguration(context, app.yuxino.mimi.android.provider.ServiceConfiguration(saved.provider,
+            saved.credentials + ("apiKey" to value.trim()), saved.endpoint, saved.model, saved.alibabaRealtimeMode, saved.alibabaWorkspaceId))) { "profile_save_failed" }
     }
 
-    fun configuration(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider =
-        app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider(context))): app.yuxino.mimi.android.provider.ServiceConfiguration {
-        val values = provider.fields.associate { field -> field.id to if (field.id == "apiKey")
-            apiKey(context, provider.id) else get(context).getString("credential_${provider.id}_${field.id}", "").orEmpty() }
-        return app.yuxino.mimi.android.provider.ServiceConfiguration(provider, values, baseUrl(context, provider.id), model(context, provider.id))
+    fun configuration(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider? = null): app.yuxino.mimi.android.provider.ServiceConfiguration {
+        val profile = if (provider == null) activeProfile(context) else matchingProfile(context, provider)
+        return profile?.let { profileConfiguration(context, it.id) }
+            ?: app.yuxino.mimi.android.provider.ServiceConfiguration(provider ?: app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE, emptyMap())
     }
 
-    fun isConfigured(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider =
-        app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider(context))): Boolean =
-        provider.configured(configuration(context, provider).credentials)
+    fun isConfigured(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider? = null): Boolean {
+        val profile = if (provider == null) activeProfile(context) else matchingProfile(context, provider)
+        return profile != null && profileConfigured(context, profile.id)
+    }
 
-    /** Save one complete profile atomically; callers preserve blank, write-only secret fields. */
+    /** Legacy provider-keyed entry point; never used to select a production session. */
     fun saveConfiguration(context: Context, config: app.yuxino.mimi.android.provider.ServiceConfiguration,
-        translation: app.yuxino.mimi.android.provider.TranslationConfiguration? = null,
-        translationEnabled: Boolean? = null, qwenMtModel: String? = null): Boolean {
+        translation: TranslationConfiguration? = null, translationEnabled: Boolean? = null, qwenMtModel: String? = null): Boolean {
         require(qwenMtModel == null || qwenMtModel in listOf("lite", "flash", "plus")) { "translation_model" }
-        apiKey(context, config.provider.id) // Resolve legacy ownership before activating another provider.
-        val editor = get(context).edit()
-        config.provider.fields.forEach { field ->
-            val key = if (field.id == "apiKey") "${KEY_API_KEY}_${config.provider.id}" else "credential_${config.provider.id}_${field.id}"
-            editor.putString(key, config.value(field.id).trim())
-        }
-        editor.putString(KEY_BASE_URL_PREFIX + config.provider.id, config.endpoint.trim())
-        editor.putString(KEY_MODEL_PREFIX + config.provider.id, config.model.trim())
-        if (config.provider == app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE && qwenMtModel != null) {
-            editor.putString(KEY_QWEN_MT_MODEL, qwenMtModel)
-        }
-        if (config.provider == app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE && translation != null) {
-            val selected = if (translationEnabled == false) TextTranslationProvider.BUILTIN else translation.provider
-            if (selected != TextTranslationProvider.BUILTIN) validateTranslationConfiguration(translation)
-            // Copy the old ChatMock draft once, even when saving a different translator first.
-            // Reads do not migrate or enable anything; Save and use is the only write boundary.
-            val preferences = get(context)
-            val openAIPrefix = translationPrefix(TextTranslationProvider.OPENAI_COMPATIBLE)
-            if (!preferences.contains(openAIPrefix + "endpoint") && preferences.contains("chatmock_endpoint")) {
-                writeTranslation(editor, translationConfiguration(context, TextTranslationProvider.OPENAI_COMPATIBLE))
-            }
-            if (translation.provider !in setOf(TextTranslationProvider.BUILTIN, TextTranslationProvider.NONE)) {
-                writeTranslation(editor, translation)
-            }
-            editor.putString("text_translation_provider", selected.storageId)
-            listOf("chatmock_enabled", "chatmock_endpoint", "chatmock_model", "chatmock_api_key", "chatmock_local_http")
-                .forEach(editor::remove)
-        }
-        return editor.commit()
+        if (config.usesIndependentTextTranslation && translation != null && translationEnabled != false) validateTranslationConfiguration(translation)
+        val profile = matchingProfile(context, config.provider)
+        return saveProfile(context, profile?.id, profile?.name ?: config.provider.title, config, translation, translationEnabled, qwenMtModel) != null
     }
 
-    fun textTranslationProvider(context: Context): TextTranslationProvider {
-        val preferences = get(context)
-        val stored = preferences.getString("text_translation_provider", null)
-        if (stored != null) return TextTranslationProvider.fromStorageId(stored)
-        return if (preferences.getBoolean("chatmock_enabled", false)) TextTranslationProvider.OPENAI_COMPATIBLE
-            else TextTranslationProvider.BUILTIN
-    }
+    fun textTranslationProvider(context: Context): TextTranslationProvider =
+        activeProfileId(context)?.let { profileTextTranslationProvider(context, it) } ?: TextTranslationProvider.BUILTIN
 
     fun originalTextOnly(context: Context): Boolean =
-        provider(context) == PROVIDER_DASHSCOPE && textTranslationProvider(context) == TextTranslationProvider.NONE
+        configuration(context).usesIndependentTextTranslation && textTranslationProvider(context) == TextTranslationProvider.NONE
 
-    fun useChatMockTranslation(context: Context): Boolean =
-        textTranslationProvider(context) == TextTranslationProvider.CHAT_MOCK
-
-    /** A distinct text-model preference; legacy realtime model overrides remain untouched. */
-    fun qwenMtModel(context: Context): String = normalizeQwenMTModel(get(context).getString(KEY_QWEN_MT_MODEL, null))
+    fun useChatMockTranslation(context: Context): Boolean = textTranslationProvider(context) == TextTranslationProvider.CHAT_MOCK
+    fun qwenMtModel(context: Context): String = activeProfileId(context)?.let { profileQwenMtModel(context, it) } ?: "lite"
 
     /** Private, short-lived native session input. Never include it in UI snapshots or logs. */
     fun runtimeConfiguration(context: Context): JSONObject {
-        val speech = configuration(context)
-        val translation = if (speech.provider == app.yuxino.mimi.android.provider.ServiceProvider.DASHSCOPE)
-            translationConfiguration(context) else TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
-        // Normalize only this effective session input. Keep the saved language preference intact.
-        val (source, target) = speech.provider.normalize(sourceLang(context), targetLang(context), translation.provider)
-        return buildRuntimeConfiguration(speech, translation, source, target, qwenMtModel(context))
+        // One atomic profile read: a concurrent selection can never pair one profile
+        // speech key with another profile translator or model.
+        val contents = repository(context).activeContents() ?: throw IllegalStateException("profile_missing")
+        val speech = contents.speech
+        val translation = if (speech.usesIndependentTextTranslation)
+            contents.translations[contents.selectedTranslation] ?: TranslationConfiguration(provider = contents.selectedTranslation)
+            else TranslationConfiguration(provider = TextTranslationProvider.BUILTIN)
+        val (source, target) = speech.provider.normalize(sourceLang(context), targetLang(context), translation.provider, speech.alibabaRealtimeMode)
+        return buildRuntimeConfiguration(speech, translation, source, target, contents.qwenMtModel)
     }
 
-    fun translationConfiguration(context: Context, provider: TextTranslationProvider = textTranslationProvider(context)): TranslationConfiguration {
-        if (provider in setOf(TextTranslationProvider.BUILTIN, TextTranslationProvider.NONE)) {
-            return TranslationConfiguration(provider = provider)
-        }
-        val preferences = get(context)
-        val prefix = translationPrefix(provider)
-        // The old combined entry could hold any compatible service. Keep it generic;
-        // never infer ChatMock from its URL or copy its key into the new ChatMock entry.
-        val legacy = provider == TextTranslationProvider.OPENAI_COMPATIBLE && !preferences.contains(prefix + "endpoint")
-        return TranslationConfiguration(
-            endpoint = preferences.getString(if (legacy) "chatmock_endpoint" else prefix + "endpoint", "").orEmpty(),
-            model = preferences.getString(if (legacy) "chatmock_model" else prefix + "model", "").orEmpty(),
-            apiKey = preferences.getString(if (legacy) "chatmock_api_key" else prefix + "api_key", "").orEmpty(),
-            allowLocalHttp = preferences.getBoolean(if (legacy) "chatmock_local_http" else prefix + "local_http", false),
-            provider = provider,
-        )
+    fun translationConfiguration(context: Context, provider: TextTranslationProvider = textTranslationProvider(context)): TranslationConfiguration =
+        activeProfileId(context)?.let { profileTranslationConfiguration(context, it, provider) } ?: TranslationConfiguration(provider = provider)
+
+    fun activateProvider(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider): Boolean =
+        matchingProfile(context, provider)?.let { activateProfile(context, it.id) } ?: false
+
+    fun baseUrl(context: Context, provider: String): String = configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider)).endpoint
+    fun setBaseUrl(context: Context, provider: String, value: String) {
+        val saved = configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider))
+        check(saveConfiguration(context, app.yuxino.mimi.android.provider.ServiceConfiguration(saved.provider, saved.credentials,
+            value.trim(), saved.model, saved.alibabaRealtimeMode, saved.alibabaWorkspaceId))) { "profile_save_failed" }
     }
-
-    private fun translationPrefix(provider: TextTranslationProvider) = "text_translation_${provider.storageId}_"
-
-    private fun writeTranslation(editor: SharedPreferences.Editor, configuration: TranslationConfiguration) {
-        val prefix = translationPrefix(configuration.provider)
-        editor.putString(prefix + "endpoint", configuration.endpoint)
-            .putString(prefix + "model", configuration.model)
-            .putString(prefix + "api_key", configuration.apiKey)
-            .putBoolean(prefix + "local_http", configuration.allowLocalHttp)
+    fun model(context: Context, provider: String): String = configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider)).model
+    fun setModel(context: Context, provider: String, value: String) {
+        val saved = configuration(context, app.yuxino.mimi.android.provider.ServiceProvider.fromId(provider))
+        check(saveConfiguration(context, app.yuxino.mimi.android.provider.ServiceConfiguration(saved.provider, saved.credentials,
+            saved.endpoint, value.trim(), saved.alibabaRealtimeMode, saved.alibabaWorkspaceId))) { "profile_save_failed" }
     }
-
-    fun activateProvider(context: Context, provider: app.yuxino.mimi.android.provider.ServiceProvider): Boolean {
-        if (!isConfigured(context, provider)) return false
-        val (source, target) = provider.normalize(sourceLang(context), targetLang(context), textTranslationProvider(context))
-        return get(context).edit().putString(KEY_PROVIDER, provider.id)
-            .putString(KEY_SOURCE_LANG, source).putString(KEY_TARGET_LANG, target).commit()
-    }
-
-    /** Custom endpoint per provider; blank means the official endpoint. */
-    fun baseUrl(context: Context, provider: String): String =
-        get(context).getString(KEY_BASE_URL_PREFIX + provider, "") ?: ""
-
-    fun setBaseUrl(context: Context, provider: String, value: String) =
-        get(context).edit().putString(KEY_BASE_URL_PREFIX + provider, value.trim()).apply()
-
-    /** Optional model override per provider; blank means the engine's default. */
-    fun model(context: Context, provider: String): String =
-        get(context).getString(KEY_MODEL_PREFIX + provider, "") ?: ""
-
-    fun setModel(context: Context, provider: String, value: String) =
-        get(context).edit().putString(KEY_MODEL_PREFIX + provider, value.trim()).apply()
 
     /** Overlay window opacity, 20..100 (percent). */
     fun overlayOpacity(context: Context): Int =
@@ -237,7 +245,7 @@ object SettingsStore {
     fun setOverlayOpacity(context: Context, value: Int) =
         writeAppearance(get(context).edit().putInt(KEY_OVERLAY_OPACITY, value.coerceIn(20, 100)))
 
-    /** History retention is opt-in; zero clears retained content immediately. */
+    /** New installs start with three confirmed captions; upgrades keep the old zero fallback. */
     fun historyLines(context: Context): Int =
         get(context).getInt(KEY_HISTORY_LINES, 0).coerceIn(0, 6)
 

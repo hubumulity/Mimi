@@ -72,12 +72,34 @@ class UiSmokeInstrumentation : Instrumentation() {
 
     override fun onStart() {
         super.onStart()
+        if (captureArguments?.getString("service_draft_recreation") == "true") {
+            ServiceDraftRecreationChecks(this).run()
+            return
+        }
+        if (captureArguments?.getString("copyProfileScreenshots") == "true") {
+            val result = runCatching { copyProfileScreenshots(targetContext, captureArguments?.getString("theme") ?: "light") }
+            finish(if (result.isSuccess) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
+                putString("stream", result.getOrElse { "Profile screenshot export failed: ${it.javaClass.simpleName}" } + "\n")
+            })
+            return
+        }
+        if (captureArguments?.getString("importDesktopDevProfiles") == "true") {
+            val result = runCatching { runDesktopDevProfileImport(targetContext) }
+            finish(if (result.isSuccess) Activity.RESULT_OK else Activity.RESULT_CANCELED, Bundle().apply {
+                putString("stream", result.getOrElse { "Profile import failed: ${it.javaClass.simpleName}" } + "\n")
+            })
+            return
+        }
         if (captureArguments?.getString("private_acceptance_input") == "true") {
             PrivateAcceptanceInputChecks(this).run()
             return
         }
         if (captureArguments?.getString("live_caption_reading") == "true") {
             CaptionLiveReadingChecks(this).run(captureArguments)
+            return
+        }
+        if (captureArguments?.getString("caption_scroll_probe") == "true") {
+            CaptionScrollContinuityChecks(this).run()
             return
         }
         if (captureArguments?.getString("caption_streaming") == "true") {
@@ -90,6 +112,10 @@ class UiSmokeInstrumentation : Instrumentation() {
         }
         if (captureArguments?.getString("overlay_listening") == "true") {
             OverlayListeningChecks(this).run(captureArguments)
+            return
+        }
+        if (captureArguments?.getString("service_profiles") == "true") {
+            ServiceProfileChecks(this).run(captureArguments)
             return
         }
         if (captureArguments?.getString("model_selection") == "true") {
@@ -1046,9 +1072,16 @@ class UiSmokeInstrumentation : Instrumentation() {
     }
 
     private fun openService(settings: MainActivity, provider: String): ServiceSettingsActivity {
+        val profile = SettingsStore.activeProfile(targetContext)?.takeIf { it.provider.id == provider }
+            ?: SettingsStore.profiles(targetContext).firstOrNull { it.provider.id == provider }
         val monitor = addMonitor(ServiceSettingsActivity::class.java.name, null, false)
+        if (profile == null && SettingsStore.profiles(targetContext).isNotEmpty()) {
+            onUi { check(settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("profiles-add").performClick()) }
+            waitForIdleSync()
+        }
         onUi {
-            val row = settings.findViewById<View>(R.id.service_panel).findViewWithTag<View>("configure-$provider")
+            val tag = profile?.let { "configure-${it.id}" } ?: "add-$provider"
+            val row = WindowInspector.getGlobalWindowViews().asReversed().firstNotNullOfOrNull { it.findViewWithTag<View>(tag) }
             check(row != null && row.performClick()) { "Provider editor did not open" }
         }
         val editor = waitForMonitorWithTimeout(monitor, 5000) as? ServiceSettingsActivity ?: error("Service editor missing")

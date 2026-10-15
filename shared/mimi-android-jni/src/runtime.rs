@@ -13,8 +13,11 @@ use mimi_runtime::{
         configuration::LiveTranslationConfiguration,
         models::{SessionStatus, SourceLanguage, TargetLanguage, TranslationMode},
         network_proxy::ProxyConfig,
-        protocols::live_translate::LiveTranslateServerEvent,
-        provider::{ProviderKind, ProviderPreferences, TextTranslation},
+        protocols::{
+            live_translate::LiveTranslateServerEvent,
+            volcano_engine::{VolcanoEngineEndpoint, VolcanoEngineServerEvent},
+        },
+        provider::{AlibabaRealtimeMode, ProviderKind, ProviderPreferences, TextTranslation},
         recovery::{
             advance_lifecycle_sequence_if_current, provider_error_is_retryable,
             provider_recovery_minimum_delay, MTBudgetContinuity, MTBudgetScope, RecoverySchedule,
@@ -405,6 +408,48 @@ fn probes() -> &'static Mutex<HashMap<u64, Arc<TextProbe>>> {
     PROBES.get_or_init(Default::default)
 }
 
+// An offline contract view of the shared wire decoder. This never creates a
+// provider, session or audio pipeline; protocol rejection is represented by null.
+fn volcano_decode(value: &Value) -> Result<Value, &'static str> {
+    let hex = value["hex"]
+        .as_str()
+        .filter(|hex| {
+            hex.len() <= VolcanoEngineEndpoint::MAXIMUM_SERVER_FRAME_BYTES * 2
+                && hex.len().is_multiple_of(2)
+        })
+        .ok_or("native_runtime_invalid_request")?;
+    let frame = hex
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| {
+            let pair = std::str::from_utf8(bytes).map_err(|_| "native_runtime_invalid_request")?;
+            u8::from_str_radix(pair, 16).map_err(|_| "native_runtime_invalid_request")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let event = VolcanoEngineServerEvent::decode(&frame).ok().map(|event| match event {
+        VolcanoEngineServerEvent::SourceSubtitleStarted { start_time_ms } =>
+            json!({"type":"sourceStart","startTimeMs":start_time_ms}),
+        VolcanoEngineServerEvent::SourceSubtitleDraft(text) =>
+            json!({"type":"sourceDraft","text":text}),
+        VolcanoEngineServerEvent::SourceSubtitleFinal { text, start_time_ms, end_time_ms } =>
+            json!({"type":"sourceFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms}),
+        VolcanoEngineServerEvent::TranslationSubtitleStarted { start_time_ms } =>
+            json!({"type":"translationStart","startTimeMs":start_time_ms}),
+        VolcanoEngineServerEvent::TranslationSubtitleDraft(text) =>
+            json!({"type":"translationDraft","text":text}),
+        VolcanoEngineServerEvent::TranslationSubtitleFinal { text, start_time_ms, end_time_ms } =>
+            json!({"type":"translationFinal","text":text,"startTimeMs":start_time_ms,"endTimeMs":end_time_ms}),
+        VolcanoEngineServerEvent::SessionStarted => json!({"type":"sessionStarted"}),
+        VolcanoEngineServerEvent::SessionFinished => json!({"type":"sessionFinished"}),
+        VolcanoEngineServerEvent::SessionFailed { status_code } =>
+            json!({"type":"sessionFailed","statusCode":status_code}),
+        VolcanoEngineServerEvent::Ignored { event } => json!({"type":"ignored","event":event}),
+    });
+    Ok(json!({"event":event}))
+}
+
 pub fn exchange(request: &str) -> Result<String, &'static str> {
     if request.len() > MAX_REQUEST {
         return Err("native_runtime_invalid_request");
@@ -467,6 +512,7 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
             }
             json!({"rows": rows})
         }
+        "volcano_decode" => volcano_decode(&value)?,
         "preview_candidate" => {
             let minimum = value["minimumCharacters"]
                 .as_u64()
@@ -564,7 +610,24 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                 }
                 Err(_) => return Err("invalid_configuration"),
             };
-            let capabilities = provider.capabilities_for_route(route, target);
+            let mode: AlibabaRealtimeMode = value
+                .get("alibabaRealtimeMode")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| "invalid_configuration")?
+                .unwrap_or_default();
+            if mode != AlibabaRealtimeMode::Disabled && provider != ProviderKind::AlibabaCloud {
+                return Err("invalid_configuration");
+            }
+            let capabilities_for_target = |target| {
+                if mode != AlibabaRealtimeMode::Disabled {
+                    mode.capabilities()
+                } else {
+                    provider.capabilities_for_route(route, target)
+                }
+            };
+            let capabilities = capabilities_for_target(target);
             if value["operation"] == "normalize" {
                 let source: SourceLanguage = match serde_json::from_value(value["source"].clone()) {
                     Ok(language) => language,
@@ -576,9 +639,7 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                     target_language: target,
                     translation_mode: TranslationMode::Turbo,
                 });
-                let normalized = provider
-                    .capabilities_for_route(route, first.target_language)
-                    .normalize(first);
+                let normalized = capabilities_for_target(first.target_language).normalize(first);
                 json!({"sourceLanguage":normalized.source_language,"targetLanguage":normalized.target_language})
             } else {
                 let pairs: serde_json::Map<String, Value> = capabilities
@@ -839,6 +900,37 @@ mod tests {
         assert!(snapshot["realtimePreview"].is_null());
     }
     #[test]
+    fn volcano_timing_contracts_cross_native_exchange_without_network() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../../translation-contracts.json")).unwrap();
+        let cases = contract["volcanoSubtitleTimingEvents"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let request = json!({"operation":"volcano_decode","hex":case["hex"]});
+            let response: Value =
+                serde_json::from_str(&exchange(&request.to_string()).unwrap()).unwrap();
+            assert_eq!(response["event"], case["expected"], "{}", case["id"]);
+        }
+    }
+
+    #[test]
+    fn invalid_volcano_decode_requests_have_content_free_errors() {
+        for hex in [
+            Value::Null,
+            json!(12),
+            json!("0"),
+            json!("synthetic-private-marker"),
+            json!("日"),
+            json!("00".repeat(VolcanoEngineEndpoint::MAXIMUM_SERVER_FRAME_BYTES + 1)),
+        ] {
+            assert_eq!(
+                exchange(&json!({"operation":"volcano_decode","hex":hex}).to_string()).unwrap_err(),
+                "native_runtime_invalid_request"
+            );
+        }
+    }
+
+    #[test]
     fn malformed_native_requests_and_pcm_have_content_free_errors() {
         assert_eq!(
             exchange("invalid synthetic secret").unwrap_err(),
@@ -858,6 +950,49 @@ mod tests {
             "native_runtime_stale_handle"
         );
     }
+    #[test]
+    fn alibaba_mode_capabilities_and_normalization_use_shared_catalog() {
+        let request = json!({"operation":"capabilities", "provider":"alibabaCloud",
+            "route":"deepL", "target":"fr", "alibabaRealtimeMode":"liveTranslate"});
+        let response: Value =
+            serde_json::from_str(&exchange(&request.to_string()).unwrap()).unwrap();
+        let shared = AlibabaRealtimeMode::LiveTranslate.capabilities();
+        assert_eq!(response["sourceLanguages"], json!(shared.source_languages));
+        assert_eq!(response["targetLanguages"], json!(shared.target_languages));
+        assert_eq!(response["sampleRateHz"], json!(shared.input_sample_rate_hz));
+        let mut normalize = request.clone();
+        normalize["operation"] = json!("normalize");
+        normalize["source"] = json!("en");
+        let normalized: Value =
+            serde_json::from_str(&exchange(&normalize.to_string()).unwrap()).unwrap();
+        assert_eq!(
+            normalized,
+            json!({"sourceLanguage":"auto", "targetLanguage":"fr"})
+        );
+        let mut legacy = request.clone();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("alibabaRealtimeMode");
+        let response: Value =
+            serde_json::from_str(&exchange(&legacy.to_string()).unwrap()).unwrap();
+        assert!(response["sourceLanguages"].as_array().unwrap().len() > 1);
+        for invalid in ["unknown", "asrMt"] {
+            let mut request = request.clone();
+            request["alibabaRealtimeMode"] = json!(invalid);
+            assert_eq!(
+                exchange(&request.to_string()).unwrap_err(),
+                "invalid_configuration"
+            );
+        }
+        let mut wrong_provider = request;
+        wrong_provider["provider"] = json!("tencentCloud");
+        assert_eq!(
+            exchange(&wrong_provider.to_string()).unwrap_err(),
+            "invalid_configuration"
+        );
+    }
+
     #[tokio::test]
     async fn native_finish_drains_current_reliable_pairs_but_not_stale_content_or_drafts() {
         // Instantiate the real shared factory/pipeline without connecting it.

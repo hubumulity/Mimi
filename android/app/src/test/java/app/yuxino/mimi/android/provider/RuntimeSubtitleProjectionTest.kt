@@ -15,15 +15,24 @@ class RuntimeSubtitleProjectionTest {
     @Before fun reset() { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(2) }
     @After fun cleanup() { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
 
-    private class Snapshots(private val atomic: Boolean, historyLimit: Int = 2) {
+    private class Snapshots(private val atomic: Boolean, private val historyLimit: Int = 2) {
         private var response = SharedSubtitleCore.exchange(JSONObject().put("operation",
             JSONObject().put("type", "create").put("history_limit", historyLimit)))
-        fun apply(event: JSONObject) {
+        fun apply(event: JSONObject, publish: Boolean = true) =
+            operation(JSONObject().put("type", "apply").put("event", event), publish)
+        fun restore(publish: Boolean = true) =
+            operation(JSONObject().put("type", "history_limit").put("limit", historyLimit), publish)
+        private fun operation(operation: JSONObject, publish: Boolean) {
             response = SharedSubtitleCore.exchange(JSONObject().put("state", response.getString("state"))
-                .put("operation", JSONObject().put("type", "apply").put("event", event)))
-            SubtitleBus.onRuntimeSnapshot(JSONObject().put("atomicPreview", atomic).put("detectedLanguage", "en")
-                .put("snapshot", response.getJSONObject("snapshot")), false)
+                .put("operation", operation))
+            if (publish) this.publish()
         }
+        fun publish() = SubtitleBus.onRuntimeSnapshot(JSONObject().put("atomicPreview", atomic)
+            .put("detectedLanguage", "en").put("snapshot", response.getJSONObject("snapshot")), false)
+        fun sourceOwner(): Any? = response.getJSONObject("snapshot").getJSONObject("source")
+            .opt("utteranceId").takeUnless { it == JSONObject.NULL }
+        fun translationOwner(): Any? = response.getJSONObject("snapshot").getJSONObject("translation")
+            .opt("utteranceId").takeUnless { it == JSONObject.NULL }
         fun feedback(fields: JSONObject) = SubtitleBus.onRuntimeSnapshot(fields.put("atomicPreview", atomic)
             .put("snapshot", response.getJSONObject("snapshot")), false)
     }
@@ -198,6 +207,103 @@ class RuntimeSubtitleProjectionTest {
         snapshots.apply(pair("B", "Synthetic B.", "合成 B。"))
         assertTrue(SubtitleBus.displayPairFinal)
         assertEquals("合成 B。", SubtitleBus.historySnapshot().single().translation)
+    }
+
+
+    private fun volcanoCase(id: String): JSONObject {
+        val fixture = requireNotNull(javaClass.getResourceAsStream("/realtime-display-contracts.json"))
+            .bufferedReader().use { JSONObject(it.readText()) }
+        val cases = fixture.getJSONArray("cases")
+        return (0 until cases.length()).map(cases::getJSONObject).single { it.getString("id") == id }
+    }
+
+    private fun assertFixtureReadingModes(case: JSONObject, stepIndex: Int) {
+        val steps = case.getJSONArray("steps")
+        val expected = steps.getJSONObject(stepIndex).getJSONObject("expected")
+        // The shared fixtures name the two pending frames whose native reading
+        // projection retains A while the actual source lane already belongs to B.
+        val retainedPairIndex = when (case.getString("id")) {
+            "volcano-proven-order-keeps-newer-source-through-first-late-end" -> if (stepIndex == 5) 5 else null
+            "volcano-empty-boundary-keeps-completed-owner-without-history" -> if (stepIndex == 6) 4 else null
+            else -> null
+        }
+        val retained = retainedPairIndex?.let { steps.getJSONObject(it).getJSONObject("operation").getJSONObject("event") }
+        val state = SubtitleBus.displaySnapshot()
+        assertEquals(expected.getInt("historyCount"), state.history.size)
+        for (mode in CaptionDisplayMode.entries) {
+            val reading = state.forReading(mode)
+            val keepsCompleted = mode != CaptionDisplayMode.ORIGINAL && retained != null
+            val label = "${case.getString("id")} step=$stepIndex mode=${mode.id}"
+            assertEquals(label, if (keepsCompleted) retained!!.getString("source") else expected.getString("source"), reading.source)
+            if (mode != CaptionDisplayMode.ORIGINAL) {
+                assertEquals(label, if (keepsCompleted) retained!!.getString("translation") else expected.getString("translation"), reading.translation)
+            }
+            val confirmed = keepsCompleted || expected.getBoolean("confirmed")
+            assertEquals(label, confirmed, reading.confirmed)
+            if (confirmed) assertNotNull(label, reading.createdAt) else assertNull(label, reading.createdAt)
+        }
+    }
+
+    @Test fun provenSourceBoundaryFixturesKeepAllReadingModesOwnedAcrossActualJniRoundTrips() {
+        for (id in listOf(
+            "volcano-proven-order-keeps-newer-source-through-first-late-end",
+            "volcano-empty-boundary-keeps-completed-owner-without-history",
+            "volcano-invalid-order-metadata-remains-restorable",
+        )) {
+            val case = volcanoCase(id)
+            val limit = case.getInt("historyLimit")
+            SubtitleBus.clear(); SubtitleBus.setHistoryLimit(limit)
+            val snapshots = Snapshots(false, limit)
+            val steps = case.getJSONArray("steps")
+            for (index in 0 until steps.length()) {
+                val event = steps.getJSONObject(index).getJSONObject("operation").getJSONObject("event")
+                val before = SubtitleBus.displaySnapshot()
+                val owner = snapshots.sourceOwner()
+                val translationOwner = snapshots.translationOwner()
+                snapshots.apply(event)
+                if (event.getString("type") == "source_boundary") {
+                    // Ordering metadata cannot invent a word, confirmation, or
+                    // new visible identity when no source text was received.
+                    assertEquals(owner, snapshots.sourceOwner())
+                    assertEquals(translationOwner, snapshots.translationOwner())
+                    assertEquals(before, SubtitleBus.displaySnapshot())
+                }
+                assertFixtureReadingModes(case, index)
+                val published = SubtitleBus.displaySnapshot()
+                snapshots.restore()
+                assertEquals(published, SubtitleBus.displaySnapshot())
+                assertFixtureReadingModes(case, index)
+            }
+            val finalOwner = if (id == "volcano-invalid-order-metadata-remains-restorable") "volcano:A" else "volcano:B"
+            assertEquals(finalOwner, snapshots.sourceOwner())
+            assertEquals(finalOwner, snapshots.translationOwner())
+        }
+    }
+
+    @Test fun provenSourceOrderSurvivesCoalescedNativeSnapshotPublicationAfterLateOldFinal() {
+        val case = volcanoCase("volcano-proven-order-keeps-newer-source-through-first-late-end")
+        val limit = case.getInt("historyLimit")
+        SubtitleBus.setHistoryLimit(limit)
+        val snapshots = Snapshots(false, limit)
+        val steps = case.getJSONArray("steps")
+        // Native polling may observe only the latest Rust snapshot. Provider
+        // queue ordering and draft republishing are tested in the Rust client;
+        // this test batches publication only, without recreating that queue.
+        for (index in 0..5) {
+            snapshots.apply(steps.getJSONObject(index).getJSONObject("operation").getJSONObject("event"), false)
+            snapshots.restore(false)
+        }
+        snapshots.publish()
+        assertEquals("volcano:B", snapshots.sourceOwner())
+        assertFixtureReadingModes(case, 5)
+        for (index in 6 until steps.length()) {
+            snapshots.apply(steps.getJSONObject(index).getJSONObject("operation").getJSONObject("event"), false)
+            snapshots.restore(false)
+        }
+        snapshots.publish()
+        assertEquals("volcano:B", snapshots.sourceOwner())
+        assertEquals("volcano:B", snapshots.translationOwner())
+        assertFixtureReadingModes(case, steps.length() - 1)
     }
 
     @Test fun independentLaneRuntimeAdvancesDraftsAndCannotCombineDifferentSentenceOwners() {

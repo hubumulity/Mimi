@@ -118,6 +118,8 @@ pub mod windows;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+mod linux_streams;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub mod unsupported;
@@ -144,12 +146,12 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SystemAudioCaptureError {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[error("application_audio_unavailable")]
     ApplicationUnavailable,
     #[error("application_audio_unsupported")]
     ApplicationUnsupported,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     #[error("application_audio_list_failed")]
     ApplicationListFailed,
     #[error("Audio capture is already running.")]
@@ -204,7 +206,7 @@ pub enum SystemAudioCaptureError {
 /// same value is safe to use for both recovery decisions and diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SystemAudioCaptureFailure {
-    #[cfg(any(target_os = "macos", target_os = "windows", test))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
     #[error("application_audio_unavailable")]
     ApplicationUnavailable,
     #[error("Audio capture stopped unexpectedly.")]
@@ -224,7 +226,7 @@ pub enum SystemAudioCaptureFailure {
 impl SystemAudioCaptureFailure {
     pub fn is_recoverable(self) -> bool {
         match self {
-            #[cfg(any(target_os = "macos", target_os = "windows", test))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
             Self::ApplicationUnavailable => false,
             #[cfg(any(target_os = "macos", test))]
             Self::PermissionDenied | Self::UserStopped => false,
@@ -239,7 +241,7 @@ impl SystemAudioCaptureFailure {
             Self::PermissionDenied => "capture.permission_denied",
             #[cfg(any(target_os = "macos", test))]
             Self::UserStopped => "capture.user_stopped",
-            #[cfg(any(target_os = "macos", target_os = "windows", test))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
             Self::ApplicationUnavailable => "capture.application_unavailable",
             Self::AudioProcessingFailed => "capture.audio_processing_failed",
             Self::Backpressure => "capture.backpressure",
@@ -452,7 +454,21 @@ impl AudioCapture {
                 } else {
                     self.system.start(ingress, failure, format).await?;
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                #[cfg(target_os = "linux")]
+                {
+                    if !target.validate() {
+                        return Err(SystemAudioCaptureError::ApplicationUnavailable);
+                    }
+                    self.system
+                        .start_target(
+                            ingress,
+                            failure,
+                            format,
+                            target.application_id().map(str::to_owned),
+                        )
+                        .await?;
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
                 if target.application_id().is_some() {
                     return Err(SystemAudioCaptureError::ApplicationUnsupported);
                 } else {
@@ -524,6 +540,8 @@ impl AudioCapture {
 
     pub async fn audio_applications(
         &self,
+        _language: String,
+        _cached_only: bool,
     ) -> Result<applications::ApplicationSnapshot, SystemAudioCaptureError> {
         #[cfg(target_os = "macos")]
         {
@@ -535,7 +553,15 @@ impl AudioCapture {
                 .await
                 .map_err(|_| SystemAudioCaptureError::ApplicationListFailed)?
         }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(target_os = "linux")]
+        {
+            if _cached_only {
+                Ok(linux_streams::cached(&_language))
+            } else {
+                linux_streams::list(_language).await
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             Ok(applications::ApplicationSnapshot {
                 supported: false,

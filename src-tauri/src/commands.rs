@@ -29,6 +29,7 @@ const RELEASES_LATEST_URL: &str = "https://github.com/yuxino/mimi/releases/lates
 #[serde(rename_all = "camelCase")]
 pub enum SettingsNavigationTarget {
     Service,
+    Voice,
     Export,
     AppleSpeechResources,
     ActiveProfile,
@@ -102,6 +103,7 @@ impl ServiceProfilePayload {
         }
     }
 
+    #[cfg(test)]
     fn unavailable(profile: ServiceProfile) -> Self {
         let text_translation = profile.text_translation();
         Self {
@@ -135,6 +137,8 @@ impl ServiceProfilePayload {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanguageCapabilitiesPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qwen_mt_model: Option<crate::core::protocols::qwen_mt::QwenMTModel>,
     pub profile_id: String,
     pub provider: ProviderKind,
     pub text_translation: TextTranslation,
@@ -189,6 +193,8 @@ impl LanguageCapabilitiesPayload {
             }
         }
         Self {
+            qwen_mt_model: (profile.provider == ProviderKind::AlibabaCloud)
+                .then_some(profile.qwen_mt_model),
             profile_id: profile.id.clone(),
             provider: profile.provider,
             text_translation: profile.text_translation(),
@@ -249,6 +255,65 @@ pub struct SettingsSnapshotPayload {
 mod tests {
     use super::*;
     use crate::apple_speech::AppleSpeechResourceStatus;
+
+    #[tokio::test]
+    async fn initial_settings_load_preserves_empty_and_unavailable_credential_catalogs() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("service-profiles.json"),
+            r#"{"schemaVersion":1,"activeProfileId":"","profiles":[]}"#,
+        )
+        .unwrap();
+        let empty = SettingsStore::at_path(
+            directory.path().into(),
+            Box::new(PartiallyUnavailableSecretStore),
+        );
+        let snapshot = load_settings_snapshot(&empty, true).await.unwrap();
+        assert!(snapshot.profiles.is_empty());
+        assert!(snapshot.active_profile_id.is_empty());
+
+        let unavailable =
+            SettingsStore::in_memory(Box::new(PartiallyUnavailableSecretStore), false);
+        let snapshot = load_settings_snapshot(&unavailable, true).await.unwrap();
+        assert_eq!(snapshot.profiles.len(), 1);
+        assert_eq!(
+            snapshot.profiles[0].credential_state,
+            CredentialState::Unavailable
+        );
+        assert!(snapshot.language_capabilities.is_some());
+    }
+
+    #[tokio::test]
+    async fn initial_settings_load_rejects_an_unreadable_catalog_without_empty_success() {
+        for content in [
+            "{invalid catalog",
+            r#"{"schemaVersion":999,"activeProfileId":"","profiles":[]}"#,
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("service-profiles.json");
+            std::fs::write(&path, content).unwrap();
+            let store = SettingsStore::at_path(
+                directory.path().into(),
+                Box::new(PartiallyUnavailableSecretStore),
+            );
+            let result = load_settings_snapshot(&store, true).await;
+            assert_eq!(
+                result.unwrap_err(),
+                "Service profile settings are unavailable."
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+        }
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("service-profiles.json")).unwrap();
+        let store = SettingsStore::at_path(
+            directory.path().into(),
+            Box::new(PartiallyUnavailableSecretStore),
+        );
+        assert_eq!(
+            load_settings_snapshot(&store, true).await.unwrap_err(),
+            "Service profile settings are unavailable."
+        );
+    }
 
     #[test]
     fn profile_snapshots_keep_speech_names_when_credentials_are_unavailable() {
@@ -483,6 +548,7 @@ mod tests {
         assert_eq!(caps["profileId"], value["activeProfileId"]);
         assert_eq!(caps["targetLanguage"], value["targetLanguage"]);
         assert_eq!(caps["provider"], "alibabaCloud");
+        assert_eq!(caps["qwenMtModel"], "lite");
         assert!(caps.get("appleSpeechSupportRevision").is_none());
         assert_eq!(caps["textTranslation"], "followService");
         assert_eq!(caps["sourceLanguages"].as_array().unwrap().len(), 25);
@@ -1229,6 +1295,10 @@ mod tests {
     #[test]
     fn settings_navigation_target_accepts_only_known_sections() {
         assert_eq!(
+            serde_json::from_str::<SettingsNavigationTarget>(r#""voice""#).unwrap(),
+            SettingsNavigationTarget::Voice
+        );
+        assert_eq!(
             serde_json::from_str::<SettingsNavigationTarget>(r#""service""#).unwrap(),
             SettingsNavigationTarget::Service
         );
@@ -1304,55 +1374,6 @@ mod tests {
 }
 
 impl SettingsSnapshotPayload {
-    pub fn from_store(store: &SettingsStore) -> Self {
-        match Self::try_from_store(store) {
-            Ok(payload) => payload,
-            Err(_) => {
-                let prefs = store.preferences();
-                let (active_profile_id, profiles) = store.profile_catalog_or_default();
-                Self {
-                    credential_storage: store.credential_storage(),
-                    profiles: profiles
-                        .into_iter()
-                        .map(ServiceProfilePayload::unavailable)
-                        .collect(),
-                    active_profile_id,
-                    language_capabilities: None,
-                    source_language: prefs.source_language,
-                    target_language: prefs.target_language,
-                    translation_mode: prefs.translation_mode,
-                    font_size: prefs.font_size,
-                    subtitle_font_family: prefs.subtitle_font_family,
-                    subtitle_background_opacity: prefs.subtitle_background_opacity,
-                    subtitle_color: prefs.subtitle_color,
-                    microphone_subtitle_color: prefs.microphone_subtitle_color,
-                    subtitle_alignment: prefs.subtitle_alignment,
-                    subtitle_display_mode: prefs.subtitle_display_mode,
-                    show_intermediate_subtitles: prefs.show_intermediate_subtitles,
-                    show_subtitle_dividers: prefs.show_subtitle_dividers,
-                    show_subtitle_timestamps: prefs.show_subtitle_timestamps,
-
-                    pulse_animation: prefs.pulse_animation,
-                    pulse_style: prefs.pulse_style,
-
-                    subtitle_animation: prefs.subtitle_animation,
-                    subtitle_blends_with_background: prefs.subtitle_blends_with_background,
-                    is_overlay_locked: prefs.overlay_locked,
-                    ui_language: prefs.ui_language,
-                    retain_session_history: prefs.retain_session_history,
-                    record_session_audio: prefs.record_session_audio,
-                    audio_input: prefs.audio_input,
-                    microphone_input_available:
-                        crate::core::audio_input::MICROPHONE_INPUT_AVAILABLE,
-                    windows_audio_source: prefs.windows_audio_source,
-                    system_audio_target: prefs.system_audio_target,
-                    show_in_dock: prefs.show_in_dock,
-                    network_proxy: prefs.network_proxy,
-                }
-            }
-        }
-    }
-
     pub fn try_from_store(store: &SettingsStore) -> Result<Self, String> {
         let (prefs, active_profile_id, profiles) = store.preferences_and_catalog()?;
         let language_capabilities = profiles
@@ -1438,10 +1459,16 @@ pub struct SettingsDraft {
 /// main-thread path.
 #[tauri::command]
 pub async fn settings_get(state: State<'_, AppState>) -> Result<SettingsSnapshotPayload, String> {
-    if !app_is_ui_test()
+    load_settings_snapshot(&state.settings, app_is_ui_test()).await
+}
+
+async fn load_settings_snapshot(
+    settings: &SettingsStore,
+    is_ui_test: bool,
+) -> Result<SettingsSnapshotPayload, String> {
+    if !is_ui_test
         && !crate::apple_speech_support::is_loaded()
-        && state
-            .settings
+        && settings
             .active_profile()
             .is_ok_and(|profile| profile.provider == ProviderKind::AppleSpeech)
     {
@@ -1449,16 +1476,15 @@ pub async fn settings_get(state: State<'_, AppState>) -> Result<SettingsSnapshot
         // Failure leaves an empty language list and is surfaced by its editor.
         let _ = crate::apple_speech_support::refresh().await;
     }
-    if !app_is_ui_test()
+    if !is_ui_test
         && !crate::apple_translation_support::is_loaded()
-        && state
-            .settings
+        && settings
             .active_profile()
             .is_ok_and(|profile| profile.text_translation() == TextTranslation::Apple)
     {
         let _ = crate::apple_translation_support::refresh().await;
     }
-    Ok(SettingsSnapshotPayload::from_store(&state.settings))
+    SettingsSnapshotPayload::try_from_store(settings)
 }
 
 #[tauri::command]
@@ -1886,6 +1912,10 @@ fn apply_settings_draft_guarded(
         .system_audio_target
         .as_ref()
         .is_some_and(|target| *target != state.settings.preferences().system_audio_target);
+    let windows_source_changed = draft
+        .windows_audio_source
+        .as_ref()
+        .is_some_and(|source| *source != previous_preferences.windows_audio_source);
     let save_preferences = || {
         state.settings.save_preferences_for_active_profile(|prefs| {
             if let Some(proxy) = &network_proxy {
@@ -1903,10 +1933,10 @@ fn apply_settings_draft_guarded(
             if let Some(enabled) = draft.retain_session_history {
                 prefs.retain_session_history = enabled;
             }
-            if let Some(source) = draft.windows_audio_source {
-                prefs.windows_audio_source = source;
-            }
             prefs.apply_audio_preferences(draft.audio_input, draft.record_session_audio);
+            if let Some(source) = draft.windows_audio_source {
+                prefs.apply_windows_audio_source(source);
+            }
             if let Some(opacity) = draft.subtitle_background_opacity {
                 prefs.subtitle_background_opacity = opacity;
             }
@@ -1981,9 +2011,11 @@ fn apply_settings_draft_guarded(
     sync_overlay_minimum(app);
     // Source changes can clear recording even when the draft omits it. Use
     // the saved value so a combined draft cannot retain old-source audio.
-    let recording =
-        (target_changed || draft.audio_input.is_some() || draft.record_session_audio.is_some())
-            .then(|| state.settings.preferences().record_session_audio);
+    let recording = (target_changed
+        || windows_source_changed
+        || draft.audio_input.is_some()
+        || draft.record_session_audio.is_some())
+    .then(|| state.settings.preferences().record_session_audio);
     state
         .session
         .apply_archive_opt_out(draft.retain_session_history, recording);
@@ -2141,7 +2173,7 @@ pub async fn profile_create(
         .inspect_err(|_| {
             let _ = emit_settings_snapshot(&app, &state.settings);
         })?;
-    state.settings.create_profile(provider, &name)?;
+    state.settings.create_profile_for_setup(provider, &name)?;
     emit_settings_snapshot(&app, &state.settings)
 }
 
@@ -2477,10 +2509,9 @@ pub fn overlay_set_locked(
         locked || preferences.subtitle_blends_with_background,
         preferences.subtitle_blends_with_background,
     );
-    let _ = app.emit(
-        "settings-changed",
-        SettingsSnapshotPayload::from_store(&state.settings),
-    );
+    // A successful overlay preference write must not turn an unreadable
+    // service catalog into an apparently valid empty settings snapshot.
+    let _ = emit_settings_snapshot(&app, &state.settings);
     Ok(())
 }
 
@@ -2576,15 +2607,23 @@ pub fn overlay_control_set_popup_bounds(
 
 /// Applies a tightly-fitted panel height measured by the control WebView.
 #[tauri::command]
-pub fn overlay_control_set_panel_height(app: AppHandle, height: f64) -> Result<(), String> {
-    OverlayControlWindowManager::set_panel_height(&app, height);
+pub fn overlay_control_set_panel_height(
+    app: AppHandle,
+    height: f64,
+    pixel_ratio: f64,
+) -> Result<(), String> {
+    OverlayControlWindowManager::set_panel_height(&app, height, pixel_ratio);
     Ok(())
 }
 
 /// Applies the collapsed capsule's content width independently of its panel.
 #[tauri::command]
-pub fn overlay_control_set_island_width(app: AppHandle, width: f64) -> Result<(), String> {
-    OverlayControlWindowManager::set_island_width(&app, width);
+pub fn overlay_control_set_island_width(
+    app: AppHandle,
+    width: f64,
+    pixel_ratio: f64,
+) -> Result<(), String> {
+    OverlayControlWindowManager::set_island_width(&app, width, pixel_ratio);
     Ok(())
 }
 
@@ -2882,20 +2921,26 @@ pub async fn capture_status(
 #[tauri::command]
 pub async fn audio_applications(
     state: State<'_, AppState>,
+    cached_only: Option<bool>,
 ) -> Result<crate::audio::applications::ApplicationSnapshot, String> {
     if app_is_ui_test() {
         return Ok(crate::audio::applications::ApplicationSnapshot {
             supported: true,
             applications: vec![crate::audio::applications::AudioApplication {
                 id: "test.player".into(),
-                name: "Test Player".into(),
+                name: if cfg!(target_os = "linux") {
+                    "Test Player · Test stream"
+                } else {
+                    "Test Player"
+                }
+                .into(),
                 icon_data_url: None,
             }],
         });
     }
     state
         .session
-        .audio_applications()
+        .audio_applications(cached_only.unwrap_or(false))
         .await
         .map_err(|error| error.to_string())
 }

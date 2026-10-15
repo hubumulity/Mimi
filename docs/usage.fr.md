@@ -6,12 +6,21 @@
 
 Les liens d’activation, les identifiants et les modèles actuels sont dans le [guide de configuration des fournisseurs (anglais)](provider-setup.md).
 
-Choisissez la langue de l’interface dans Réglages → Général : chinois simplifié ou traditionnel, anglais, japonais, allemand, coréen, français ou thaï. L’option système suit la langue du système. Changer de langue conserve les saisies en cours et l’état des sous-titres. Les langues de reconnaissance et de traduction se choisissent séparément.
+Accès par sujet :
+
+- [Installation et mises à jour](#start)
+- [Affichage des sous-titres](#subtitles)
+- [Audio et sessions enregistrées](#saving)
+- [Erreurs de reconnaissance](#errors)
+
+Dans les anciennes versions, Modèles et services s’appelle « Parole et traduction ».
+
+<a id="start"></a>
 
 ## Installation et mises à jour
 
 1. Téléchargez le DMG macOS pour puce Apple ou Intel, le EXE / MSI / ZIP portable Windows x64, ou le .deb / AppImage Linux x86_64 depuis la [dernière version](https://github.com/yuxino/mimi/releases/latest). Vous pouvez aussi compiler les sources.
-2. Ouvrez Réglages → Parole et traduction, ajoutez une configuration, saisissez les identifiants demandés et enregistrez. Choisissez les langues de reconnaissance et de traduction.
+2. Ouvrez Réglages → Modèles et services, ajoutez une configuration, saisissez les identifiants demandés et enregistrez. Choisissez les langues de reconnaissance et de traduction.
 3. Lancez un contenu audio et activez les sous-titres en direct dans Sous-titres, ou démarrez depuis l’icône mimi de la barre de menus ou de la zone de notification. Sous macOS 14.2 et ultérieur, toutes les applications et une application sélectionnée peuvent utiliser l’autorisation d’enregistrement de l’audio système uniquement. Les autorisations de capture d’écran existantes sont réutilisées sans autre demande. macOS 13–14.1 exige l’enregistrement de l’écran et de l’audio système.
 
 L’icône mimi utilise le menu système pour démarrer/arrêter les sous-titres, choisir leur affichage, ouvrir les réglages et quitter ; macOS propose aussi l’affichage dans le Dock. Configurez les services, langues, verrouillage et mode immersif dans les réglages. Les Mac compatibles peuvent utiliser gratuitement la reconnaissance vocale locale Apple, sans clé API. Préparez les ressources linguistiques et choisissez la traduction séparément.
@@ -50,9 +59,11 @@ Les anciens identifiants du système sont importés une seule fois, puis supprim
 
 ## Configurations des services
 
-Chaque configuration de bureau peut mémoriser les langues de reconnaissance et de traduction. Activez la configuration, choisissez les langues, puis ouvrez ses détails dans Réglages → Parole et traduction et choisissez **Mémoriser les langues actuelles**. Pour modifier ou supprimer cette paire, choisissez explicitement **Utiliser les langues actuelles** ou **Supprimer la paire enregistrée**.
+Chaque configuration de bureau peut mémoriser les langues de reconnaissance et de traduction. Activez la configuration, choisissez les langues, puis ouvrez ses détails dans Réglages → Modèles et services et choisissez **Mémoriser les langues actuelles**. Pour modifier ou supprimer cette paire, choisissez explicitement **Utiliser les langues actuelles** ou **Supprimer la paire enregistrée**.
 
 Changer ou réappliquer une configuration restaure sa paire enregistrée. Une modification temporaire ne l’écrase pas. Les commandes flottantes affichent la paire sous le nom de la configuration. Cliquez sur les informations du service en haut des sous-titres pour ouvrir ses détails.
+
+<a id="saving"></a>
 
 ## Audio et sessions enregistrées
 
@@ -66,7 +77,11 @@ Une nouvelle session conserve les sous-titres confirmés déjà à l’écran, d
 
 Les limites sont 10 000 paires confirmées / 2 MiB de texte et 64 MiB d’audio. La sauvegarde s’arrête avec une notification à la limite. Les horodatages des sous-titres indiquent la confirmation ; le WAV omet les pauses et les interruptions de connexion. Leurs chronologies ne sont donc pas directement synchronisées.
 
+<a id="subtitles"></a>
+
 ## Affichage des sous-titres
+
+Choisissez la langue de l’interface dans Réglages → Général : chinois simplifié ou traditionnel, anglais, japonais, allemand, coréen, français ou thaï. L’option système suit la langue du système. Changer de langue conserve les saisies en cours et l’état des sous-titres. Les langues de reconnaissance et de traduction se choisissent séparément.
 
 Dans Réglages, choisissez l’une des cinq couleurs (blanc par défaut), ou ouvrez le sélecteur système depuis la couleur personnalisée placée après elles. Les couleurs du système et du microphone sont distinctes. L’aperçu et les sous-titres flottants changent immédiatement, y compris en mode immersif. En affichage bilingue, l’original est visuellement plus discret que la traduction.
 
@@ -76,9 +91,11 @@ Choisissez Traduction seule, Original + traduction ou Original seul dans Réglag
 
 Afficher les sous-titres plus tôt montre des brouillons susceptibles de changer. Désactivé, il attend la confirmation, ce qui peut prendre plus longtemps lors d’une parole continue. Cette option ne transforme pas les brouillons en historique enregistré.
 
+<a id="errors"></a>
+
 ## Erreurs de reconnaissance
 
-Les sous-titres existants restent visibles avec la cause de l’erreur. Ouvrez les commandes flottantes pour les détails et les actions de récupération. Une erreur de configuration reconnue propose Parole et traduction ; une erreur temporaire de connexion ou de service propose Réessayer. Corriger ou changer la configuration ramène la session en attente sans démarrer la capture. Réactivez les sous-titres en direct lorsque vous êtes prêt.
+Les sous-titres existants restent visibles avec la cause de l’erreur. Ouvrez les commandes flottantes pour les détails et les actions de récupération. Une erreur de configuration reconnue propose Modèles et services ; une erreur temporaire de connexion ou de service propose Réessayer. Corriger ou changer la configuration ramène la session en attente sans démarrer la capture. Réactivez les sous-titres en direct lorsque vous êtes prêt.
 
 ## Autres documents
 

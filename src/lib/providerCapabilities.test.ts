@@ -503,9 +503,24 @@ it("keeps Volcano’s hub-language pairs and bilingual reversal separate from au
 });
 
 
-it("limits opt-in Alibaba realtime routes without changing old profiles", () => {
+it("exposes all documented LiveTranslate text targets without changing old profiles", () => {
   const legacy = { id: "legacy", name: "Alibaba", provider: "alibabaCloud" as const, credentialState: "present" as const };
   expect(capabilitiesForProfile(legacy).sourceLanguages).toContain("en");
   const realtime = { ...legacy, alibabaRealtimeMode: "liveTranslate" as const, textTranslation: "deepLX" as const };
-  expect(capabilitiesForProfile(realtime)).toEqual({ sourceLanguages: ["auto"], targetLanguages: ["original", "zh", "en"], translationModes: ["turbo"] });
+  expect(capabilitiesForProfile(realtime)).toEqual({ sourceLanguages: ["auto"], targetLanguages: ["original", ...languageCatalogs.alibabaRealtime.targetLanguages], translationModes: ["turbo"] });
+});
+
+it("uses the selected Qwen model catalog even when a previous native snapshot has the same profile ID", () => {
+  const profile = { ...BASE_SETTINGS.profiles[0], qwenMtModel: "flash" as const };
+  const settings = { ...BASE_SETTINGS, profiles: [profile], sourceLanguage: "no" as const,
+    languageCapabilities: { profileId: profile.id, provider: profile.provider, textTranslation: "followService" as const,
+      targetLanguage: "zh" as const, sourceLanguages: ["auto", "en"] as ("auto" | "en")[], targetLanguages: ["zh"] as "zh"[] } };
+  expect(targetLanguagesForSettings(settings)).toContain("no");
+  expect(sourceLanguagesForSettings(settings)).toContain("no");
+  expect(capabilitiesForProfile(profile).targetLanguages).toHaveLength(81);
+  expect(capabilitiesForProfile({ ...profile, qwenMtModel: "plus" }).targetLanguages).toEqual(capabilitiesForProfile(profile).targetLanguages);
+  expect(targetLanguagesForSettings({ ...settings, sourceLanguage: "auto", profiles: [{ ...profile, qwenMtModel: "lite" }] })).not.toContain("no");
+  const flash = qwenMt.match(/QWEN_MT_FLASH_LANGUAGE_CODES:[\s\S]*?= &\[([\s\S]*?)\];/)![1];
+  const codes = [...flash.matchAll(/"([\w-]+)"/g)].map(match => match[1] === "nb" ? "no" : match[1]);
+  expect(languageCatalogs.qwenMtFlash.targetLanguages).toEqual(codes.filter(code => (TARGET_LANGUAGE_CODES as readonly string[]).includes(code)));
 });

@@ -9,6 +9,17 @@ import {
 } from "./store";
 
 describe("local preview store", () => {
+  it("creates Alibaba previews in LiveTranslate without rewriting legacy configurations", async () => {
+    const original = useStore.getState();
+    try {
+      useStore.setState({ session: { ...original.session, isActive: false, isPaused: false, status: { kind: "idle" } } });
+      const before = structuredClone(useStore.getState().settings.profiles);
+      const result = await useStore.getState().createProfile("alibabaCloud", "New Alibaba");
+      expect(result.profiles.at(-1)).toMatchObject({ alibabaRealtimeMode: "liveTranslate", alibabaWorkspaceId: "", credentialState: "missing" });
+      expect(result.profiles.slice(0, -1)).toEqual(before);
+    } finally { useStore.setState(original, true); }
+  });
+
   it("keeps profile names, recognition and translation aliases, and proxies independent across repeated metadata patches", async () => {
     const original = useStore.getState();
     const profile = original.settings.profiles[0];

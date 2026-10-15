@@ -286,7 +286,7 @@ impl LiveTranslationConfiguration {
             TextTranslationCredentials::translation,
         );
         self.provider
-            .capabilities_for_route(route, self.target_language)
+            .capabilities_for_route_with_model(route, self.target_language, self.qwen_mt_model)
             .for_source(self.source_language)
     }
 

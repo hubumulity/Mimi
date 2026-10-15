@@ -19,67 +19,36 @@
   </p>
 </div>
 
-<p align="center">Mimi는 컴퓨터나 마이크의 음성을 실시간 번역 자막으로 보여 줍니다. 영화, 방송, 강의를 화면 위에 떠 있는 자막과 함께 즐기세요.</p>
+![예시 대화를 사용한 Mimi 이중 언어 자막 이미지](../assets/readme-preview.png)
 
-![자체 제작 일러스트 장면 위에 표시된 Mimi의 원문·번역 자막 창](../assets/readme-preview.png)
+예시 대화로 만든 화면 이미지입니다. [자막과 몰입 모드 데모 보기(이전 UI)](../demos/README.md).
 
-## 기능
+## 들으면서 자막으로 읽기
 
-- 시스템 오디오, 마이크 또는 두 입력 모두를 선택할 수 있습니다. 시스템 오디오가 기본이며 마이크는 직접 선택해야 캡처합니다.
-- macOS와 Windows 11에서는 선택한 앱의 오디오를 번역할 수 있습니다.
-- 원문, 번역 또는 둘 다 표시할 수 있습니다.
-- 자막의 위치, 크기와 색상을 조정하거나 클릭이 아래 창으로 전달되도록 설정할 수 있습니다.
-- 필요할 때 자막이나 오디오를 로컬에 저장하고 TXT / WAV로 내보낼 수 있습니다. 저장과 녹음은 기본적으로 꺼져 있습니다.
+- **재생 중인 내용 이해하기**: 영화, 방송, 수업의 음성을 플로팅 자막으로 표시합니다. 두 언어, 번역문만, 원문만 볼 수 있습니다.
+- **들을 소리 선택하기**: 기본값은 컴퓨터 소리입니다. 마이크나 두 입력을 직접 켤 수 있으며, macOS / Windows 11에서는 앱을 지정할 수 있습니다. Linux에서는 개별 재생 스트림을 선택할 수 있습니다.
+- **읽기 편하게 조정하기**: 위치, 글자 크기, 색상을 바꿉니다. 몰입 모드는 자막만 남기고, 클릭 통과로 뒤에 있는 앱을 조작할 수 있습니다.
+- **자막과 오디오 저장**: 데스크톱에서 자막을 TXT로 저장하거나 선택한 오디오를 WAV로 녹음할 수 있습니다. 두 기능 모두 직접 켜야 작동합니다.
 
 ## 시작하기
 
-처음 설정한다면 **Volcano Engine, Alibaba Cloud 또는 Google Gemini를 권장합니다**.
+[데스크톱 버전 다운로드](https://github.com/yuxino/mimi/releases/latest) · [Android 설치 및 사용 안내(영어)](../../android/README.md#start)
 
-Google Gemini는 안정적인 네트워크 연결을 사용하세요. [Google AI Studio](https://aistudio.google.com/)에서 사용 가능량, 결제 정보와 API 키를 확인하세요.
+데스크톱 버전은 macOS 13+(Apple silicon 및 Intel), Windows x64, Linux x86_64를 지원합니다.
 
-서비스 활성화 링크, 인증 정보 안내와 Mimi가 현재 사용하는 모델은 **[서비스 설정 안내(영어)](../provider-setup.md)**를 참고하세요.
+1. **서비스 설정**: 설정 → 모델 및 서비스에서 음성 서비스를 추가합니다. 서비스 선택과 키 발급 방법은 [설정 안내(영어)](../provider-setup.md#choose)를 참고하세요.
+2. **소리와 언어 선택**: 오디오 및 언어 설정에서 오디오 입력, 인식 언어, 번역 언어를 선택합니다.
+3. **자막 시작**: 자막 페이지에서 실시간 자막을 켜고 필요한 권한을 허용한 뒤, 원하는 콘텐츠를 재생합니다.
 
-1. 설정 → 음성 및 번역에서 구성을 추가하고 필요한 서비스 인증 정보를 입력한 다음 저장하세요.
-2. 인식 언어와 번역 언어를 선택하세요.
-3. 오디오를 재생하고 자막에서 실시간 자막을 켜세요. macOS 14.2 이상에서는 모든 앱이나 선택한 앱 모두 시스템 오디오 녹음만 허용하면 됩니다. 기존 화면 녹음 권한도 계속 사용할 수 있습니다. 이전 macOS에서는 화면 및 시스템 오디오 녹음 권한이 필요합니다.
+Mimi는 무료지만 클라우드 서비스는 요금이 발생할 수 있습니다. 클라우드 인식이나 번역을 사용하면 오디오 또는 인식된 텍스트가 선택한 서비스로 전송됩니다. Apple 로컬 서비스의 이용 조건은 [설정 안내(영어)](../provider-setup.md#apple-speech)를 참고하세요.
 
-클라우드 음성 서비스에는 본인의 인증 정보가 필요하며 오디오가 해당 서비스로 전송됩니다. 사용 요금이 발생할 수 있습니다. Apple Speech는 지원되는 Mac에서 오디오를 로컬로 인식합니다. 원격 텍스트 번역은 인식한 텍스트를 선택한 서비스로 전송하며, Apple Translation은 텍스트를 Mac 안에서 처리합니다.
+## 도움이 필요한가요?
 
-[설정 및 도움말](../usage.ko.md) · [Android(영어)](../../android/README.md) · [버그 신고](https://github.com/yuxino/mimi/issues) · [기여 안내(중국어/영어)](../../.github/CONTRIBUTING.md)
-
-<a id="apple-local-recognition"></a>
-
-### Apple 로컬 인식
-
-**Apple Speech**는 Apple silicon, macOS 26 이상, 사용 가능한 시스템 전사 기능 등 시스템 조건이 충족되면 표시됩니다. 음성 API 키는 필요하지 않습니다. 자막을 중지하고 **인식 언어**에서 언어를 선택하세요. 언어 팩이 없다면 **다운로드 후 사용**을 누르세요. Mimi가 Apple 리소스를 다운로드하고 준비되면 해당 언어를 선택합니다. 이미 다운로드한 언어라면 **인식 언어로 설정**을 누른 다음 자막을 시작하세요. 시스템 설정을 따로 열 필요는 없습니다. 언어 자동 감지는 제공하지 않습니다. [Apple Speech 설정(영어)](../provider-setup.md#apple-speech)을 참고하세요.
-
-**Apple Translation**은 macOS 26 이상이 설치된 지원 대상 Apple silicon Mac에서 사용하는 별도의 기기 내 텍스트 번역 서비스입니다. **텍스트 번역**에서 선택하고 구성을 저장한 다음 입력 언어와 번역 언어를 직접 지정하세요. Mimi가 언어 조합의 준비 상태를 표시합니다. **언어 다운로드 또는 허용**을 누르면 Apple 설정 확인 창이 열립니다. 번역 모델은 음성 모델과 별개입니다. 기존 모델은 재사용하며, 확인하면 없는 모델만 Apple에서 다운로드합니다. 연결 확인이나 자막 세션에서는 다운로드를 요청하지 않습니다. 텍스트 API 키나 텍스트 프록시는 필요하지 않습니다.
-
-Apple Speech로 원문만 표시하려면 **번역 안 함 (원문만)**을 선택하세요. [Index-Translate](#try-index-translate)와 같은 원격 텍스트 번역 서비스도 사용할 수 있으며, 인식한 텍스트가 해당 서비스로 전송됩니다.
-
-<a id="try-index-translate"></a>
-
-### Index-Translate 사용해 보기
-
-Bilibili의 [Index-Translate](https://github.com/bilibili/Index-Translate#inference)는 현재 무료 공개 번역 API를 제공합니다(2026년 10월 5일 기준). Alibaba Cloud 또는 Apple Speech로 인식한 텍스트를 번역하는 데 사용할 수 있습니다.
-
-**설정 → 음성 및 번역**에서 **Alibaba Cloud** 또는 **Apple Speech** 구성을 열고 **텍스트 번역** 아래의 **OpenAI 호환 API**를 선택하세요. [공식 예제](https://github.com/bilibili/Index-Translate/blob/main/inference/llm/call_api.py#L40-L41)에 나온 값을 사용하세요.
-
-| 항목 | 값 |
-| --- | --- |
-| 서비스 주소 | `https://index-translate.bilibili.com/v1` |
-| 모델 이름 | `Index-Translate-35B-A3B` |
-| API 키 | 비워 두세요. 현재 공개 API는 인증을 요구하지 않습니다. |
-
-저장한 다음 **텍스트 번역** 옆에서 연결을 확인하세요. 이 주소에 이미 저장된 키가 있다면 **번역 키 제거**를 선택하고 다시 저장하세요.
-
-Index-Translate는 텍스트 번역만 처리합니다. Alibaba Cloud를 사용할 때는 음성 인식 인증 정보를 유지해야 하며 인식 요금이 발생할 수 있습니다. Apple Speech 인식에는 키가 필요하지 않습니다. 무료 API의 제공 여부는 해당 서비스에 따라 달라집니다.
-
-## 자주 묻는 질문
-
-**macOS에서 녹음 권한을 허용했는데도 계속 권한을 요청하나요?** Mimi를 종료한 다음 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 기록에서 Mimi 항목만 제거하고 다시 추가하세요. 정식 앱은 `/Applications/mimi.app`, 개발 앱은 `/Applications/mimi-dev.app`을 사용하세요. 권한을 켠 다음 같은 앱을 다시 여세요. [권한 복구 안내](../usage.ko.md#macos-permissions-after-an-update)를 참고하세요.
+[사용 안내](../usage.ko.md)에서 설치, 권한, 자막 표시, 저장을 설명합니다. 자막이 나오지 않거나 연결에 실패하면 [인식 오류](../usage.ko.md#errors)를 먼저 확인하고, 해결되지 않으면 [문제를 알려 주세요](https://github.com/yuxino/mimi/issues).
 
 ## 기여자
+
+참여하려면 [기여 안내(영어·중국어)](../../.github/CONTRIBUTING.md)를 확인하세요.
 
 코드를 작성하고, 문제를 알려 주고, Mimi를 사용하거나 소개해 주시는 모든 분께 감사드립니다 (๑•̀ㅂ•́)و✧
 
@@ -87,7 +56,7 @@ Index-Translate는 텍스트 번역만 처리합니다. Alibaba Cloud를 사용�
 
 [Gemini 연속 자막과 계획된 연결 교체](https://github.com/yuxino/Mimi/pull/176)를 개선해 주신 [@Chtholly000](https://github.com/Chtholly000)께도 감사드립니다.
 
-[Wayland에서 자막 창을 이동할 때 컨트롤이 따라오지 않는 문제](https://github.com/yuxino/Mimi/pull/242)를 수정해 주신 [@EmmetZ](https://github.com/EmmetZ)께 감사드립니다.
+[Wayland 자막 컨트롤 수정](https://github.com/yuxino/Mimi/pull/242)과 [Linux 개별 재생 스트림 캡처](https://github.com/yuxino/Mimi/pull/275)를 기여해 주신 [@EmmetZ](https://github.com/EmmetZ)께 감사드립니다.
 
 [DeepSeek 실시간 자막 번역의 사고 모드를 비활성화](https://github.com/yuxino/Mimi/pull/270)해 주신 [@wangmian0](https://github.com/wangmian0)께 감사드립니다.
 

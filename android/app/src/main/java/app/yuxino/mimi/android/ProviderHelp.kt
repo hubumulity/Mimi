@@ -40,7 +40,7 @@ internal fun providerHelp(provider: ServiceProvider): ProviderHelp = when (provi
 }
 
 internal fun providerTitle(context: android.content.Context, provider: ServiceProvider): String {
-    if (provider == ServiceProvider.DASHSCOPE) {
+    if (provider == ServiceProvider.DASHSCOPE && SettingsStore.configuration(context).usesIndependentTextTranslation) {
         when (val translation = runCatching { SettingsStore.textTranslationProvider(context) }.getOrDefault(TextTranslationProvider.BUILTIN)) {
             TextTranslationProvider.BUILTIN -> Unit
             TextTranslationProvider.NONE -> return context.getString(R.string.translation_service_original)
@@ -68,7 +68,7 @@ internal fun overlayServiceLabel(context: android.content.Context): String {
     val provider = ServiceProvider.fromId(SettingsStore.provider(context))
     val speech = speechProviderName(context, provider)
     val translation = SettingsStore.textTranslationProvider(context)
-    return if (provider == ServiceProvider.DASHSCOPE && translation != TextTranslationProvider.BUILTIN &&
+    return if (SettingsStore.configuration(context).usesIndependentTextTranslation && translation != TextTranslationProvider.BUILTIN &&
         translation != TextTranslationProvider.NONE) "$speech · ${context.getString(translationProviderLabel(translation))}"
     else speech
 }

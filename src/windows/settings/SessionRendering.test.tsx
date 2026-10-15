@@ -2,7 +2,7 @@
 import { act, Profiler } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { I18N, setStoredUiLanguage } from "../../lib/i18n";
+import { setStoredUiLanguage } from "../../lib/i18n";
 import { shareUnchangedSubtitleHistory } from "../../lib/sessionSnapshot";
 import { useStore } from "../../lib/store";
 import { OverlayControlWindow } from "../overlay-control/OverlayControlWindow";
@@ -28,9 +28,7 @@ it.each([false, true])("keeps non-subtitle windows and an unsaved credential dra
       <Profiler id="settings" onRender={() => commits.settings++}><SettingsView /></Profiler>
       <Profiler id="control" onRender={() => commits.control++}><OverlayControlWindow /></Profiler>
     </>));
-    await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
-    const replace = [...host.querySelectorAll<HTMLButtonElement>(".credential-panel button")].find((button) => button.textContent === I18N.settings.replaceCredentials)!;
-    await act(async () => replace.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")?.click());
     const input = host.querySelector<HTMLInputElement>('.credential-panel input[type="password"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "synthetic-unsaved-key");

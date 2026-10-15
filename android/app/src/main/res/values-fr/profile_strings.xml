@@ -1,0 +1,21 @@
+<resources>
+    <string name="profiles_add">Ajouter une configuration</string>
+    <string name="profiles_empty">Choisissez un service pour créer votre première configuration.</string>
+    <string name="profiles_name">Nom de la configuration</string>
+    <string name="profiles_save">Enregistrer</string>
+    <string name="profiles_duplicate">Dupliquer</string>
+    <string name="profiles_delete">Supprimer</string>
+    <string name="profiles_delete_title">Supprimer « %1$s » ?</string>
+    <string name="profiles_delete_message">Cette configuration et ses identifiants seront supprimés. Les autres seront conservés.</string>
+    <string name="profiles_copy_name">%1$s (copie)</string>
+    <string name="profiles_limit">Vous pouvez enregistrer jusqu’à 20 configurations.</string>
+    <string name="profiles_retry">Réessayer</string>
+    <string name="profile_none">Aucune configuration sélectionnée</string>
+    <string name="profiles_list_help">Enregistrez plusieurs configurations, même pour un même service. Touchez une configuration pour l’utiliser, ou Paramètres pour la modifier. La duplication et la suppression sont dans le menu de l’éditeur.</string>
+    <string name="profiles_translation_help_save">Les tests envoient un exemple fixe sans enregistrer les modifications. Changer de service conserve les brouillons dans cet éditeur. Enregistrer sauvegarde le service sélectionné. Les clés sont chiffrées sur cet appareil.</string>
+    <string name="guide_add_provider">Ajouter %1$s</string>
+    <string name="profiles_load_failed">Impossible de charger cette configuration. Réessayez dans les paramètres.</string>
+    <string name="profiles_add_short">Ajouter</string>
+    <string name="profiles_use_named">Utiliser %1$s</string>
+    <string name="profiles_duplicated">Configuration dupliquée</string>
+</resources>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="brand_description">mimi 官方角色图标</string>
+    <string name="brand_description">Mimi 官方角色图标</string>
     <string name="home_kicker">实时字幕与翻译</string>
     <string name="home_title">实时字幕</string>
     <string name="home_description">为其他应用正在播放的声音显示字幕。部分应用可能不允许采集。</string>

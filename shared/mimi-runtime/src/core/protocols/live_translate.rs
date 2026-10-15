@@ -28,6 +28,25 @@ pub enum LiveTranslateProtocolError {
 /// the unified host authenticates with `Authorization: Bearer <key>` alone.
 pub const DASHSCOPE_REALTIME_WS: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 
+/// Qwen3.8 text output catalog, including text-only destinations.
+/// https://help.aliyun.com/zh/model-studio/qwen3-5-livetranslate-flash-realtime#supported-languages
+pub const TRANSLATION_LANGUAGE_CODES: &[&str] = &[
+    "zh", "en", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th", "vi", "ja", "tr", "hi",
+    "ms", "nl", "ur", "nb", "sv", "da", "he", "fi", "pl", "is", "cs", "fil", "fa", "yue", "el",
+    "af", "ast", "be", "bg", "bn", "bs", "ca", "ceb", "et", "gl", "gu", "hr", "hu", "jv", "kk",
+    "kn", "ky", "lv", "mk", "ml", "mr", "pa", "ro", "sk", "sl", "sw", "tg", "az", "uk",
+];
+
+pub fn translation_language_code(language: TargetLanguage) -> Option<&'static str> {
+    let code = match language.raw_value() {
+        "original" => return Some("en"),
+        "no" => "nb",
+        "tl" => "fil",
+        code => code,
+    };
+    TRANSLATION_LANGUAGE_CODES.contains(&code).then_some(code)
+}
+
 fn realtime_url(model: &str) -> Result<url::Url, LiveTranslateProtocolError> {
     let raw = format!("{DASHSCOPE_REALTIME_WS}?model={model}");
     url::Url::parse(&raw).map_err(|_| LiveTranslateProtocolError::InvalidEndpoint)
@@ -101,22 +120,14 @@ impl LiveTranslateRequestEncoder {
         event_id: Option<&str>,
     ) -> Result<Value, LiveTranslateProtocolError> {
         if source_language != SourceLanguage::Automatic
-            || !matches!(
-                target_language,
-                TargetLanguage::Original
-                    | TargetLanguage::SimplifiedChinese
-                    | TargetLanguage::English
-            )
+            || translation_language_code(target_language).is_none()
         {
             return Err(LiveTranslateProtocolError::UnsupportedLanguage);
         }
         let session = match mode {
             AlibabaRealtimeMode::LiveTranslate => {
-                let target = if target_language == TargetLanguage::Original {
-                    "en"
-                } else {
-                    target_language.raw_value()
-                };
+                let target = translation_language_code(target_language)
+                    .ok_or(LiveTranslateProtocolError::UnsupportedLanguage)?;
                 let mut translation = json!({"language": target});
                 if !hotwords.is_empty() {
                     translation["corpus"] = json!({"phrases": hotwords});
@@ -204,6 +215,11 @@ impl LiveTranslateRequestEncoder {
 /// Server events shared by every pipeline in the app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveTranslateServerEvent {
+    /// Reliable, content-free source order; no recognized text is finalized.
+    SubtitleSourceBoundary {
+        utterance_id: String,
+        source_order: u64,
+    },
     SessionCreated,
     SessionUpdated,
     SourceDraft {
@@ -243,6 +259,9 @@ pub enum LiveTranslateServerEvent {
     },
     /// Invalidates only an obsolete preview at a real source sentence boundary.
     SubtitlePreviewCleared,
+    SubtitlePreviewWithdrawn {
+        source_utterance_id: u64,
+    },
     /// Locally generated MT backoff; the system-audio/ASR session stays alive.
     TranslationDeferred(crate::core::diagnostics::TranslationRecovery),
     TranslationDraft(String),
@@ -318,6 +337,9 @@ impl LiveTranslateServerEvent {
     pub fn text_within_limit(&self) -> bool {
         use crate::core::models::subtitle_text_within_limit;
         match self {
+            Self::SubtitleSourceBoundary { utterance_id, .. } => {
+                subtitle_text_within_limit(utterance_id)
+            }
             Self::SourceDraft { text, .. }
             | Self::SourceUtteranceDraft { text, .. }
             | Self::SourceFinal { text, .. }

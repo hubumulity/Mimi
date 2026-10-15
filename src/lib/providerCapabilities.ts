@@ -167,7 +167,7 @@ export function capabilitiesForProfile(
   profile: ServiceProfile,
   targetLanguage: TargetLanguage = "zh",
 ): ProviderCapabilities {
-  if (usesAlibabaRealtime(profile)) return { sourceLanguages: ["auto"], targetLanguages: ["original", "zh", "en"], translationModes: ["turbo"] };
+  if (usesAlibabaRealtime(profile)) return { sourceLanguages: ["auto"], targetLanguages: ["original", ...languageCatalogs.alibabaRealtime.targetLanguages as TargetLanguage[]], translationModes: ["turbo"] };
   if (textTranslationForProfile(profile) === "apple" && (isStandaloneAsrProvider(profile.provider) || ["alibabaCloud", "deepLX"].includes(profile.provider))) {
     // Only the native runtime can certify Apple's catalog. An unavailable or
     // not-yet-loaded catalog must not borrow a cloud provider's language list.
@@ -193,6 +193,7 @@ export function capabilitiesForProfile(
   if (isChatCompletionsTranslation(route)) return { sourceLanguages: ALIBABA_RECOGNITION_SOURCES, targetLanguages: CUSTOM_CONFIGURABLE_TARGETS, translationModes: TRANSLATION_MODE_CASES };
   if (route === "deepL") return { sourceLanguages: targetLanguage === "original" ? ALIBABA_RECOGNITION_SOURCES : intersectTranslationSources(ALIBABA_RECOGNITION_SOURCES, route), targetLanguages: textTranslationTargetLanguages(route, true), translationModes: TRANSLATION_MODE_CASES };
   if (route === "deepLX") return PROVIDER_CAPABILITIES.deepLX;
+  if (profile.qwenMtModel === "flash" || profile.qwenMtModel === "plus") return { sourceLanguages: ALIBABA_RECOGNITION_SOURCES, targetLanguages: ["original", ...languageCatalogs.qwenMtFlash.targetLanguages as TargetLanguage[]], translationModes: TRANSLATION_MODE_CASES };
   const capabilities = PROVIDER_CAPABILITIES.alibabaCloud;
   return targetLanguage === "original"
     ? { ...capabilities, sourceLanguages: ALIBABA_RECOGNITION_SOURCES }
@@ -225,6 +226,7 @@ function capabilitiesForSettings(
     native.provider === profile.provider &&
     native.textTranslation === textTranslationForProfile(profile) &&
     native.targetLanguage === target &&
+    (profile.provider !== "alibabaCloud" || textTranslationForProfile(profile) !== "followService" || (native.qwenMtModel ?? "lite") === (profile.qwenMtModel ?? "lite")) &&
     Array.isArray(native.sourceLanguages) && (profile.provider === "appleSpeech" || appleTranslation || native.sourceLanguages.length > 0) &&
     Array.isArray(native.targetLanguages) && native.targetLanguages.length > 0 &&
     native.sourceLanguages.every((code) => SOURCE_CODES.has(code) && ((profile.provider !== "appleSpeech" && (!appleTranslation || target === "original")) || code !== "auto")) &&

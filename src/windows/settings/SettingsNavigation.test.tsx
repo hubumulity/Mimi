@@ -9,6 +9,7 @@ import type { SettingsDraft } from "../../lib/types";
 import { TARGET_LANGUAGE_DISPLAY_NAMES } from "../../lib/types";
 import { sourceLanguagesForSettings, targetLanguagesForSettings } from "../../lib/providerCapabilities";
 import { profileCredentialEditorState, profileRevealCredential } from "../../lib/ipc";
+import { settingsPageCopy } from "./SettingsPageCopy";
 import { SettingsView } from "./SettingsView";
 
 vi.mock("../../lib/ipc", async (original) => ({ ...await original<typeof import("../../lib/ipc")>(), profileRevealCredential: vi.fn(), profileCredentialEditorState: vi.fn() }));
@@ -62,7 +63,7 @@ it.each(["zh", "zh-TW", "en", "ja", "de", "fr", "ko", "th"] as const)("keeps dia
   setStoredUiLanguage(language);
   await mount();
   expect([...host.querySelectorAll(".settings-category-nav button")].map((button) => button.textContent)).toEqual([
-    I18N.settings.subtitleTitle, I18N.settings.serviceProfilesTitle, I18N.settings.sessionExportTitle,
+    I18N.settings.subtitleTitle, settingsPageCopy().voice, settingsPageCopy().models, I18N.settings.sessionExportTitle,
     I18N.settings.applicationTitle,
   ]);
   expect(host.querySelector("#subtitle-settings .source-language-grid")).toBeNull();
@@ -74,7 +75,7 @@ it.each(["zh", "zh-TW", "en", "ja", "de", "fr", "ko", "th"] as const)("keeps dia
   expect(host.querySelector("#advanced-settings h2")?.textContent).toBe(I18N.settings.advancedTitle);
   expect(host.querySelector("#advanced-settings #settings-category-diagnostics")?.textContent).toBe(I18N.settings.openDiagnostics);
   for (const [category, description] of [
-    ["subtitles", I18N.settings.subtitlePageDescription], ["service", I18N.settings.servicePageDescription],
+    ["subtitles", I18N.settings.subtitlePageDescription], ["voice", settingsPageCopy().voiceHelp], ["service", settingsPageCopy().modelsHelp],
     ["export", I18N.settings.exportPageDescription], ["general", I18N.settings.generalPageDescription],
     ["diagnostics", `${I18N.settings.diagnosticsPageDescription}\n${I18N.settings.diagnosticsHelp}`],
   ] as const) {
@@ -97,12 +98,10 @@ it.each(["zh", "zh-TW", "en", "ja", "de", "fr", "ko", "th"] as const)("keeps dia
   expect(saveProfileCredentials).not.toHaveBeenCalled();
 });
 
-it.each(["openAIRealtime", "volcanoEngine", "tencentCloud", "baiduTranslate"] as const)("groups selectable %s languages inside service details", async (provider) => {
+it.each(["openAIRealtime", "volcanoEngine", "tencentCloud", "baiduTranslate"] as const)("groups selectable %s languages with audio sources", async (provider) => {
   const settings = { ...useStore.getState().settings, sourceLanguage: "auto" as const, profiles: useStore.getState().settings.profiles.map(profile => ({ ...profile, provider })) };
   useStore.setState({ settings });
-  await mount(); await select("service");
-  expect(host.querySelector("#translation-languages")).toBeNull();
-  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await mount(); await select("voice");
   for (const [label, names] of [
     [I18N.settings.sourceLanguage, sourceLanguagesForSettings(settings).map(speechLanguageGuidance(settings).optionLabel)],
     [I18N.settings.translateTo, targetLanguagesForSettings(settings).map(language => targetLanguageOptionLabel(settings, language))],
@@ -122,8 +121,7 @@ it.each(["openAIRealtime", "volcanoEngine", "tencentCloud", "baiduTranslate"] as
 
 it("keeps language choices available for active and paused sessions but blocks connection transitions", async () => {
   useStore.setState({ settings: { ...useStore.getState().settings, profiles: useStore.getState().settings.profiles.map(profile => ({ ...profile, provider: "openAIRealtime" })) } });
-  await mount(); await select("service");
-  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await mount(); await select("voice");
   const target = host.querySelector<HTMLButtonElement>(`#translation-languages [role="combobox"][aria-label="${I18N.settings.translateTo}"]`)!;
   await act(async () => { target.focus(); target.click(); });
   await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === TARGET_LANGUAGE_DISPLAY_NAMES.ja)!.click());
@@ -133,7 +131,7 @@ it("keeps language choices available for active and paused sessions but blocks c
     await act(() => useStore.setState({ session: { ...initial.session, status: { kind: "listening" }, ...state } }));
     expect(target.disabled).toBe(false);
     expect(host.querySelector("#translation-languages")?.textContent).not.toContain(I18N.settings.languageChangeRequiresStop);
-    expect(host.querySelector<HTMLInputElement>(".service-detail__name input")?.disabled).toBe(true);
+    expect(host.querySelector<HTMLButtonElement>('#voice-model [role="combobox"]')?.disabled).toBe(false);
   }
   for (const kind of ["connecting", "stopping"] as const) {
     await act(() => useStore.setState({ session: { ...initial.session, status: { kind }, isActive: false, isPaused: false } }));
@@ -144,8 +142,7 @@ it("keeps language choices available for active and paused sessions but blocks c
 it("places independent proxy controls inside a service profile and blocks changes while subtitles are paused", async () => {
   await mount(); await select("service");
   expect(host.querySelector("#application-settings-panel #network-proxy")).toBeNull();
-  expect(host.querySelector(".service-proxies")).toBeNull();
-  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")?.click());
   expect(host.querySelector("#service-profiles-panel .service-proxies")?.textContent).toContain(I18N.settings.networkProxySpeechScope);
   expect(host.querySelectorAll('.service-proxies [role="combobox"]')).toHaveLength(2);
   const selector = host.querySelector<HTMLButtonElement>('.service-proxies [role="combobox"]')!;
@@ -162,9 +159,7 @@ it("places independent proxy controls inside a service profile and blocks change
 
 it("clears a saved-value reveal when leaving services while preserving the unsaved replacement draft", async () => {
   await mount(); await select("service");
-  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
-  const replace = [...host.querySelectorAll<HTMLButtonElement>(".credential-panel button")].find((button) => button.textContent === I18N.settings.replaceCredentials)!;
-  await act(async () => replace.click());
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")?.click());
   const field = () => host.querySelector<HTMLInputElement>(".credential-panel input")!;
   const eye = () => host.querySelector<HTMLButtonElement>(".saved-credential-input__toggle")!;
   expect(profileRevealCredential).not.toHaveBeenCalled();
@@ -231,9 +226,7 @@ it("blocks placeholder session and credential controls while loading settings an
 it("preserves a masked unsaved credential draft while moving between categories", async () => {
   await mount();
   await select("service");
-  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
-  const replace = [...host.querySelectorAll<HTMLButtonElement>(".credential-panel button")].find((button) => button.textContent === I18N.settings.replaceCredentials)!;
-  await act(async () => replace.click());
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")?.click());
   const input = host.querySelector<HTMLInputElement>('.credential-panel input[type="password"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "synthetic-unsaved-draft");
@@ -326,4 +319,33 @@ it("hides microphone color while retaining the system color control", async () =
   await mount();
   expect(host.querySelector(`[role="group"][aria-label="${I18N.settings.microphoneSubtitleColor}"]`)).toBeNull();
   expect(host.querySelector(`[role="group"][aria-label="${I18N.settings.systemSubtitleColor}"]`)).not.toBeNull();
+});
+
+it("shows each configuration's provider in both the selected voice control and its menu", async () => {
+  await mount(); await select("voice");
+  const settings = useStore.getState().settings;
+  const expectedProvider = (provider: string) => provider === "deepLX" ? "alibabaCloud" : provider;
+  const picker = host.querySelector<HTMLButtonElement>('#voice-model [role="combobox"]')!;
+  const active = settings.profiles.find(profile => profile.id === settings.activeProfileId)!;
+  expect(picker.querySelector(".provider-icon")?.getAttribute("data-provider")).toBe(expectedProvider(active.provider));
+  await act(async () => picker.click());
+  const options = [...document.querySelectorAll('[role="option"]')];
+  expect(options).toHaveLength(settings.profiles.length);
+  options.forEach((option, index) => {
+    expect(option.querySelector(".provider-icon")?.getAttribute("data-provider")).toBe(expectedProvider(settings.profiles[index].provider));
+    expect(option.textContent).toContain(settings.profiles[index].name);
+  });
+  expect(saveSettings).not.toHaveBeenCalled();
+});
+
+it("keeps language controls out of an empty configuration state and opens its single setup entry", async () => {
+  useStore.setState({ settings: { ...initial.settings, profiles: [], activeProfileId: "" }, initializationStatus: "ready" });
+  await mount(); await select("voice");
+  expect(host.querySelector("#translation-languages")).toBeNull();
+  expect(host.querySelectorAll("#voice-model button")).toHaveLength(1);
+  await act(async () => host.querySelector<HTMLButtonElement>("#voice-model button")!.click());
+  expect(host.querySelector("#settings-category-service")?.getAttribute("aria-current")).toBe("page");
+  expect(host.querySelector('.provider-picker[data-initial-setup="true"]')).not.toBeNull();
+  expect(host.querySelector("#service-add-profile")).toBeNull();
+  expect(saveProfileCredentials).not.toHaveBeenCalled();
 });

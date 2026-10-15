@@ -1,5 +1,5 @@
 <resources>
-    <string name="brand_description">mimi character icon</string>
+    <string name="brand_description">Mimi character icon</string>
     <string name="home_kicker">Live captions and translation</string>
     <string name="home_title">Live captions</string>
     <string name="home_description">Show captions for audio playing in other apps. Some apps restrict audio capture.</string>

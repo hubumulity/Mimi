@@ -85,6 +85,8 @@ pub enum QwenMTProtocolError {
     InvalidJSON,
     #[error("Qwen-MT returned no translated text.")]
     MissingTranslation,
+    #[error("Qwen-MT returned an incomplete translation.")]
+    IncompleteTranslation,
     #[error("The selected language is not supported by the Qwen-MT model.")]
     UnsupportedLanguage,
 }
@@ -388,7 +390,10 @@ impl QwenMTRequestEncoder {
     ) -> Result<Value, QwenMTProtocolError> {
         if !model
             .supported_language_codes()
-            .contains(&target_language.raw_value())
+            .contains(&match target_language {
+                TargetLanguage::Norwegian => "nb",
+                _ => target_language.raw_value(),
+            })
             || (source_language != SourceLanguage::Automatic
                 && !model
                     .supported_language_codes()
@@ -401,7 +406,7 @@ impl QwenMTRequestEncoder {
         }
         let mut options = json!({
             "source_lang": source_lang_name(source_language),
-            "target_lang": target_language.qwen_mt_name(),
+            "target_lang": match target_language { TargetLanguage::Norwegian => "Norwegian Bokmål", _ => target_language.qwen_mt_name() },
         });
         if let Some(domain_hint) = domain_hint.filter(|_| model != QwenMTModel::Lite) {
             options["domains"] = json!(domain_hint);
@@ -432,6 +437,8 @@ impl QwenMTResponseDecoder {
         #[derive(Deserialize)]
         struct Choice {
             message: Message,
+            #[serde(flatten)]
+            metadata: serde_json::Map<String, Value>,
         }
         #[derive(Deserialize)]
         struct Message {
@@ -440,6 +447,15 @@ impl QwenMTResponseDecoder {
 
         let response: Response =
             serde_json::from_str(text).map_err(|_| QwenMTProtocolError::InvalidJSON)?;
+        if let Some(choice) = response.choices.first() {
+            // Keep compatibility with complete JSON responses that omit the
+            // field, but never confirm an explicitly unfinished result.
+            match choice.metadata.get("finish_reason") {
+                None => {}
+                Some(Value::String(reason)) if reason == "stop" => {}
+                _ => return Err(QwenMTProtocolError::IncompleteTranslation),
+            }
+        }
         let content = response
             .choices
             .first()
@@ -454,6 +470,14 @@ pub enum QwenMTStreamDecoder {}
 
 impl QwenMTStreamDecoder {
     pub fn decode_chunk(text: &str) -> Result<Option<String>, QwenMTProtocolError> {
+        Self::decode_chunk_with_completion(text).map(|(content, _)| content)
+    }
+
+    /// A null/omitted reason is an intermediate chunk; only `stop` confirms
+    /// completion. A length limit or filtered result must never become a final.
+    pub fn decode_chunk_with_completion(
+        text: &str,
+    ) -> Result<(Option<String>, bool), QwenMTProtocolError> {
         #[derive(Deserialize)]
         struct Response {
             choices: Vec<Choice>,
@@ -461,6 +485,8 @@ impl QwenMTStreamDecoder {
         #[derive(Deserialize)]
         struct Choice {
             delta: Delta,
+            #[serde(flatten)]
+            metadata: serde_json::Map<String, Value>,
         }
         #[derive(Deserialize)]
         struct Delta {
@@ -469,10 +495,15 @@ impl QwenMTStreamDecoder {
 
         let response: Response =
             serde_json::from_str(text).map_err(|_| QwenMTProtocolError::InvalidJSON)?;
-        Ok(response
-            .choices
-            .first()
-            .and_then(|c| c.delta.content.clone()))
+        let Some(choice) = response.choices.into_iter().next() else {
+            return Ok((None, false));
+        };
+        let complete = match choice.metadata.get("finish_reason") {
+            None | Some(Value::Null) => false,
+            Some(Value::String(reason)) if reason == "stop" => true,
+            _ => return Err(QwenMTProtocolError::IncompleteTranslation),
+        };
+        Ok((choice.delta.content, complete))
     }
 }
 
@@ -1305,6 +1336,33 @@ mod tests {
             QwenMTResponseDecoder::decode(r#"{"choices":[]}"#),
             Err(QwenMTProtocolError::MissingTranslation)
         ));
+    }
+
+    #[test]
+    fn response_rejects_explicit_unfinished_or_filtered_completions() {
+        for reason in [
+            json!("length"),
+            json!("content_filter"),
+            json!("tool_calls"),
+            Value::Null,
+        ] {
+            let response = json!({"choices":[{"finish_reason":reason,"message":{"content":"Synthetic partial translation"}}]}).to_string();
+            assert!(
+                QwenMTResponseDecoder::decode(&response).is_err(),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn stream_rejects_explicit_unfinished_or_filtered_completions() {
+        for reason in ["length", "content_filter", "tool_calls"] {
+            let response = json!({"choices":[{"finish_reason":reason,"delta":{"content":"Synthetic partial translation"}}]}).to_string();
+            assert!(
+                QwenMTStreamDecoder::decode_chunk(&response).is_err(),
+                "{reason}"
+            );
+        }
     }
 
     #[test]

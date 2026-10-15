@@ -241,40 +241,8 @@ internal val DEEPL_TARGET_CODES = listOf(
     "pt",
 )
 
-internal val DEEPLX_SOURCE_CODES = listOf(
-    "ar",
-    "bg",
-    "cs",
-    "da",
-    "de",
-    "el",
-    "en",
-    "es",
-    "et",
-    "fi",
-    "fr",
-    "he",
-    "hu",
-    "id",
-    "it",
-    "ja",
-    "ko",
-    "lt",
-    "lv",
-    "no",
-    "nl",
-    "pl",
-    "pt",
-    "ro",
-    "ru",
-    "sk",
-    "sl",
-    "sv",
-    "tr",
-    "uk",
-    "vi",
-    "zh",
-)
+// Historical JVM comparison fixtures mirror the shared Rust catalog.
+internal val DEEPLX_SOURCE_CODES: List<String> get() = DEEPLX_TARGET_CODES
 
 internal val DEEPLX_TARGET_CODES = listOf(
     "ar",

@@ -1026,11 +1026,13 @@ fn picker_icon_png(image: &objc2_app_kit::NSImage) -> Option<Vec<u8>> {
         NSGraphicsContext,
     };
     use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSSize};
-    const EDGE: isize = 32;
+    // The picker renders at 20 logical pixels; keep enough source pixels for
+    // Retina displays instead of enlarging a 32px bitmap to 40 device pixels.
+    const EDGE: isize = 64;
     let previous_context = NSGraphicsContext::currentContext();
     let result = objc2::exception::catch(AssertUnwindSafe(|| {
-        // SAFETY: Null planes let AppKit own one 32x32 RGBA buffer with an
-        // explicit 128-byte row. No caller-owned memory is retained by AppKit.
+        // SAFETY: Null planes let AppKit own one EDGE x EDGE RGBA buffer with an
+        // explicit EDGE * 4-byte row. No caller-owned memory is retained by AppKit.
         let bitmap = unsafe {
             NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
                 NSBitmapImageRep::alloc(), std::ptr::null_mut(), EDGE, EDGE, 8, 4,
@@ -1479,7 +1481,7 @@ mod resampler_tests {
         let png = picker_icon_png(&image).unwrap();
         assert!(png.len() <= MAX_APPLICATION_ICON_PNG_BYTES);
         let decoded = tauri::image::Image::from_bytes(&png).unwrap();
-        assert_eq!((decoded.width(), decoded.height()), (32, 32));
+        assert_eq!((decoded.width(), decoded.height()), (64, 64));
         assert!(decoded
             .rgba()
             .as_chunks::<4>()

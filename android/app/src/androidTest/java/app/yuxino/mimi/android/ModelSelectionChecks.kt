@@ -37,13 +37,17 @@ internal class ModelSelectionChecks(private val test: Instrumentation) {
             if (model != null || providerId != null) {
                 val provider = ServiceProvider.fromId(providerId ?: SettingsStore.provider(context))
                 check(providerId == null || provider.id == providerId)
-                check(SettingsStore.isConfigured(context, provider))
+                val profile = (SettingsStore.activeProfile(context)?.takeIf { it.provider == provider }
+                    ?: SettingsStore.profiles(context).firstOrNull { it.provider == provider && SettingsStore.profileConfigured(context, it.id) })
+                    ?: error("saved_profile_missing")
+                check(SettingsStore.activateProfile(context, profile.id))
                 stage = "select_saved_model"
                 editor = test.startActivitySync(Intent(context, ServiceSettingsActivity::class.java)
-                    .putExtra("provider", provider.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ServiceSettingsActivity
+                    .putExtra("profileId", profile.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ServiceSettingsActivity
                 test.runOnMainSync {
                     if (model != null) {
                         check(provider == ServiceProvider.DASHSCOPE && model in listOf("lite", "flash", "plus"))
+                        check(!SettingsStore.profileConfiguration(context, profile.id).usesAlibabaLiveTranslate)
                         editor!!.findViewById<android.view.View>(android.R.id.content)
                             .findViewWithTag<Spinner>("qwen-mt-model").setSelection(listOf("lite", "flash", "plus").indexOf(model))
                     }

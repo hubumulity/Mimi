@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="brand_description">mimi 캐릭터 아이콘</string>
+    <string name="brand_description">Mimi 캐릭터 아이콘</string>
     <string name="home_kicker">실시간 자막 및 번역</string>
     <string name="home_title">실시간 자막</string>
     <string name="home_description">다른 앱에서 재생되는 소리를 자막으로 표시합니다. 일부 앱은 소리 캡처를 허용하지 않습니다.</string>

@@ -1,0 +1,21 @@
+<resources>
+    <string name="profiles_add">Add configuration</string>
+    <string name="profiles_empty">Choose a service to create your first configuration.</string>
+    <string name="profiles_name">Configuration name</string>
+    <string name="profiles_save">Save</string>
+    <string name="profiles_duplicate">Duplicate</string>
+    <string name="profiles_delete">Delete</string>
+    <string name="profiles_delete_title">Delete “%1$s”?</string>
+    <string name="profiles_delete_message">This removes this configuration and its credentials. Other configurations are kept.</string>
+    <string name="profiles_copy_name">%1$s (copy)</string>
+    <string name="profiles_limit">You can keep up to 20 configurations.</string>
+    <string name="profiles_retry">Retry</string>
+    <string name="profile_none">No configuration selected</string>
+    <string name="profiles_list_help">Save multiple configurations, including more than one for the same service. Tap a configuration to use it; Settings opens its editor. Duplicate and delete are in the editor menu.</string>
+    <string name="profiles_translation_help_save">Tests send a fixed example and do not save changes. Switching services keeps drafts in this editor. Save commits the selected service. Keys stay in encrypted storage on this device.</string>
+    <string name="guide_add_provider">Add %1$s</string>
+    <string name="profiles_load_failed">Could not load this configuration. Retry from Settings.</string>
+    <string name="profiles_add_short">Add</string>
+    <string name="profiles_use_named">Use %1$s</string>
+    <string name="profiles_duplicated">Configuration duplicated</string>
+</resources>

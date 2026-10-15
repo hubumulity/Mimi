@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { applicationAudioCopy, applicationAudioError, type ApplicationSnapshot } from "./applicationAudio";
+import { applicationAudioCopy, applicationAudioError, usesPlaybackStreams, type ApplicationSnapshot } from "./applicationAudio";
 import { applicationIconCache } from "./applicationAudioIcons";
 import { audioInputErrorMessage } from "./audioInput";
 import { audioSourceErrorMessage } from "./windowsAudioSource";
@@ -10,7 +10,8 @@ import { useStore } from "./store";
 let latestIconRequest = 0;
 
 /** Selectable lists load on user intent. The chosen application's local icon
- * can refresh silently on macOS/Windows, without permission or capture. */
+ * can refresh silently on macOS/Windows, without permission or capture.
+ * Linux checks cached choices without initializing discovery. */
 export function useApplicationAudioPicker(disabled = false) {
   const target = useStore(state => state.settings.systemAudioTarget) ?? { kind: "system" as const };
   const ready = useStore(state => state.initializationStatus === "ready");
@@ -26,7 +27,8 @@ export function useApplicationAudioPicker(disabled = false) {
   const listing = useRef(false);
   const switching = useRef(false);
   const lookup = useRef<Promise<ApplicationSnapshot> | null>(null);
-  const readSnapshot = useCallback(() => {
+  const readSnapshot = useCallback((cachedOnly = false) => {
+    if (cachedOnly) return invoke<ApplicationSnapshot>("audio_applications", { cachedOnly: true });
     if (lookup.current) return lookup.current;
     const generation = ++latestIconRequest;
     const request = (isTauri ? invoke<ApplicationSnapshot>("audio_applications") : Promise.resolve({ supported: true, applications: [] }))
@@ -44,7 +46,9 @@ export function useApplicationAudioPicker(disabled = false) {
   const text = applicationAudioCopy();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    if (!isTauri || !/Mac|Windows/i.test(navigator.userAgent) || !ready || !targetKey) return;
+    if (!isTauri || !/Mac|Windows|Linux/i.test(navigator.userAgent) || !ready || !targetKey) return;
+    const cachedOnly = usesPlaybackStreams();
+    if (cachedOnly && snapshot?.targetKey === targetKey) return;
     // An older list only covers this choice while its icon is still cached.
     // A failed lookup can clear icons before another window selects it again.
     // Cache updates are not dependencies: missing icons never start a retry loop.
@@ -52,14 +56,17 @@ export function useApplicationAudioPicker(disabled = false) {
       && (snapshot.targetKey === targetKey || snapshot.value.applications.some(app => app.id === targetKey))) return;
     let active = true;
     const restoreIcon = () => { if (active) setIcons(applicationIconCache.read()); };
-    void readSnapshot().then(restoreIcon, restoreIcon);
+    void readSnapshot(cachedOnly).then(value => {
+      if (active && cachedOnly) setSnapshot({ targetKey, value });
+      restoreIcon();
+    }, restoreIcon);
     return () => { active = false; };
   }, [readSnapshot, ready, snapshot, targetKey]);
   // An external window can choose a newly opened application. Its new target
   // is not missing merely because this window has an older enumeration.
   if (failure && failure.targetKey !== targetKey) setFailure(null);
   const error = failure?.targetKey === targetKey ? failure.message : null;
-  const supported = snapshot?.value.supported ?? (!isTauri || /Mac|Windows/i.test(navigator.userAgent));
+  const supported = snapshot?.value.supported ?? (!isTauri || /Mac|Windows|Linux/i.test(navigator.userAgent));
   const locked = disabled || !ready || pending || status === "connecting" || status === "stopping";
   const applications = snapshot?.value.supported ? snapshot.value.applications : [];
   const missing = target.kind === "application" && snapshot?.targetKey === targetKey && snapshot.value.supported && !applications.some(app => app.id === target.id);

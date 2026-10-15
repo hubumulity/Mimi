@@ -19,6 +19,7 @@ function assertComplete(actual: object, expected: object, path: string) {
 it.each([["zh-TW", zhTW], ["de", de], ["fr", fr], ["ko", ko], ["th", th]] as const)("keeps audio, diagnostics and control-panel copy complete in %s", (locale, copy) => {
   assertComplete(copy, SUPPLEMENTAL_EN, locale);
   expect(copy.applicationAudio_copy.title).not.toBe(SUPPLEMENTAL_EN.applicationAudio_copy.title);
+  expect(copy.playbackStream_copy.title).not.toBe(SUPPLEMENTAL_EN.playbackStream_copy.title);
   expect(copy.connectionDiagnostics_copy.reasons.credentialsMissing).not.toBe(SUPPLEMENTAL_EN.connectionDiagnostics_copy.reasons.credentialsMissing);
   expect(copy.audio3Errors_copy.summary.authentication).not.toBe(SUPPLEMENTAL_EN.audio3Errors_copy.summary.authentication);
 });

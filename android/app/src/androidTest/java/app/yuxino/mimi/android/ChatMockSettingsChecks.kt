@@ -628,12 +628,19 @@ internal class ChatMockSettingsChecks(private val instrumentation: Instrumentati
         check(!activity.isFinishing) { "Validation closed the unsaved editor" }
     }
 
-    private fun open(provider: ServiceProvider): ServiceSettingsActivity =
-        (instrumentation.startActivitySync(Intent(context, ServiceSettingsActivity::class.java)
-            .putExtra("provider", provider.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as ServiceSettingsActivity).also {
+    private fun open(provider: ServiceProvider): ServiceSettingsActivity {
+        val profile = SettingsStore.activeProfile(context)?.takeIf { it.provider == provider }
+            ?: SettingsStore.profiles(context).firstOrNull { it.provider == provider }
+        val intent = Intent(context, ServiceSettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (profile != null) intent.putExtra("profileId", profile.id) else intent.putExtra("provider", provider.id)
+        return (instrumentation.startActivitySync(intent) as ServiceSettingsActivity).also {
             activities += it
+            // These fixtures exercise independent text translation explicitly; new Alibaba
+            // profiles default to simultaneous translation in the ordinary product flow.
+            if (provider == ServiceProvider.DASHSCOPE) onUi { field<Spinner>(it, "alibaba-mode").setSelection(0) }
             instrumentation.waitForIdleSync()
         }
+    }
 
     private inline fun <reified T : View> field(activity: Activity, tag: String): T =
         activity.findViewById<View>(android.R.id.content).findViewWithTag<T>(tag) ?: error("Control missing: $tag")

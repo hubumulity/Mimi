@@ -10,6 +10,8 @@ python_command="${MIMI_PYTHON:-python3}"
 if [[ -z "${MIMI_PYTHON:-}" && "${OS:-}" == "Windows_NT" ]]; then
   python_command=python
 fi
+"$python_command" -B scripts/sync-provider-copy.py --check
+"$python_command" -B scripts/sync-provider-copy-test.py
 "$python_command" -B scripts/check-shared-runtime.py
 "$python_command" -B scripts/check-shared-runtime-test.py
 "$python_command" -B scripts/shared-core-native-test.py
