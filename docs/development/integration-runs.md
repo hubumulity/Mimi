@@ -3404,3 +3404,29 @@
   production replacement. Browser fixture pages were closed. Zero-profile
   screenshots are synthetic; native Windows/Linux and visual user acceptance
   remain separate. No full Rust/shared acceptance run for this frontend change.
+
+
+## 2026-10-15 — Stable MT trial resumed against current main
+
+- Resumed draft PR #272 from `db635742` and merged main `3593962b`, preserving
+  both the stable-preview fixtures and current draft ownership, Gemini session,
+  Android shared-runtime and recording-recovery behavior. The experiment
+  remains opt-in; the default feature selection is unchanged.
+- Canonical checks passed on the merged application code: 610 desktop Rust
+  tests (one ignored), 795 runtime tests (one ignored), 93 core tests plus contract suites,
+  eight JNI Rust tests, 2,198 frontend tests, Clippy, script checks and the
+  production frontend build. Experimental runtime Clippy/tests and all 19
+  research tests also passed.
+- Actual host JVM/JNI execution passed 235 debug and 235 release unit tests
+  with the default runtime. Rebuilding the host JNI library with
+  `experimental-stable-units` enabled then passed all 18 translation-contract
+  JVM tests. This is host JNI evidence, not Android device latency acceptance.
+- Included Linux keyring smoke-test handoff fix `36ac71ff` from draft PR #278.
+  Its exact revision passed desktop CI run `38739833191`, including the real
+  Linux native credential test, and Android CI run `38739832841`. The extra
+  change is limited to test orchestration; it does not change credential
+  behavior. Local handoff regression and syntax/format checks were rerun.
+- Preparation only: no app was installed or restarted, no provider requests or
+  live audio sessions were used, and no main merge or release was performed.
+  Native provider/audio A/B, subtitle reading comfort, Android device latency,
+  and Silero production integration remain unverified.
