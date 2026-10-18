@@ -4,6 +4,26 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：缩放 IPC 有界串行
+
+- 基于 `ba87a50`，范围见[设计记录](../plans/2026-10-18-bounded-resize-ipc.md)。
+  真实组件的受控 ACK probe：120 次 move 原来产生 121 个在途请求；新 dispatcher
+  峰值为 1，仅保留最新待发坐标。旧手势 final move／end ACK 后才允许新 start，
+  未发出便释放的点击不积压；无 timer、超时放行、新依赖或 native 协议变更。
+- 正式 quick frontend 类型、lint 与 10 文件／228 项通过，含 41 个组件和
+  13 个调度回归；独立审查无阻断。完整前端 142 文件／2,317 项、lint、
+  typechecked production build、输出边界 17 项通过。
+- Linux Chromium 用真实 pointer capture 驱动 120 次移动、卸载重挂与受控
+  invoke ACK，验证峰值 1、最终 screen 坐标和 end barrier；另 8 个 browser／
+  native-stub 的释放、丢捕获、卸载、禁用回归通过，已查看实际 fixture 截图。
+  均为合成原生边界，不涉及真实 provider、采集、凭据或用户设置。
+- 同环境已有 `f949d61` 与本轮生产产物比较，JS 逐文件总量增加 755 字节，
+  Node gzip 默认等级 6 总和增加 295 字节；这是有界调度的体积成本，不是
+  安装包或生产 CPU／帧率测量。浏览器回退几何未变。
+- ACK 不表示 OS 已绘制；Windows 在命令执行时读 GetCursorPos，快速释放／
+  重启仍需实机验收。WebView reload、其他原生 owner 和传输内部重复交付
+  仍需 native gesture identity 才能完整隔离，未据本轮宣称已覆盖。
+
 ## 2026-10-18：缩放收尾、滑块预览与应用刷新
 
 - 基于 `5e1c3eb` 的 UI 生命周期修复，范围见[缩放记录](../plans/2026-10-18-resize-drag-finalization.md)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../lib/ipc";
 import { OVERLAY_BASE_MINIMUM_HEIGHT } from "./overlayMinimumHeight";
+import { startNativeResize, type NativeResizeGesture } from "./resizeIpc";
 import type {
   CSSProperties,
   PointerEvent as ReactPointerEvent,
@@ -72,15 +72,7 @@ interface DragState {
 type ActiveDrag = {
   element: HTMLElement;
   pointerId: number;
-} & ({ native: true } | { native: false; geometry: DragState });
-
-function invokeResize(...args: [command: string, args?: Record<string, unknown>]) {
-  try {
-    void invoke(...args).catch(() => {});
-  } catch {
-    // A bridge failure must not interrupt pointer capture cleanup.
-  }
-}
+} & ({ native: true; gesture: NativeResizeGesture } | { native: false; geometry: DragState });
 
 /** Self-drawn resize handles for the overlay's eight edge/corner regions. */
 export function ResizeHandles({ disabled, onResize, minimumHeight = OVERLAY_BASE_MINIMUM_HEIGHT }: ResizeHandlesProps) {
@@ -98,7 +90,7 @@ export function ResizeHandles({ disabled, onResize, minimumHeight = OVERLAY_BASE
     } catch {
       // Capture can already be lost, or unavailable in a browser preview.
     }
-    if (drag.native) invokeResize("resize_end");
+    if (drag.native) drag.gesture.finish();
   }, []);
 
   // A release outside the handle must finish even when capture failed. Only
@@ -129,12 +121,12 @@ export function ResizeHandles({ disabled, onResize, minimumHeight = OVERLAY_BASE
       // during the drag, so window-relative coordinates would shift under a
       // stationary cursor and feed back into the math (the overlay used to
       // oscillate between two frames on corner drags).
-      dragRef.current = { native: true, element, pointerId: event.pointerId };
-      invokeResize("resize_start", {
-        region,
-        x: event.screenX,
-        y: event.screenY,
-      });
+      dragRef.current = {
+        native: true,
+        element,
+        pointerId: event.pointerId,
+        gesture: startNativeResize(region, event.screenX, event.screenY),
+      };
     } else {
       const rect = rootRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -168,7 +160,7 @@ export function ResizeHandles({ disabled, onResize, minimumHeight = OVERLAY_BASE
       return;
     }
     if (active.native) {
-      invokeResize("resize_move", { x: event.screenX, y: event.screenY });
+      active.gesture.move(event.screenX, event.screenY);
       return;
     }
     const drag = active.geometry;
