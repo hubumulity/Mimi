@@ -50,12 +50,12 @@ async function mount(list = blocks) {
 it("starts a new sentence glide before measuring rows and preserves it through delayed layout", async () => {
   await mount();
   const movements: Array<{ before: number; after: number; behavior?: ScrollBehavior }> = [];
-  timeline.scrollTo = (options: ScrollToOptions) => {
+  timeline.scrollTo = ((options: ScrollToOptions) => {
     const before = scrollTop;
     // A real smooth scroll does not synchronously reach its destination.
     if (options.behavior !== "smooth") scrollTop = Math.min(options.top ?? 0, scrollHeight - 80);
     movements.push({ before, after: scrollTop, behavior: options.behavior });
-  };
+  }) as HTMLElement["scrollTo"];
   const next: SubtitleBlock = { id: "new-live", createdAt: null, presentation: "live", source: null, translation: "A new sentence" };
   scrollHeight = 320;
   await render("translation", [...blocks, next]);
