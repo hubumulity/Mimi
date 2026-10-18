@@ -76,6 +76,14 @@ impl SourceSessionController {
         self.state.is_translation_preview_pending = false;
     }
 
+    fn start_translation(&mut self, now: Instant) {
+        self.clear_preview_pending();
+        self.state.translation_recovery = None;
+        self.state.is_translation_pending = true;
+        self.translation_pending_deadline = Some(now + TRANSLATION_PENDING_TIMEOUT);
+        self.state.is_translation_timed_out = false;
+    }
+
     pub fn begin_session(&mut self) {
         self.subtitle_reducer.begin_new_session();
         self.begin_connecting();
@@ -160,7 +168,7 @@ impl SourceSessionController {
 
     #[cfg(test)]
     fn handle_at(&mut self, event: LiveTranslateServerEvent, now: Instant) {
-        let _ = self.handle_ordered_at(event, now, None);
+        let _ = self.handle_ordered_at(event, now, None, false);
     }
 
     fn handle_ordered_at(
@@ -168,6 +176,7 @@ impl SourceSessionController {
         event: LiveTranslateServerEvent,
         now: Instant,
         source_ordinal: Option<u64>,
+        starts_translation_hint: bool,
     ) -> Option<ProviderEventApplication> {
         if !event.text_within_limit() {
             return None;
@@ -223,7 +232,7 @@ impl SourceSessionController {
                     | LiveTranslateServerEvent::TranslationDeferred(_)
             ),
         };
-        let starts_translation = matches!(event, LiveTranslateServerEvent::TranslationStarted);
+        let mut starts_translation = matches!(event, LiveTranslateServerEvent::TranslationStarted);
 
         match event {
             LiveTranslateServerEvent::SubtitleSourceBoundary {
@@ -296,11 +305,7 @@ impl SourceSessionController {
                     .apply(crate::core::models::SubtitleEvent::SourceFinal(text));
             }
             LiveTranslateServerEvent::TranslationStarted => {
-                self.clear_preview_pending();
-                self.state.translation_recovery = None;
-                self.state.is_translation_pending = true;
-                self.translation_pending_deadline = Some(now + TRANSLATION_PENDING_TIMEOUT);
-                self.state.is_translation_timed_out = false;
+                self.start_translation(now);
             }
             LiveTranslateServerEvent::PreviewTranslationStarted { request_id } => {
                 self.preview_pending_id = Some(request_id);
@@ -360,6 +365,14 @@ impl SourceSessionController {
                 is_final,
                 language,
             } => {
+                // The order/lifecycle checks above and caption reduction below
+                // share the same controller admission as this activity hint.
+                let accepted_start = starts_translation_hint
+                    && role == UtteranceRole::Source
+                    && is_final
+                    && self
+                        .subtitle_reducer
+                        .can_start_identified_translation(&utterance_id, &text);
                 self.subtitle_reducer
                     .apply(crate::core::models::SubtitleEvent::UtteranceText {
                         utterance_id: utterance_id.clone(),
@@ -367,6 +380,10 @@ impl SourceSessionController {
                         text,
                         is_final,
                     });
+                if accepted_start {
+                    self.start_translation(now);
+                    starts_translation = true;
+                }
                 if role == UtteranceRole::Source
                     && self
                         .subtitle_reducer
@@ -694,7 +711,7 @@ impl TranslationSessionController {
         event: LiveTranslateServerEvent,
         now: Instant,
     ) {
-        self.handle_ordered_from_at(audio_source, event, now, None);
+        self.handle_ordered_from_at(audio_source, event, now, None, false);
     }
 
     pub(crate) fn handle_ordered_from_at(
@@ -703,6 +720,7 @@ impl TranslationSessionController {
         event: LiveTranslateServerEvent,
         now: Instant,
         source_ordinal: Option<u64>,
+        starts_translation_hint: bool,
     ) -> ProviderEventApplication {
         if !self.audio_input.sources().contains(&audio_source) || !event.text_within_limit() {
             return ProviderEventApplication::default();
@@ -715,7 +733,7 @@ impl TranslationSessionController {
             .last()
             .map(|pair| pair.created_at_ms);
         let application = lane
-            .handle_ordered_at(event, now, source_ordinal)
+            .handle_ordered_at(event, now, source_ordinal, starts_translation_hint)
             .unwrap_or_default();
         if let Some(pair) = lane.state.subtitles.history.last_mut() {
             if before != Some(pair.created_at_ms) {
@@ -815,6 +833,158 @@ impl TranslationSessionController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn identified_source(id: &str, is_final: bool) -> LiveTranslateServerEvent {
+        LiveTranslateServerEvent::UtteranceText {
+            utterance_id: id.into(),
+            role: UtteranceRole::Source,
+            text: format!("Synthetic {id} source."),
+            is_final,
+            language: None,
+        }
+    }
+
+    #[test]
+    fn old_source_activity_preserves_current_preview_recovery_timeout_and_completion() {
+        use crate::core::diagnostics::{TranslationRecovery, TranslationRecoveryReason};
+        let now = Instant::now();
+        for mode in ["preview", "recovery", "timeout", "completed"] {
+            let mut controller = TranslationSessionController::default();
+            controller.did_connect();
+            controller.handle_ordered_from_at(
+                AudioSource::System,
+                identified_source("old", false),
+                now,
+                Some(0),
+                false,
+            );
+            let started = controller.handle_ordered_from_at(
+                AudioSource::System,
+                identified_source("current", true),
+                now,
+                Some(2),
+                true,
+            );
+            assert_eq!(
+                started.translation_pending_deadline,
+                Some(now + TRANSLATION_PENDING_TIMEOUT)
+            );
+            match mode {
+                "preview" => controller
+                    .handle(LiveTranslateServerEvent::PreviewTranslationStarted { request_id: 7 }),
+                "recovery" => controller.handle(LiveTranslateServerEvent::TranslationDeferred(
+                    TranslationRecovery {
+                        reason: TranslationRecoveryReason::RateLimited,
+                        retry_after_ms: 4_000,
+                        retry_scheduled: true,
+                    },
+                )),
+                "timeout" => {
+                    assert!(controller.tick(now + TRANSLATION_PENDING_TIMEOUT));
+                }
+                "completed" => {
+                    controller.handle_ordered_from_at(
+                        AudioSource::System,
+                        LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+                            utterance_id: "current".into(),
+                            source: "Synthetic current source.".into(),
+                            translation: "Synthetic current translation.".into(),
+                            language: None,
+                        },
+                        now,
+                        Some(2),
+                        false,
+                    );
+                }
+                _ => unreachable!(),
+            }
+            let before = controller.state.clone();
+            let deadline = controller.translation_pending_deadline_from(AudioSource::System);
+            for (id, order) in [("old", 0), ("unseen-old", 1)] {
+                let application = controller.handle_ordered_from_at(
+                    AudioSource::System,
+                    identified_source(id, true),
+                    now + Duration::from_secs(7),
+                    Some(order),
+                    true,
+                );
+                assert!(application.translation_pending_deadline.is_none());
+                assert!(!application.resolves_translation_timeout);
+                assert_eq!(controller.state, before);
+                assert_eq!(
+                    controller.translation_pending_deadline_from(AudioSource::System),
+                    deadline
+                );
+            }
+            if mode == "completed" {
+                let duplicate = controller.handle_ordered_from_at(
+                    AudioSource::System,
+                    identified_source("current", true),
+                    now + Duration::from_secs(7),
+                    Some(2),
+                    true,
+                );
+                assert!(duplicate.translation_pending_deadline.is_none());
+                assert_eq!(controller.state, before);
+            }
+            let next = controller.handle_ordered_from_at(
+                AudioSource::System,
+                identified_source("next", true),
+                now + Duration::from_secs(8),
+                Some(3),
+                true,
+            );
+            assert_eq!(
+                next.translation_pending_deadline,
+                Some(now + Duration::from_secs(8) + TRANSLATION_PENDING_TIMEOUT)
+            );
+            assert!(controller.state.is_translation_pending);
+            assert!(!controller.state.is_translation_preview_pending);
+            assert!(!controller.state.is_translation_timed_out);
+            assert!(controller.state.translation_recovery.is_none());
+        }
+    }
+
+    #[test]
+    fn source_final_activity_obeys_source_selection_stopping_and_original_only() {
+        let now = Instant::now();
+        let mut controller = TranslationSessionController::default();
+        controller.did_connect();
+        let before = controller.state.clone();
+        let disabled = controller.handle_ordered_from_at(
+            AudioSource::Microphone,
+            identified_source("disabled", true),
+            now,
+            Some(0),
+            true,
+        );
+        assert!(disabled.translation_pending_deadline.is_none());
+        assert_eq!(controller.state, before);
+        let original_only = controller.handle_ordered_from_at(
+            AudioSource::System,
+            identified_source("original-only", true),
+            now,
+            Some(0),
+            false,
+        );
+        assert!(original_only.translation_pending_deadline.is_none());
+        assert!(!controller.state.is_translation_pending);
+        assert_eq!(
+            controller.state.subtitles.source.utterance_id.as_deref(),
+            Some("original-only")
+        );
+        controller.begin_stopping();
+        let before = controller.state.clone();
+        let ignored = controller.handle_ordered_from_at(
+            AudioSource::System,
+            identified_source("stopping", true),
+            now,
+            Some(1),
+            true,
+        );
+        assert!(ignored.translation_pending_deadline.is_none());
+        assert_eq!(controller.state, before);
+    }
 
     #[test]
     fn pending_deadline_is_shared_and_drafts_do_not_extend_it() {
