@@ -121,6 +121,11 @@ These project rules apply to implementation and review.
   Current transcript results need a session/retention identity beyond item count.
   Diagnostics reentry must request a fresh snapshot after any serialized in-flight
   operation, and old visits must not replace the new view's report.
+  Reuse unchanged subtitle lanes by all presentation props, preserving row identity
+  and locale subscriptions. When the last row changes, retire its measurement
+  callback so a late old-row resize cannot replace the new reading budget.
+  Process-stable native capability reads may be shared within one WebView;
+  failures must remain retryable and every other window must verify its own IPC.
 - All interface text, native controls, tooltips and portaled menus use
   `--mimi-ui-font`. Order CJK fallbacks for the interface language and include
   Windows non-UI family names; do not add a separate stack to a shared tooltip.

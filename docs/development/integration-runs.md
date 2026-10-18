@@ -47,6 +47,32 @@
   当前样本更快；不据此声称生产 CPU 比例。精确提交的完整 CI 结果见对应 PR。
   后续原生验收优先检查窗口隐藏／恢复和新会话相同条数的记录切换。
 
+## 2026-10-18：字幕历史渲染、启动查询与资源精简
+
+- 基于 `58901be` 的后续前端优化，分别见[历史渲染](../plans/2026-10-18-subtitle-history-render.md)、
+  [快捷键查询](../plans/2026-10-18-desktop-shortcut-support-cache.md)和
+  [资源元数据](../plans/2026-10-18-provider-asset-metadata.md)。无新依赖、
+  IPC、采集或 provider 请求；root 接受前已做独立互审。
+- 20 条历史 × 20 次显示更新的实际组件合成 probe：Lane／CompactLane
+  调用和测量回调 ref 维护 840 → 40，未变历史 Lane 800 → 0；挂载后重复
+  字体规范化 840 → 0。两版测量循环均无 geometry read；React/jsdom render
+  约 118ms → 78ms，不代表生产 CPU 或帧率。时间戳格式化未纳入本轮。
+- 正式回归覆盖每次重新构造 history 对象仍即时显示字幕、旧 last 行迟到
+  测量不污染新 last、历史阅读位置与节点保留、字体字号对齐和八语言更新。
+  Timeline 相关 73 项通过，Linux Chromium 前台 96 组 tooltip＋30 组 motion
+  通过，保留此前 glide 与动画时钟行为；原生 macOS／Windows 未新增实测。
+- 同 WebView 的三个快捷键消费者合并为一次能力请求；成功值含 null 可复用，
+  失败可重试，卸载不取消其他消费者。新增 7 项回归修前 4 项失败，修后
+  通过；quick frontend 21 文件／341 项通过。不同 WebView 仍各自执行 IPC。
+- Gemini 只删除 11,904 字节 Adobe XMP，保留其余 JPEG 字节和 SVG 绘图；
+  未删除许可／版权字段。解码 RGB 与九尺寸 Chromium RGBA 完全相同。
+  `10d726e` 受控生产 A/B 总产物 −15,871 字节，Node gzip 等级 6 的逐文件
+  总和 −7,176 字节，JS 不变；不推算原生安装包变化。
+- 完整前端 140 文件／2,252 项、lint、typechecked production build 与输出边界
+  检查通过；两个 445 次 draft 压力变体约 2.41s／1.94s，未修改时限或断言。
+  精确提交 CI 结果见对应 PR；后续原生验收优先检查连续字幕时阅读历史、
+  切字体和旧行 resize 的组合。
+
 ## 2026-10-18：字幕动画、窗口反转与设置保存回归
 
 - 基于 `8b9756a7c37414df7f23008631274a3a133f9e00` 的修复工作树，范围见
