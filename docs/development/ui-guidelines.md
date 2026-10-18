@@ -78,6 +78,9 @@ These project rules apply to implementation and review.
   geometry, and finish pointer interactions even when release occurs outside.
   Preserve status-light animation identities when pausing invisible tracks;
   system chrome rules must not override their explicit motion setting.
+  Resize ownership ends on capture loss, unmount, disabling and primary-button
+  loss as well as release. Clear it before releasing capture; duplicate native
+  completion without an active gesture must not replace a newer presentation.
   In normal Android mode, bottom-align the current measured lanes, matching the
   desktop reading edge. Growing reference text must not push an unchanged
   translation down; preserve complete glyph lines and deliberate history reading.
@@ -126,6 +129,10 @@ These project rules apply to implementation and review.
   callback so a late old-row resize cannot replace the new reading budget.
   Process-stable native capability reads may be shared within one WebView;
   failures must remain retryable and every other window must verify its own IPC.
+  Keep pending slider previews stable across older save echoes. Confirmations
+  and rollbacks must respect field ownership, external revisions and subsequent
+  ordinary settings; a completed iconless application query is a valid result,
+  not an instruction to enumerate again.
 - All interface text, native controls, tooltips and portaled menus use
   `--mimi-ui-font`. Order CJK fallbacks for the interface language and include
   Windows non-UI family names; do not add a separate stack to a shared tooltip.

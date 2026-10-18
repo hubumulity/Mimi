@@ -4,6 +4,33 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：缩放收尾、滑块预览与应用刷新
+
+- 基于 `5e1c3eb` 的 UI 生命周期修复，范围见[缩放记录](../plans/2026-10-18-resize-drag-finalization.md)
+  和[设置预览记录](../plans/2026-10-18-settings-preview-and-picker-refresh.md)。
+  仅合成 UI／IPC 数据，无真实 provider、录音、凭据或用户配置。
+- 缩放原组件回归 16 项失败并有 6 个未捕获异常；统一 finish 后 40 项通过，
+  quick frontend 214 项通过。native completion 旧逻辑使 3 项新用例失败，
+  active-owner 检查后，真实生产函数抽取的 58 项几何／resize 回归通过。
+- Chromium 的 browser／模拟 native 两种边界各检查正常释放、真实捕获丢失、
+  卸载、禁用，共 8 组通过；每个 native gesture 仅一次 start／end，结束后
+  不再响应 hover。先移动一次使捕获生效再 release，避免把尚未生效的 pending
+  capture 误当 lostpointercapture。传输重排与签名原生交互仍未实测。
+- 两滑块最新预览与外部更新／失败回滚、普通设置交叉、隐私交易顺序均有
+  正式 store 回归；初始 7 项中 5 项修前失败，最终 18 项通过。冻结源码后
+  quick frontend 48 文件／992 项、类型与 lint 通过。未做保存写入合并，
+  不声称减少落盘；无 mutation ID 时同值外部事件的边界已明确记录。
+- 实际设置控件通过 8 语言 × 520／952 CSS px 共 16 组端点与方向键操作。
+  macOS／Windows／Linux 的无图标／目标退出共 6 组，每组挂载＋两次刷新
+  均为 3 次查询；另一次失败后重试通过。23 组均为合成设置 fixture，
+  不替代 native settings-changed 旧回显（由正式 store 回归覆盖）。
+- 完整前端 141 文件／2,303 项、lint、typechecked production build 与输出检查
+  通过。canonical 通过 core 93＋4 契约、runtime 787（既有 ignored 1）、
+  Rust JNI adapter 8、updater 4 及格式／严格 Clippy／架构检查，随后因本机
+  缺少 `glib-2.0.pc` 停在 native 编译；完整原生及精确提交 CI 见对应 PR。
+  后续原生验收重点为拖动时锁定、
+  收起／沉浸、错误恢复，以及快速释放后重新开始；仍不宣称跨 IPC 请求 FIFO。
+
 ## 2026-10-18：共享会话与桌面快照分配
 
 - 调查基于 `10d726e`，提交前更新到 `58901be`，受测 shared／桌面源码未变。

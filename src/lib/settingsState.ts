@@ -238,11 +238,52 @@ export class SettingsSaveCoordinator {
   private persistenceQueue: Promise<void> = Promise.resolve();
   private confirmedSnapshot: SettingsSnapshot | null = null;
   private activeSaves = 0;
+  private sliderPreviews = new Map<SliderField, { value: number; generation: number }>();
+  private submittedSlider: { draft: SettingsDraft; generation: number } | null = null;
+  private sliderRevisions: Record<SliderField, number> = { fontSize: 0, subtitleBackgroundOpacity: 0 };
+  private receivedSnapshot: SettingsSnapshot | null = null;
+  private displayedSnapshot: SettingsSnapshot | null = null;
 
   invalidate(): void {
+    this.sliderPreviews.clear();
+    this.receivedSnapshot = null;
+    this.displayedSnapshot = null;
+    for (const field of SLIDER_FIELDS) this.sliderRevisions[field] += 1;
+    this.invalidateResponses();
+  }
+
+  private invalidateResponses(): void {
     this.generation += 1;
     this.epoch += 1;
     this.confirmedSnapshot = null;
+  }
+
+  /** Native events can acknowledge an earlier slider save while a newer
+   * local value is still queued. Other fields always belong to the event. */
+  receiveSnapshot(snapshot: SettingsSnapshot): SettingsSnapshot {
+    for (const field of SLIDER_FIELDS) {
+      const value = sliderValue(snapshot, field);
+      const unchanged = this.receivedSnapshot !== null && value === sliderValue(this.receivedSnapshot, field);
+      const submitted = value === this.submittedSlider?.draft[field];
+      if (this.receivedSnapshot !== null && !unchanged && !submitted) this.sliderRevisions[field] += 1;
+      const preview = this.sliderPreviews.get(field);
+      if (!preview) continue;
+      // A different native value supersedes the local preview. A matching
+      // value confirms only the latest operation: the user may drag back to
+      // an earlier value while an intermediate value is still queued.
+      const acknowledged = value === preview.value && this.submittedSlider?.generation === preview.generation;
+      if (acknowledged || (value !== preview.value && !unchanged && !submitted)) this.sliderPreviews.delete(field);
+    }
+    this.invalidateResponses();
+    this.receivedSnapshot = snapshot;
+    return this.preview(snapshot);
+  }
+
+  private preview(snapshot: SettingsSnapshot): SettingsSnapshot {
+    const draft: SettingsDraft = {};
+    for (const [field, preview] of this.sliderPreviews) draft[field] = preview.value;
+    this.displayedSnapshot = this.sliderPreviews.size ? mergeSettingsSnapshot(snapshot, draft) : snapshot;
+    return this.displayedSnapshot;
   }
 
   async save(
@@ -253,25 +294,78 @@ export class SettingsSaveCoordinator {
   ): Promise<void> {
     const generation = ++this.generation;
     const epoch = this.epoch;
+    const sliderFields = sliderDraftFields(draft);
+    this.receivedSnapshot ??= previous;
+    // A mixed draft keeps the ordinary transaction and opt-out semantics.
+    // Its explicit fields supersede a prior standalone slider preview.
+    if (!sliderFields.length) {
+      if (draft.fontSize !== undefined) this.sliderPreviews.delete("fontSize");
+      if (draft.subtitleBackgroundOpacity !== undefined) this.sliderPreviews.delete("subtitleBackgroundOpacity");
+    }
+    for (const field of sliderFields) this.sliderPreviews.set(field, { value: draft[field]!, generation });
+    const publish = (snapshot: SettingsSnapshot) => apply(this.preview(snapshot));
     if (this.confirmedSnapshot === null) {
       this.confirmedSnapshot = previous;
     }
     this.activeSaves += 1;
-    apply(mergeSettingsSnapshot(previous, draft));
+    publish(mergeSettingsSnapshot(previous, draft));
 
     const operation = this.persistenceQueue.then(async () => {
+      this.submittedSlider = sliderFields.length ? { draft, generation } : null;
+      const revisions = { ...this.sliderRevisions };
       try {
         const snapshot = await persist(draft);
         if (epoch === this.epoch) {
           this.confirmedSnapshot = snapshot;
-          if (generation === this.generation) apply(snapshot);
+          this.receivedSnapshot = snapshot;
+        }
+        if (sliderFields.length) {
+          const acknowledged: SettingsDraft = {};
+          const confirmed: SettingsDraft = {};
+          for (const field of sliderFields) {
+            const preview = this.sliderPreviews.get(field);
+            if (!preview) continue;
+            // A late acknowledgement from before an external edit cannot
+            // become the rollback baseline for a subsequent local intent,
+            // even when external edits returned to the same numeric value.
+            if (revisions[field] !== this.sliderRevisions[field]) continue;
+            confirmed[field] = sliderValue(snapshot, field);
+            if (preview.generation === generation) {
+              this.sliderPreviews.delete(field);
+              acknowledged[field] = confirmed[field];
+            }
+          }
+          if (Object.keys(confirmed).length) {
+            this.receivedSnapshot = mergeSettingsSnapshot(this.receivedSnapshot ?? previous, confirmed);
+            if (this.confirmedSnapshot !== null) this.confirmedSnapshot = mergeSettingsSnapshot(this.confirmedSnapshot, confirmed);
+          }
+          if (Object.keys(acknowledged).length) {
+            const base = epoch === this.epoch && generation === this.generation ? snapshot : this.displayedSnapshot ?? previous;
+            publish(mergeSettingsSnapshot(base, acknowledged));
+          }
+        } else if (epoch === this.epoch && generation === this.generation) {
+          publish(snapshot);
         }
       } catch (error) {
-        if (epoch === this.epoch && generation === this.generation) {
-          apply(this.confirmedSnapshot ?? previous);
+        if (sliderFields.length) {
+          const rollback: SettingsDraft = {};
+          for (const field of sliderFields) {
+            if (this.sliderPreviews.get(field)?.generation !== generation) continue;
+            this.sliderPreviews.delete(field);
+            rollback[field] = sliderValue(this.receivedSnapshot ?? previous, field);
+          }
+          if (Object.keys(rollback).length) {
+            if (this.confirmedSnapshot !== null) this.confirmedSnapshot = mergeSettingsSnapshot(this.confirmedSnapshot, rollback);
+            const base = epoch === this.epoch && generation === this.generation
+              ? this.confirmedSnapshot ?? previous : this.displayedSnapshot ?? previous;
+            publish(mergeSettingsSnapshot(base, rollback));
+          }
+        } else if (epoch === this.epoch && generation === this.generation) {
+          publish(this.confirmedSnapshot ?? previous);
         }
         throw error;
       } finally {
+        this.submittedSlider = null;
         this.activeSaves -= 1;
         if (this.activeSaves === 0) this.confirmedSnapshot = null;
       }
@@ -281,6 +375,18 @@ export class SettingsSaveCoordinator {
     this.persistenceQueue = operation.catch(() => {});
     return operation;
   }
+}
+
+type SliderField = "fontSize" | "subtitleBackgroundOpacity";
+const SLIDER_FIELDS: SliderField[] = ["fontSize", "subtitleBackgroundOpacity"];
+function sliderDraftFields(draft: SettingsDraft): SliderField[] {
+  const fields = Object.keys(draft);
+  return fields.length && fields.every((field): field is SliderField =>
+    (field === "fontSize" || field === "subtitleBackgroundOpacity") && typeof draft[field] === "number")
+    ? fields : [];
+}
+function sliderValue(snapshot: SettingsSnapshot, field: SliderField): number {
+  return field === "fontSize" ? snapshot.fontSize : snapshot.subtitleBackgroundOpacity ?? 80;
 }
 
 /** Prevents an older command response from overwriting a newer event or save. */
