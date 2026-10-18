@@ -33,6 +33,12 @@
 - 额外实测确认 unchanged emitter 的既有边界：迟到 source final 之前的
   ID-less TranslationStarted 仍会重设当前 deadline；本修复只确保后续旧
   identified pair 不取消该 deadline 并保留历史，start 身份归属另行处理。
+- 组合 main 的 conditional poll 后，无参数 canonical 通过 core 104＋4契约、
+  runtime 814＋既有ignored 1、JNI 24、updater 4及共享严格检查；桌面止于
+  本机缺 `glib-2.0.pc`。组合SO完整hash `020316e7…0c7a7db`，source-order
+  Java/JNI为1连接／10内容／20poll，旧draft-barrier为1／8／20，两项全部通过。
+  随后变基 main `fdc765f`，shared／desktop／Android源码及测试未变；新增
+  前端Select修复已有独立全前端与Android CI，完整native／Kotlin仍待本PR CI。
 
 ## 2026-10-18：字幕滚动与下拉菜单归属
 

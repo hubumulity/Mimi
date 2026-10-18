@@ -111,3 +111,23 @@ evidence does not compile Kotlin or replace exact-commit platform CI. The host
 lacks GTK development libraries and Kotlin/Gradle tooling; full desktop and
 Kotlin/JNI suites remain CI gates. No real provider, credential, audio capture,
 device or native UI was used.
+
+## Combined main acceptance
+
+The repair was combined with main's conditional JNI polling fix, then rebased
+onto `fdc765f9514322c80f908f830a174f63e6f1411d`. All shared, desktop and Android
+source/test inputs stayed byte-identical across the last rebase; the added
+frontend listener repair already had separate full frontend/Android CI.
+The no-argument canonical check on the combined native tree passed core 104
+plus four contracts, runtime 814 with one existing ignored test, JNI 24 and
+updater four, including strict shared checks. Desktop compilation stopped at
+the host's missing `glib-2.0.pc`; exact-head native/Kotlin CI remains the gate.
+
+The combined JNI library SHA-256 is
+`020316e740864b85e2138754fcf4ddcf248d87e4711c69d72cc201d7e0c7a7db`.
+Actual Java calls passed the source-order scenario (one connection, ten content
+events, twenty polls) and the previous draft-barrier scenario (one connection,
+eight content events, twenty polls). Both preserved their caption/history,
+preview, graceful-tail and transport-close assertions. Neither network run
+claims deterministic mailbox backlog. The final evidence-only commit changes
+no tested production code.
