@@ -27,6 +27,30 @@
   前端 145 文件／2,345 项、lint、typechecked production build 与输出边界
   17 项检查。重放到 `a71680c` 后前端源码未变；未跑无关 native suite。
 
+## 2026-10-18：Android PCM 队列背压恢复
+
+- 基于 `85c14105038dba57512e3f2f74fb5d88b964b72f` 的 dirty debug 工作树，
+  包含前轮硬停 owner；范围见[设计记录](../plans/2026-10-18-android-pcm-backpressure-recovery.md)。
+  实际 Java JNI＋本地 CONNECT／TLS／WebSocket，无真实 provider、凭据、
+  capture 或外网连接。只将首次 typed Backpressure 转入原连接的现有 Rust
+  恢复通道，不改共享 bounded 策略或增加 Kotlin 恢复算法。
+- 旧库暂扣 setup ack 约 2.3s 时 21 包接纳／1 包拒绝，排空后后续 5 包全拒；
+  状态仍 Listening／无错误，Ping／Pong 正常。相同恢复断言在旧固定库上
+  失败；新固定库同 handle 建立第二连接，5 帧／16,000B 新标记 PCM 全到达，
+  硬停 1ms Close，stale PCM 后实际监听 500ms 无第三连接。
+- 两个正式 Rust 用例修前因无事件失败；修后 JNI 18 项通过，含新增的
+  一次报告、旧 endpoint 隔离、硬停 Closed 安静及真实共享客户端同 handle
+  恢复路径。实际 Java/JNI 的原四项 stop／setup／graceful-tail 对照仍通过，
+  正常末尾一对字幕保留。新增 Kotlin/JNI 维护用例待 CI 真正编译执行。
+- JNI all-target strict Clippy、fmt、共享架构和 diff 检查通过。root 无参数
+  canonical 通过 core 93＋4 契约、runtime 797（既有 ignored 1）、Rust JNI 18、
+  updater 4 及格式／严格 Clippy／架构检查；随后因本机缺 `glib-2.0.pc` 停在
+  桌面 native 编译，平台与维护 Kotlin/JNI 仍以精确提交 CI 为门槛。
+  重放到 `922bbc5` 后受测 shared／JNI／Kotlin 源码未变。
+  暂扣的是第一代 setup，新连接及时应答；持续每代慢 setup
+  仍可能按既有策略再次溢出重连，不承诺全局重试次数上限、无损超预算音频
+  或 setup 延迟改善。设备、真实 provider 和原生捕获仍未验收。
+
 ## 2026-10-18：缩放 IPC 有界串行
 
 - 基于 `ba87a50`，范围见[设计记录](../plans/2026-10-18-bounded-resize-ipc.md)。
