@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ResizeHandles } from "./ResizeHandles";
+import type { ResizeHandles as ResizeHandlesComponent } from "./ResizeHandles";
 
 const runtime = vi.hoisted(() => ({ isTauri: false }));
 vi.mock("../../lib/ipc", () => ({ get isTauri() { return runtime.isTauri; } }));
@@ -14,8 +14,13 @@ const releaseDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype,
 let host: HTMLDivElement;
 let root: Root;
 let onResize: ReturnType<typeof vi.fn>;
+let ResizeHandles: typeof ResizeHandlesComponent;
 
-beforeEach(() => {
+beforeEach(async () => {
+  // A fresh module represents an independent WebView for each test. Remounts
+  // within a test intentionally share their dispatcher and pending requests.
+  vi.resetModules();
+  ({ ResizeHandles } = await import("./ResizeHandles"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("screenX", 400); vi.stubGlobal("screenY", 300);
   vi.stubGlobal("screen", { width: 1512, availHeight: 958 });
@@ -57,11 +62,13 @@ async function cornerPointer(handle: HTMLElement, type: string, clientX: number,
 }
 
 async function dispatchPointer(target: EventTarget, type: string, init: MouseEventInit = {}, pointerId = 1, isPrimary = true) {
-  await act(async () => {
-    const event = new MouseEvent(type, { bubbles: true, buttons: type === "pointerdown" || type === "pointermove" ? 1 : 0, ...init });
-    Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: isPrimary } });
-    target.dispatchEvent(event);
-  });
+  await act(async () => target.dispatchEvent(pointerEvent(type, init, pointerId, isPrimary)));
+}
+
+function pointerEvent(type: string, init: MouseEventInit = {}, pointerId = 1, isPrimary = true) {
+  const event = new MouseEvent(type, { bubbles: true, buttons: type === "pointerdown" || type === "pointermove" ? 1 : 0, ...init });
+  Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: isPrimary } });
+  return event;
 }
 
 it.each([136, 188, 200])("clamps browser top-edge resizing to %i px while preserving the opposite edge", async minimumHeight => {
@@ -267,7 +274,11 @@ it.each(["resize_start", "resize_move", "resize_end"])("keeps cleanup safe when 
   await cornerPointer(handle, "pointerup", 450, 330);
   await dispatchPointer(handle, "lostpointercapture");
   await act(async () => root.render(null));
-  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_move", "resize_end"]);
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(failedCommand === "resize_start"
+    ? ["resize_start", "resize_end"]
+    : failedCommand === "resize_move"
+      ? ["resize_start", "resize_move", "resize_end"]
+      : ["resize_start", "resize_move", "resize_end", "resize_end"]);
   expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1);
 });
 
@@ -280,5 +291,46 @@ it("contains rejected IPC promises while retaining a single cleanup", async () =
   await cornerPointer(handle, "pointermove", 450, 330);
   await cornerPointer(handle, "pointerup", 450, 330);
   await dispatchPointer(handle, "lostpointercapture");
-  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_move", "resize_end"]);
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_end"]);
+});
+
+it("bounds real pointer bursts and keeps the previous mount's end ahead of a new native gesture", async () => {
+  runtime.isTauri = true;
+  const acknowledgements: Array<() => void> = [];
+  let inFlight = 0;
+  let peakInFlight = 0;
+  invoke.mockImplementation(() => new Promise<void>(resolve => {
+    peakInFlight = Math.max(peakInFlight, ++inFlight);
+    acknowledgements.push(() => { inFlight--; resolve(); });
+  }));
+  const acknowledge = async (index: number) => act(async () => acknowledgements[index]());
+  await mount();
+  const old = cornerHandle("top", "left");
+  await cornerPointer(old, "pointerdown", 400, 300);
+  await act(async () => {
+    for (let i = 0; i < 120; i++) old.dispatchEvent(pointerEvent("pointermove", { screenX: 801 + i, screenY: 601 + i }));
+  });
+  expect(invoke).toHaveBeenCalledOnce();
+  await act(async () => root.render(null));
+  await mount();
+  const replacement = cornerHandle("bottom", "right");
+  await cornerPointer(replacement, "pointerdown", 500, 400);
+  await cornerPointer(replacement, "pointermove", 550, 450);
+  expect(invoke).toHaveBeenCalledOnce();
+  await acknowledge(0);
+  expect(invoke.mock.lastCall).toEqual(["resize_move", { x: 920, y: 720 }]);
+  await acknowledge(1);
+  expect(invoke.mock.lastCall).toEqual(["resize_end"]);
+  expect(invoke).toHaveBeenCalledTimes(3);
+  await acknowledge(2);
+  expect(invoke.mock.lastCall).toEqual(["resize_start", { region: "bottomRight", x: 900, y: 700 }]);
+  await acknowledge(3);
+  expect(invoke.mock.lastCall).toEqual(["resize_move", { x: 950, y: 750 }]);
+  await cornerPointer(replacement, "pointerup", 550, 450);
+  await acknowledge(4);
+  expect(invoke.mock.lastCall).toEqual(["resize_end"]);
+  await acknowledge(5);
+  expect(inFlight).toBe(0);
+  expect(peakInFlight).toBe(1);
+  expect(onResize).not.toHaveBeenCalled();
 });
