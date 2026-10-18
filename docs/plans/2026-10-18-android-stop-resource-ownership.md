@@ -129,3 +129,10 @@ lines; its ten tests are unchanged. This host lacks the Android Kotlin/Gradle
 toolchain and desktop GTK development packages. The four maintained Kotlin/JNI
 tests and full desktop build therefore remain CI gates; the local Java caller
 does not claim those suites passed.
+
+Root acceptance rebased the unchanged implementation onto `90fa8cb`. The
+no-argument canonical check passed core 93 plus four contract cases, runtime
+797 (one existing ignored), Rust JNI 14, updater four, formatting, strict shared
+Clippy and architecture checks. Desktop compilation then stopped at the host's
+missing `glib-2.0.pc`; full desktop and maintained Kotlin/JNI execution remain
+the exact-head CI merge gate.

@@ -72,6 +72,11 @@
   Rust manifest 的 fmt、架构及 diff 检查通过。四个维护中的 Kotlin/JNI
   loopback 回归尚待 CI 真正编译执行；本机缺 Kotlin／Gradle 和桌面 GTK
   开发依赖，实际设备、全平台 native 与 signed capture 未验收。
+- 提交前重放到 `90fa8cb`，受测 shared／JNI／desktop re-export 与 Kotlin 源码
+  未变。关闭预览服务并复用现有依赖后，无参数 canonical 通过 core 93＋4
+  契约、runtime 797（既有 ignored 1）、Rust JNI 14、updater 4 及格式／严格
+  Clippy／架构检查，随后因缺少 `glib-2.0.pc` 停在桌面 native 编译。
+  完整 Kotlin／桌面 CI 为合并门槛，不把本机共享通过写成全平台验收。
 
 ## 2026-10-18：共享会话与桌面快照分配
 
