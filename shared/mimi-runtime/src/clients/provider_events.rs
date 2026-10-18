@@ -19,7 +19,24 @@ const OVERFLOW_MESSAGE: &str = "Translation event processing fell behind. mimi i
 struct SequencedEvent {
     sequence: u64,
     content_revision: u64,
+    // Optional admission evidence from the shared identity aligner, never
+    // inferred from opaque provider IDs or from delivery order.
+    source_ordinal: Option<u64>,
     event: LiveTranslateServerEvent,
+}
+
+struct IdentifiedFinal {
+    sequence: u64,
+    content_revision: u64,
+    utterance_id: String,
+    source_ordinal: Option<u64>,
+}
+
+struct DeliveredSource {
+    content_revision: u64,
+    ordinal: u64,
+    source_final: bool,
+    pair_final: bool,
 }
 
 /// A local content boundary, independent of the socket/session generation.
@@ -100,7 +117,8 @@ pub struct ProviderEventReceiver {
     last_delivered_sequence: u64,
     last_source_final: Option<(u64, u64)>,
     // Revision scopes final freezing across content clears.
-    last_identified_final: Option<(u64, u64, String)>,
+    last_identified_final: Option<IdentifiedFinal>,
+    latest_delivered_source: Option<DeliveredSource>,
     content_revision: Arc<AtomicU64>,
 }
 
@@ -147,6 +165,7 @@ fn provider_event_channel_with_capacity(
             last_delivered_sequence: 0,
             last_source_final: None,
             last_identified_final: None,
+            latest_delivered_source: None,
             content_revision,
         },
     )
@@ -278,12 +297,29 @@ impl ProviderEventSender {
         self.send_if(event, || true)
     }
 
+    pub(crate) fn send_with_source_order(
+        &self,
+        event: LiveTranslateServerEvent,
+        source_ordinal: Option<u64>,
+    ) -> Result<(), ProviderEventSendError> {
+        self.send_if_with_source_order(event, source_ordinal, || true)
+    }
+
     /// Checks validity in the same critical section as sequence allocation and
     /// publication. The predicate must be short, synchronous, and must not
     /// re-enter this sender. An obsolete event is discarded without error.
     pub fn send_if(
         &self,
         event: LiveTranslateServerEvent,
+        is_current: impl FnOnce() -> bool,
+    ) -> Result<(), ProviderEventSendError> {
+        self.send_if_with_source_order(event, None, is_current)
+    }
+
+    fn send_if_with_source_order(
+        &self,
+        event: LiveTranslateServerEvent,
+        source_ordinal: Option<u64>,
         is_current: impl FnOnce() -> bool,
     ) -> Result<(), ProviderEventSendError> {
         // Sequence allocation and lane publication are one tiny synchronous
@@ -328,6 +364,7 @@ impl ProviderEventSender {
         };
         let event = SequencedEvent {
             content_revision: self.content_revision(),
+            source_ordinal,
             sequence: self
                 .inner
                 .sequence
@@ -590,6 +627,7 @@ impl ProviderEventReceiver {
     }
 
     fn take_reliable_event(&mut self, event: SequencedEvent) -> ProviderEvent {
+        self.note_delivered_source(&event);
         match &event.event {
             LiveTranslateServerEvent::SubtitlePreviewWithdrawn {
                 source_utterance_id,
@@ -609,8 +647,12 @@ impl ProviderEventReceiver {
                 }));
             }
             LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { utterance_id, .. } => {
-                self.last_identified_final =
-                    Some((event.sequence, event.content_revision, utterance_id.clone()));
+                self.last_identified_final = Some(IdentifiedFinal {
+                    sequence: event.sequence,
+                    content_revision: event.content_revision,
+                    utterance_id: utterance_id.clone(),
+                    source_ordinal: event.source_ordinal,
+                });
             }
             LiveTranslateServerEvent::SourceUtteranceFinal { utterance_id, .. }
             | LiveTranslateServerEvent::SubtitleConfirmedPair {
@@ -654,8 +696,12 @@ impl ProviderEventReceiver {
         {
             self.source_pending = None;
         }
-        self.translation_pending
-            .take_if(|event| event.sequence <= self.last_delivered_sequence);
+        if self.translation_pending.as_ref().is_some_and(|event| {
+            self.stamped_draft_is_obsolete(event)
+                .unwrap_or(event.sequence <= self.last_delivered_sequence)
+        }) {
+            self.translation_pending = None;
+        }
 
         let take_source = match (&self.source_pending, &self.translation_pending) {
             (Some(source), Some(translation)) => source.sequence < translation.sequence,
@@ -668,6 +714,7 @@ impl ProviderEventReceiver {
         } else {
             self.translation_pending.take().unwrap()
         };
+        self.note_delivered_source(&event);
         self.last_delivered_sequence = self.last_delivered_sequence.max(event.sequence);
         Some(ProviderEvent {
             #[cfg(any(test, feature = "development-debugger"))]
@@ -678,18 +725,21 @@ impl ProviderEventReceiver {
     }
 
     fn source_draft_is_obsolete(&self, event: &SequencedEvent) -> bool {
+        if let Some(obsolete) = self.stamped_draft_is_obsolete(event) {
+            return obsolete;
+        }
         if let (
             LiveTranslateServerEvent::SubtitleIdentifiedPreviewPair { utterance_id, .. },
-            Some((sequence, revision, final_id)),
+            Some(final_event),
         ) = (&event.event, &self.last_identified_final)
         {
-            if event.content_revision == *revision {
-                if utterance_id == final_id {
+            if event.content_revision == final_event.content_revision {
+                if utterance_id == &final_event.utterance_id {
                     return true;
                 }
                 // A queued complete preview for another registered sentence
                 // survives an older final. The reducer knows the actual order.
-                if *sequence == self.last_delivered_sequence {
+                if final_event.sequence == self.last_delivered_sequence {
                     return false;
                 }
             }
@@ -705,6 +755,96 @@ impl ProviderEventReceiver {
             (LiveTranslateServerEvent::SourceUtteranceDraft { utterance_id, .. }, Some((sequence, final_id)))
                 if sequence == self.last_delivered_sequence && *utterance_id > final_id
         )
+    }
+
+    fn stamped_draft_is_obsolete(&self, event: &SequencedEvent) -> Option<bool> {
+        let LiveTranslateServerEvent::UtteranceText {
+            utterance_id,
+            role,
+            is_final: false,
+            ..
+        } = &event.event
+        else {
+            return None;
+        };
+        let final_event = self
+            .last_identified_final
+            .as_ref()
+            .filter(|final_event| event.content_revision == final_event.content_revision);
+        if final_event.is_some_and(|final_event| utterance_id == &final_event.utterance_id) {
+            return Some(true);
+        }
+        if event.sequence > self.last_delivered_sequence {
+            return Some(false);
+        }
+        // Only a queued draft proven to belong to a later source may cross
+        // this final. Other lifecycle barriers and unknown identities keep
+        // their conservative sequence-based admission rule.
+        Some(!final_event.is_some_and(|final_event| {
+            final_event.sequence == self.last_delivered_sequence
+                && event
+                    .source_ordinal
+                    .zip(final_event.source_ordinal)
+                    .is_some_and(|(draft, final_order)| {
+                        draft > final_order
+                            && self
+                                .latest_delivered_source
+                                .as_ref()
+                                .filter(|source| source.content_revision == event.content_revision)
+                                .is_none_or(|source| {
+                                    draft > source.ordinal
+                                        || (draft == source.ordinal
+                                            && match role {
+                                                UtteranceRole::Source => !source.source_final,
+                                                UtteranceRole::Translation => !source.pair_final,
+                                            })
+                                })
+                    })
+        }))
+    }
+
+    fn note_delivered_source(&mut self, event: &SequencedEvent) {
+        if event.content_revision != self.content_revision.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(ordinal) = event.source_ordinal else {
+            return;
+        };
+        let (source_final, pair_final) = match &event.event {
+            LiveTranslateServerEvent::UtteranceText {
+                role: UtteranceRole::Source,
+                is_final,
+                ..
+            } => (*is_final, false),
+            // A known ordinal also proves that a translation's source was
+            // observed by the aligner, even if its source draft coalesced.
+            LiveTranslateServerEvent::UtteranceText { .. } => (false, false),
+            LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { .. } => (true, true),
+            _ => return,
+        };
+        match &mut self.latest_delivered_source {
+            Some(source) if source.content_revision == event.content_revision => {
+                if ordinal > source.ordinal {
+                    *source = DeliveredSource {
+                        content_revision: event.content_revision,
+                        ordinal,
+                        source_final,
+                        pair_final,
+                    };
+                } else if ordinal == source.ordinal {
+                    source.source_final |= source_final;
+                    source.pair_final |= pair_final;
+                }
+            }
+            slot => {
+                *slot = Some(DeliveredSource {
+                    content_revision: event.content_revision,
+                    ordinal,
+                    source_final,
+                    pair_final,
+                })
+            }
+        }
     }
 }
 
@@ -1436,6 +1576,230 @@ mod tests {
             text: text.into(),
             is_final: false,
             language: None,
+        }
+    }
+
+    #[test]
+    fn ordered_stamped_lanes_survive_a_late_previous_final() {
+        let (sender, mut receiver) = provider_event_channel();
+        // Registration order is authoritative even when opaque IDs sort the
+        // other way and source drafts have coalesced before reduction.
+        for id in ["source_z", "source_a"] {
+            sender
+                .send(LiveTranslateServerEvent::UtteranceRegistered {
+                    utterance_id: id.into(),
+                })
+                .unwrap();
+        }
+        for (role, text) in [
+            (UtteranceRole::Source, "Synthetic following source"),
+            (
+                UtteranceRole::Translation,
+                "Synthetic following translation",
+            ),
+        ] {
+            sender
+                .send_with_source_order(stamped_draft("source_a", role, text), Some(1))
+                .unwrap();
+        }
+        sender
+            .send_with_source_order(identified_final("source_z", "Synthetic previous"), Some(0))
+            .unwrap();
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        while let Ok(event) = receiver.try_recv() {
+            controller.handle(event);
+        }
+        assert_eq!(
+            controller.state.subtitles.source.text,
+            "Synthetic following source"
+        );
+        assert_eq!(
+            controller.state.subtitles.translation.text,
+            "Synthetic following translation"
+        );
+        assert!(!controller.state.subtitles.source.is_final);
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic previous"
+        );
+    }
+
+    #[test]
+    fn ordered_older_stamped_drafts_cannot_replay_after_a_newer_final() {
+        for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+            let (sender, mut receiver) = provider_event_channel();
+            for id in ["source_z", "source_a"] {
+                sender
+                    .send(LiveTranslateServerEvent::UtteranceRegistered {
+                        utterance_id: id.into(),
+                    })
+                    .unwrap();
+            }
+            sender
+                .send_with_source_order(
+                    stamped_draft("source_z", role, "Synthetic stale draft"),
+                    Some(0),
+                )
+                .unwrap();
+            let final_event = identified_final("source_a", "Synthetic newer final");
+            sender
+                .send_with_source_order(final_event.clone(), Some(1))
+                .unwrap();
+            let mut controller = crate::core::session::TranslationSessionController::default();
+            let mut delivered_stale = false;
+            while let Ok(event) = receiver.try_recv() {
+                delivered_stale |= matches!(event, LiveTranslateServerEvent::UtteranceText { .. });
+                controller.handle(event);
+            }
+            assert!(!delivered_stale);
+            assert_eq!(
+                controller.state.subtitles.source.utterance_id.as_deref(),
+                Some("source_a")
+            );
+            assert!(controller.state.subtitles.source.is_final);
+            assert_eq!(controller.state.subtitles.history.len(), 1);
+        }
+    }
+
+    #[test]
+    fn stamped_final_freezes_its_own_queued_and_late_drafts() {
+        for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+            let (sender, mut receiver) = provider_event_channel();
+            let draft = stamped_draft("source", role, "Synthetic draft");
+            sender
+                .send_with_source_order(draft.clone(), Some(0))
+                .unwrap();
+            let final_event = identified_final("source", "Synthetic final");
+            sender
+                .send_with_source_order(final_event.clone(), Some(0))
+                .unwrap();
+            assert_eq!(receiver.try_recv(), Ok(final_event));
+            assert!(receiver.try_recv().is_err());
+            sender.send_with_source_order(draft, Some(0)).unwrap();
+            assert!(receiver.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn unknown_stamped_order_and_unstamped_drafts_keep_final_barriers() {
+        for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+            for (draft_order, final_order) in [(None, Some(0)), (Some(1), None), (None, None)] {
+                let (sender, mut receiver) = provider_event_channel();
+                sender
+                    .send_with_source_order(
+                        stamped_draft("following", role, "Synthetic unknown draft"),
+                        draft_order,
+                    )
+                    .unwrap();
+                let final_event = identified_final("previous", "Synthetic final");
+                sender
+                    .send_with_source_order(final_event.clone(), final_order)
+                    .unwrap();
+                assert_eq!(receiver.try_recv(), Ok(final_event));
+                assert!(receiver.try_recv().is_err());
+            }
+        }
+        let (sender, mut receiver) = provider_event_channel();
+        sender
+            .send(LiveTranslateServerEvent::SourceDraft {
+                text: "Synthetic source".into(),
+                language: None,
+            })
+            .unwrap();
+        sender
+            .send(LiveTranslateServerEvent::TranslationDraft(
+                "Synthetic translation".into(),
+            ))
+            .unwrap();
+        let final_event = identified_final("previous", "Synthetic final");
+        sender
+            .send_with_source_order(final_event.clone(), Some(0))
+            .unwrap();
+        assert_eq!(receiver.try_recv(), Ok(final_event));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn later_barriers_still_discard_ordered_stamped_drafts() {
+        for barrier in [
+            LiveTranslateServerEvent::SessionUpdated,
+            LiveTranslateServerEvent::SessionFinished,
+            LiveTranslateServerEvent::Error {
+                code: "synthetic".into(),
+                message: "Synthetic failure".into(),
+            },
+            LiveTranslateServerEvent::SubtitleFinalPair {
+                source: "Synthetic source".into(),
+                translation: "Synthetic translation".into(),
+                language: None,
+            },
+        ] {
+            for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+                let (sender, mut receiver) = provider_event_channel();
+                sender
+                    .send_with_source_order(
+                        stamped_draft("following", role, "Synthetic draft"),
+                        Some(1),
+                    )
+                    .unwrap();
+                let final_event = identified_final("previous", "Synthetic final");
+                sender
+                    .send_with_source_order(final_event.clone(), Some(0))
+                    .unwrap();
+                sender.send(barrier.clone()).unwrap();
+                assert_eq!(receiver.try_recv(), Ok(final_event));
+                assert_eq!(receiver.try_recv(), Ok(barrier.clone()));
+                assert!(receiver.try_recv().is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn content_clear_releases_stamped_final_freeze_and_order() {
+        for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+            let (sender, mut receiver) = provider_event_channel();
+            let final_event = identified_final("source", "Synthetic previous final");
+            sender
+                .send_with_source_order(final_event.clone(), Some(99))
+                .unwrap();
+            assert_eq!(receiver.try_recv(), Ok(final_event));
+            sender.advance_content_revision();
+            let draft = stamped_draft("source", role, "Synthetic new content");
+            sender
+                .send_with_source_order(draft.clone(), Some(0))
+                .unwrap();
+            assert_eq!(receiver.try_recv(), Ok(draft));
+            assert!(receiver.try_recv().is_err());
+            let next_draft = stamped_draft("following", role, "Synthetic following content");
+            sender
+                .send_with_source_order(next_draft.clone(), Some(1))
+                .unwrap();
+            let final_event = identified_final("source", "Synthetic new final");
+            sender
+                .send_with_source_order(final_event.clone(), Some(0))
+                .unwrap();
+            assert_eq!(receiver.try_recv(), Ok(final_event));
+            assert_eq!(receiver.try_recv(), Ok(next_draft));
+        }
+    }
+
+    #[test]
+    fn source_order_does_not_change_admission_after_the_barrier() {
+        for role in [UtteranceRole::Source, UtteranceRole::Translation] {
+            for order in [None, Some(0)] {
+                let (sender, mut receiver) = provider_event_channel();
+                let final_event = identified_final("newer", "Synthetic final");
+                sender
+                    .send_with_source_order(final_event.clone(), Some(1))
+                    .unwrap();
+                assert_eq!(receiver.try_recv(), Ok(final_event));
+                // The reducer still owns admission of later publications. The
+                // transport exception only repairs already-queued previews.
+                let draft = stamped_draft("older-or-unknown", role, "Synthetic later publication");
+                sender.send_with_source_order(draft.clone(), order).unwrap();
+                assert_eq!(receiver.try_recv(), Ok(draft));
+            }
         }
     }
 

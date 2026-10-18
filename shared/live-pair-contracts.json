@@ -3,6 +3,54 @@
   "description": "Synthetic identity pairing events; providerFrame is the corresponding public wire shape, never a captured response.",
   "cases": [
     {
+      "id": "queued_late_translation_preserves_following_draft",
+      "queueBeforeDrain": true,
+      "expectedQueuedSource": {
+        "text": "Synthetic following draft",
+        "isFinal": false,
+        "utteranceId": "source_a"
+      },
+      "expectedQueuedHistory": [
+        { "source": "Synthetic first sentence.", "translation": "Synthetic first translation." }
+      ],
+      "steps": [
+        {
+          "event": { "type": "item_created" },
+          "identity": { "item_id": "response_z", "previous_item_id": "source_z" },
+          "atNs": 0,
+          "providerFrame": { "type": "conversation.item.created", "item_id": "response_z", "previous_item_id": "source_z" },
+          "expected": []
+        },
+        {
+          "event": { "type": "source_final", "text": "Synthetic first sentence.", "language": "en" },
+          "identity": { "item_id": "source_z", "previous_item_id": null },
+          "atNs": 1000000,
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.completed", "item_id": "source_z", "transcript": "Synthetic first sentence.", "language": "en" },
+          "expected": [
+            { "type": "utterance_text", "utterance_id": "source_z", "role": "source", "text": "Synthetic first sentence.", "is_final": true, "language": "en" }
+          ]
+        },
+        {
+          "event": { "type": "source_draft", "text": "Synthetic following draft", "language": "en" },
+          "identity": { "item_id": "source_a", "previous_item_id": null },
+          "atNs": 2000000,
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.text", "item_id": "source_a", "text": "Synthetic following draft", "language": "en" },
+          "expected": [
+            { "type": "utterance_text", "utterance_id": "source_a", "role": "source", "text": "Synthetic following draft", "is_final": false, "language": "en" }
+          ]
+        },
+        {
+          "event": { "type": "translation_final", "text": "Synthetic first translation." },
+          "identity": { "item_id": "response_z", "previous_item_id": null },
+          "atNs": 4000000,
+          "providerFrame": { "type": "response.text.done", "item_id": "response_z", "text": "Synthetic first translation." },
+          "expected": [
+            { "type": "final_pair", "utterance_id": "source_z", "source": "Synthetic first sentence.", "translation": "Synthetic first translation.", "language": "en", "follow_latency_ms": 3 }
+          ]
+        }
+      ]
+    },
+    {
       "id": "translation_first_waits_for_its_own_multilingual_source_final",
       "steps": [
         {
