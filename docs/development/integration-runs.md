@@ -4,6 +4,39 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：自动名称草稿与较新原生状态的确认边界
+
+- 基于 main `530b2be55b76da75dbd997c4ffde01f0e8b008c2`，受测 dirty
+  工作树的 NameDraft 源 SHA-256 为 `7c04f551…bf3a2fad`；范围见
+  [设计记录](../plans/2026-10-18-pending-name-source.md)。原生先确认 A、再
+  发布 B、迟到 A IPC 成功时，全局 heading 保留 B、旧输入却永久显示 A。
+  三类名称共用的真实输入与实际 ServiceProfiles 正式负例先有 12 项失败。
+- 仅增加本次提交名与待确认 source 两个有界字段，分开更新确认基线和
+  覆盖草稿的条件。较新本地 typing／ABA、IME、原始空格、迟到旧 own ack、
+  无回显、空别名、失败／显式重试均保留各自语义；接纳 B 不额外写回 B。
+  preflush baseline 与 IME 四个新增负例先失败，最后的无新字符 interrupted
+  composer 还暴露 controller 过早释放；用既有 composition 标记保留所有权。
+- quick frontend 的 typecheck、选定 lint、provider-copy、diff 通过，相关
+  14 文件／450 项全过；最终仅新增一个旧 own ack 的非 pending 控制，
+  单文件 45 项与该文件 lint 全过，生产源码未再改变。实际 ServiceProfiles
+  的 167 项含 heading／输入一致、导航返回及无额外保存回归通过。
+- 实际 Chromium 使用真实 SettingsView／ServiceProfiles／NameDraft 及
+  store bootstrap／response gate，仅 native IPC 为内存合成；等初始化 ready
+  后重开实际 editor。三类名称均完成 own A → external B → 旧 A 回复，
+  显示 B、保留输入／focus、真实返回列表再编辑仍 B，各只写一次 metadata；
+  翻译别名还覆盖清空。ABA 第二次 A、无名称回显、失败重试及 debounce
+  前新基线对照均过。浏览器无异常，凭据 save／reveal／connection-check
+  计数为 0，两张真实编辑器截图已查看。浏览器与本轮 1431 Vite 均关闭，
+  1431 确认无监听；临时依赖链接已移除。IME 仅正式 DOM 事件回归，未冒充
+  原生输入法或原生 IPC／设备验收。
+- 未跑本分支全量前端、production 或 native 构建；由 root 在组合冻结树
+  完成统一验收。没有真实 provider、真实凭据读写、捕获或私有会话数据。
+- root 变基 main `4ae49cb` 后前端源码／测试／依赖／工具配置未变，与独立
+  popup mutation 修复组成冻结 `7ba8423b4c6d1d14b3f79df6a52be9e94988a9a0`；
+  单 worker 完整 146 文件／2,398 项（232.17s）、全量 lint、provider-copy、
+  带类型检查的 production build／图标验证及 17 文件 debugger 扫描均通过。
+  之后仅补证据，未改断言或超时，保留既有大 chunk 提示；原生验收限制不变。
+
 ## 2026-10-18：嵌入控制窗口的字幕更新边界
 
 - 基于 `1b3b111`，范围见[设计记录](../plans/2026-10-18-embedded-control-render-boundary.md)。
