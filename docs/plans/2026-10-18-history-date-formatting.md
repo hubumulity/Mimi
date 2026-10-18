@@ -34,4 +34,14 @@ The quick frontend check passes typecheck, selected lint, provider-copy and diff
 checks plus 135 related tests across nine files.
 The time-zone test uses real Intl formatters with a controlled default zone;
 it does not establish operating-system notification delivery or native UI
-acceptance. No provider, capture, browser fixture or private session data is used.
+acceptance. No provider, capture or private session data is used.
+
+Independent review found no blockers. A separate extraction of the actual old
+and new grouping functions produced identical output for 448 combinations of
+seven time zones, eight locales and eight DST/midnight instants. A real Chromium
+SettingsView with synthetic native archive/history/transcript data observed
+three polls, nine formatter constructions, zero extra transcript reads and
+unchanged article identity/text. Complete frontend validation with the font
+ownership repair passed 2,345 tests in 145 files, lint, the typechecked production
+build and all 17 output checks. Rebasing onto `a71680c` preserved the tested
+frontend source. These checks do not establish native time-zone notifications.

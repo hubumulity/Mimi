@@ -15,11 +15,17 @@
   保留三个日期／时间 options、八语言、ISO timestamp、跨本地午夜的
   Today／Yesterday、新 archive 状态即时展示及空列表惰性行为。
 - quick frontend 的类型、选定 lint、provider-copy 与 diff 检查通过，
-  相关 9 文件／135 项全部通过；未跑完整前端或原生 suite。
+  相关 9 文件／135 项全部通过。独立审查无阻断；另从真实修前／修后函数
+  做 7 时区 × 8 语言 × 8 个 DST／午夜时刻的 448 组分组差分，输出相同。
 - formatter 只在当次 render 复用；真实 Intl 注入默认时区的用例验证下次
   poll 重新读取时区，未将其当作 OS 时区通知验收。未改 poll、保留策略或
-  整页 memo；没有真实 provider、采集、记录、凭据、浏览器或原生交互。
+  整页 memo；没有真实 provider、采集、记录、凭据或原生交互。
   本轮证据是构造／格式化工作量，不能推算生产 CPU、帧率或端到端延迟。
+- root 的真实 Chromium 设置页使用合成 native archive／history／正文，
+  20 会话、30 行正文的 3 次真实轮询只构造 9 个 formatter，无新增正文读取，
+  节点与显示文本保持，已查看截图并关闭预览。随后与字体修复一起完成
+  前端 145 文件／2,345 项、lint、typechecked production build 与输出边界
+  17 项检查。重放到 `a71680c` 后前端源码未变；未跑无关 native suite。
 
 ## 2026-10-18：缩放 IPC 有界串行
 
