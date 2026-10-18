@@ -314,6 +314,9 @@ describe("SettingsSaveCoordinator", () => {
     await pending;
 
     expect(current.fontSize).toBe(20);
+    const next = coordinator.save(current, { fontSize: 21 }, async () => { throw new Error("retry failed"); }, snapshot => { current = snapshot; });
+    await expect(next).rejects.toThrow("retry failed");
+    expect(current.fontSize).toBe(20);
   });
 });
 
