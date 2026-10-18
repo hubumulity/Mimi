@@ -2,7 +2,7 @@
 //! and subtitle state are the same Rust implementations as the desktop shell.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mimi_runtime::{
-    audio::send_pipeline::{AudioIngress, AudioSendPipeline},
+    audio::send_pipeline::{AudioIngress, AudioIngressError, AudioSendPipeline},
     clients::{
         provider_events::{provider_event_channel, ProviderEventReceiver, ProviderEventSender},
         provider_network::ProviderNetwork,
@@ -80,6 +80,27 @@ struct Connection {
     ready: watch::Sender<bool>,
     events: ProviderEventSender,
     budget: Option<mimi_runtime::core::preview_pacing::MTRequestBudget>,
+}
+
+struct ConnectionIngress {
+    audio: AudioIngress,
+    events: ProviderEventSender,
+}
+
+impl ConnectionIngress {
+    fn try_send(&self, data: Vec<u8>) -> Result<(), AudioIngressError> {
+        let result = self.audio.try_send(data);
+        if result == Err(AudioIngressError::Backpressure) {
+            // The shared ingress fails closed and reports Backpressure once.
+            // Keep its error on the same connection's recovery lane, even if
+            // this native submission outlives a connection replacement.
+            let _ = self.events.send(LiveTranslateServerEvent::Error {
+                code: "transport_error".into(),
+                message: "transport_error".into(),
+            });
+        }
+        result
+    }
 }
 
 /// Drop the connection/pipeline before releasing its final-disconnect owner.
@@ -207,12 +228,13 @@ impl Session {
         });
         Ok(receiver)
     }
-    fn ingress(&self) -> Option<AudioIngress> {
-        self.connection
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|value| value.pipeline.ingress())
+    fn ingress(&self) -> Option<ConnectionIngress> {
+        let slot = self.connection.lock().unwrap();
+        let connection = slot.as_ref()?;
+        Some(ConnectionIngress {
+            audio: connection.pipeline.ingress()?,
+            events: connection.events.clone(),
+        })
     }
 
     fn take_connection_owned(&self) -> Option<ConnectionLease> {
@@ -863,6 +885,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pcm_backpressure_reports_one_retryable_error_for_its_connection() {
+        use mimi_runtime::audio::send_pipeline::AudioIngressError;
+        let native = fixture(configuration());
+        let mut receiver = native.connection(1).unwrap();
+        let ingress = native.ingress().unwrap();
+        let mut backpressure = 0;
+        // The actual pipeline waits for provider readiness. Twenty-two chunks
+        // exceed the bounded queue even if its worker has taken one already.
+        for _ in 0..22 {
+            if ingress.try_send(vec![0, 0]) == Err(AudioIngressError::Backpressure) {
+                backpressure += 1;
+            }
+        }
+        assert_eq!(backpressure, 1);
+        let event = receiver
+            .try_recv_with_revision()
+            .expect("a closed PCM ingress must notify the drive instead of silently losing audio");
+        let LiveTranslateServerEvent::Error { code, .. } = event.event else {
+            panic!("PCM backpressure must use the provider recovery lane");
+        };
+        assert_eq!(code, "transport_error");
+        assert!(provider_error_is_retryable(&code));
+        for _ in 0..10 {
+            assert_eq!(ingress.try_send(vec![0, 0]), Err(AudioIngressError::Closed));
+        }
+        assert!(receiver.try_recv_with_revision().is_err());
+        native.begin_stop().await;
+    }
+
+    #[tokio::test]
+    async fn pcm_backpressure_from_an_old_ingress_cannot_fail_a_new_connection() {
+        use mimi_runtime::audio::send_pipeline::AudioIngressError;
+        let native = fixture(configuration());
+        let mut old_receiver = native.connection(1).unwrap();
+        let old_ingress = native.ingress().unwrap();
+        // Keep the old resources alive across replacement to model a native
+        // submission that acquired its endpoint before the generation changed.
+        let old_connection = native.take_connection_owned().unwrap();
+        let mut current_receiver = native.connection(2).unwrap();
+        for _ in 0..22 {
+            let _ = old_ingress.try_send(vec![0, 0]);
+        }
+        assert!(matches!(
+            old_receiver.try_recv_with_revision().unwrap().event,
+            LiveTranslateServerEvent::Error { .. }
+        ));
+        assert!(current_receiver.try_recv_with_revision().is_err());
+        assert_eq!(native.ingress().unwrap().try_send(vec![0, 0]), Ok(()));
+        for _ in 0..10 {
+            assert_eq!(
+                old_ingress.try_send(vec![0, 0]),
+                Err(AudioIngressError::Closed)
+            );
+        }
+        assert!(current_receiver.try_recv_with_revision().is_err());
+        drop(old_connection);
+        native.begin_stop().await;
+    }
+
+    #[tokio::test]
+    async fn closed_pcm_ingress_after_hard_stop_does_not_request_recovery() {
+        use mimi_runtime::audio::send_pipeline::AudioIngressError;
+        let native = fixture(configuration());
+        let mut receiver = native.connection(1).unwrap();
+        let ingress = native.ingress().unwrap();
+        native.begin_stop().await;
+        let epoch = native.epoch.load(Ordering::SeqCst);
+        assert_eq!(ingress.try_send(vec![0, 0]), Err(AudioIngressError::Closed));
+        assert!(receiver.try_recv_with_revision().is_err());
+        assert!(native.connection.lock().unwrap().is_none());
+        assert_eq!(native.epoch.load(Ordering::SeqCst), epoch);
+    }
+
+    #[tokio::test]
     async fn dropping_an_unpolled_connection_lease_stops_its_pipeline_and_finishes_cleanup() {
         let native = fixture(configuration());
         let _events = native.connection(1).unwrap();
@@ -948,7 +1044,7 @@ mod tests {
             native: Arc<Session>,
             entered: Option<oneshot::Sender<()>>,
             release: std::sync::mpsc::Receiver<()>,
-            installed: Option<oneshot::Sender<AudioIngress>>,
+            installed: Option<oneshot::Sender<ConnectionIngress>>,
         }
         impl Drop for InstallOnDrop {
             fn drop(&mut self) {
@@ -1294,6 +1390,132 @@ mod tests {
         assert!(native.finished.load(Ordering::SeqCst));
         assert!(native.ingress().is_none());
     }
+    #[tokio::test]
+    async fn setup_pcm_backpressure_recovers_the_same_handle_and_accepts_fresh_audio() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut configuration = configuration();
+        configuration.provider = ProviderKind::CustomOpenAIASR;
+        configuration.target_language = TargetLanguage::Original;
+        configuration.credentials =
+            mimi_runtime::core::credentials::ProviderCredentials::CustomSpeech {
+                endpoint: format!("ws://{}/v1/realtime", listener.local_addr().unwrap()),
+                model: "synthetic-backpressure-recovery".into(),
+                api_key: "synthetic-key".into(),
+            };
+        let native = fixture(configuration.validated().unwrap());
+        const HANDLE: u64 = u64::MAX - 2;
+        sessions().lock().unwrap().insert(HANDLE, native.clone());
+        struct StopSession;
+        impl Drop for StopSession {
+            fn drop(&mut self) {
+                let native = sessions().lock().unwrap().remove(&HANDLE);
+                if let Some(native) = native {
+                    drop(native.begin_stop());
+                }
+            }
+        }
+        let _cleanup = StopSession;
+        let (first_setup, saw_first_setup) = oneshot::channel();
+        let (release_setup, setup_released) = oneshot::channel();
+        let (second_setup, saw_second_setup) = oneshot::channel();
+        let (fresh_audio, saw_fresh_audio) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let mut first_setup = Some(first_setup);
+            let mut setup_released = Some(setup_released);
+            let mut second_setup = Some(second_setup);
+            let mut fresh_audio = Some(fresh_audio);
+            for attempt in 0..2 {
+                let (stream, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                let update = socket.next().await.unwrap().unwrap();
+                let mut update: Value = serde_json::from_str(update.to_text().unwrap()).unwrap();
+                assert_eq!(update["type"], "session.update");
+                if attempt == 0 {
+                    first_setup.take().unwrap().send(()).unwrap();
+                    setup_released.take().unwrap().await.unwrap();
+                }
+                update["type"] = json!("session.updated");
+                socket
+                    .send(Message::Text(update.to_string().into()))
+                    .await
+                    .unwrap();
+                if attempt == 1 {
+                    second_setup.take().unwrap().send(()).unwrap();
+                }
+                loop {
+                    let message = tokio::time::timeout(Duration::from_secs(3), socket.next())
+                        .await
+                        .unwrap();
+                    match message {
+                        Some(Ok(Message::Text(text))) => {
+                            let message: Value = serde_json::from_str(&text).unwrap();
+                            assert_eq!(message["type"], "input_audio_buffer.append");
+                            if attempt == 1 {
+                                let audio =
+                                    STANDARD.decode(message["audio"].as_str().unwrap()).unwrap();
+                                fresh_audio.take().unwrap().send(audio).unwrap();
+                            }
+                        }
+                        Some(Ok(Message::Close(_))) | None => break,
+                        message => panic!("unexpected loopback message: {message:?}"),
+                    }
+                }
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        exchange(&json!({"operation":"start","handle":HANDLE}).to_string()).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), saw_first_setup)
+            .await
+            .unwrap()
+            .unwrap();
+        let old_ingress = native.ingress().unwrap();
+        let accepted = (0..22).filter(|_| pcm(HANDLE, vec![0, 0]).unwrap()).count();
+        assert!(accepted <= 21);
+        release_setup.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), saw_second_setup)
+            .await
+            .expect("the same native handle must reconnect after its PCM queue fails closed")
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while native.snapshot()["connectionStatus"] != "listening" {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        for _ in 0..10 {
+            assert_eq!(
+                old_ingress.try_send(vec![0, 0]),
+                Err(AudioIngressError::Closed)
+            );
+        }
+        // Custom ASR deliberately suppresses silence. One voiced 20 ms frame
+        // proves that the replacement transport receives fresh PCM.
+        let fresh = [0_u8, 16].repeat(480);
+        assert!(pcm(HANDLE, fresh.clone()).unwrap());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), saw_fresh_audio)
+                .await
+                .unwrap()
+                .unwrap(),
+            fresh
+        );
+        assert_eq!(native.epoch.load(Ordering::SeqCst), 2);
+        exchange(&json!({"operation":"stop","handle":HANDLE}).to_string()).unwrap();
+        assert_eq!(pcm(HANDLE, vec![0, 0]), Err("native_runtime_stale_handle"));
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn native_pcm_reaches_the_real_shared_transport_and_stop_rejects_the_handle() {
         use futures_util::{SinkExt, StreamExt};

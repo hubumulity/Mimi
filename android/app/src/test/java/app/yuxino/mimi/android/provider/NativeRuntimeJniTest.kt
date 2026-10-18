@@ -15,6 +15,7 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -424,6 +425,46 @@ class NativeRuntimeJniTest {
         } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
     }
 
+    @Test fun pcmBackpressureDuringSetupReconnectsTheSameHandleAndResumesAudioAcrossActualJni() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true, recoverOverflow = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            try {
+                NativeRuntimeConfiguration.command("start", handle)
+                assertTrue("Provider did not receive session.update", fixture.setupSeen.await(5, TimeUnit.SECONDS))
+                fixture.checkFailure()
+                val pcm = ByteArray(3_200)
+                val accepted = (0 until 22).count { NativeRuntimeConfiguration.pcmRaw(handle, pcm) }
+                assertTrue("Setup did not fill the bounded PCM queue", accepted in 20..21)
+                fixture.releaseFirstSetup.countDown()
+
+                assertTrue("PCM backpressure did not reconnect", fixture.reconnected.await(5, TimeUnit.SECONDS))
+                awaitRuntimeState(handle, fixture) { it.getString("connectionStatus") == "listening" }
+                val recoveredPcm = ByteArray(3_200) { 7 }
+                repeat(5) {
+                    assertTrue("Reconnected handle still rejects PCM", NativeRuntimeConfiguration.pcmRaw(handle, recoveredPcm))
+                    Thread.sleep(100)
+                }
+                assertTrue("Recovered PCM did not reach the provider", fixture.recoveredAudio.await(3, TimeUnit.SECONDS))
+                assertEquals(5, fixture.recoveredAudioFrames.get())
+                assertEquals(2, fixture.connectionCount.get())
+                val listening = NativeRuntimeConfiguration.command("poll", handle)
+                assertEquals("listening", listening.getString("connectionStatus"))
+                assertTrue(listening.isNull("errorCode"))
+                assertFalse(listening.getBoolean("finished"))
+
+                assertEquals(1L, fixture.recoveredTransportClosed.count)
+                stopAndAwaitTransportClosed(handle, fixture, fixture.recoveredTransportClosed)
+                assertEquals("native_runtime_stale_handle", assertThrows(IllegalArgumentException::class.java) {
+                    NativeRuntimeConfiguration.pcmRaw(handle, pcm)
+                }.message)
+                val noFurtherConnections = fixture.noFurtherConnections.await(2, TimeUnit.SECONDS)
+                fixture.checkFailure()
+                assertTrue("Hard stop opened another provider connection", noFurtherConnections)
+                assertEquals(2, fixture.connectionCount.get())
+            } finally { NativeRuntimeConfiguration.command("stop", handle) }
+        }
+    }
+
     @Test fun stopDuringProviderFinishClosesTransportAndPreservesOtherHandleAcrossActualJni() {
         RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true).use { fixture ->
             val handle = createLiveTranslate(fixture)
@@ -517,19 +558,20 @@ class NativeRuntimeJniTest {
         error("LiveTranslate loopback state did not arrive")
     }
 
-    private fun stopAndAwaitTransportClosed(handle: Long, fixture: RealtimeLoopback) {
+    private fun stopAndAwaitTransportClosed(handle: Long, fixture: RealtimeLoopback,
+        transportClosed: CountDownLatch = fixture.transportClosed) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
         NativeRuntimeConfiguration.command("stop", handle)
         val remaining = deadline - System.nanoTime()
         assertTrue("Native stop left provider transport open beyond three seconds",
-            remaining > 0 && fixture.transportClosed.await(remaining, TimeUnit.NANOSECONDS))
+            remaining > 0 && transportClosed.await(remaining, TimeUnit.NANOSECONDS))
         fixture.checkFailure()
     }
 
     /** CONNECT/TLS/WebSocket fixtures intercept the unchanged production endpoints on loopback. */
     private class RealtimeLoopback(private val provider: ServiceProvider, private val qwenResponse: JSONObject? = null,
         private val liveTranslate: Boolean = false, private val finishTail: Boolean = false,
-        private val holdSetup: Boolean = false) : AutoCloseable {
+        private val holdSetup: Boolean = false, private val recoverOverflow: Boolean = false) : AutoCloseable {
         private val tencent = provider == ServiceProvider.TENCENT
         private val qwen = provider == ServiceProvider.DASHSCOPE && !liveTranslate
         private val host = if (liveTranslate) "synthetic-workspace.cn-beijing.maas.aliyuncs.com"
@@ -555,6 +597,13 @@ class NativeRuntimeJniTest {
         val nextMid = CountDownLatch(1)
         val nextFinal = CountDownLatch(1)
         val setupSeen = CountDownLatch(1)
+        val releaseFirstSetup = CountDownLatch(1)
+        val reconnected = CountDownLatch(1)
+        val recoveredAudio = CountDownLatch(5)
+        val recoveredAudioFrames = AtomicInteger(0)
+        val recoveredTransportClosed = CountDownLatch(1)
+        val noFurtherConnections = CountDownLatch(1)
+        val connectionCount = AtomicInteger(0)
         val finishSeen = CountDownLatch(1)
         val transportClosed = CountDownLatch(1)
         val network: JSONObject
@@ -606,19 +655,26 @@ class NativeRuntimeJniTest {
             worker = thread(name = "mimi-realtime-loopback", isDaemon = true) {
                 try {
                     server.soTimeout = 5_000
-                    val tcp = server.accept().also { socket = it; it.soTimeout = 5_000 }
-                    check(headers(DataInputStream(tcp.getInputStream())).startsWith("CONNECT $host:443 HTTP/1.1\r\n"))
-                    tcp.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII))
-                    val secure = (tls.socketFactory.createSocket(tcp, host, 443, true) as SSLSocket).apply { useClientMode = false; startHandshake() }
-                    socket = secure
+                    if (recoverOverflow) {
+                        repeat(2) { index ->
+                            acceptWebSocket(tls).use { secure ->
+                                liveTranslateSession(DataInputStream(secure.inputStream), secure.outputStream, index + 1)
+                            }
+                        }
+                        server.soTimeout = 500
+                        try {
+                            server.accept().use {
+                                connectionCount.incrementAndGet()
+                                error("Unexpected extra provider connection after PCM recovery")
+                            }
+                        } catch (_: java.net.SocketTimeoutException) {
+                            noFurtherConnections.countDown()
+                        }
+                        return@thread
+                    }
+                    val secure = acceptWebSocket(tls)
                     val input = DataInputStream(secure.inputStream)
                     val output = secure.outputStream
-                    val request = headers(input)
-                    check(request.startsWith(if (liveTranslate) "GET /api-ws/v1/realtime?model=qwen3.8-livetranslate-flash-realtime HTTP/1.1\r\n"
-                        else if (qwen) "GET /api-ws/v1/inference HTTP/1.1\r\n" else if (tencent) "GET /asr/speech_translate/123456789?" else "GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
-                    val key = request.lineSequence().first { it.startsWith("sec-websocket-key:", true) }.substringAfter(':').trim()
-                    val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII)))
-                    output.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray(Charsets.US_ASCII))
                     if (liveTranslate) {
                         liveTranslateSession(input, output)
                         return@thread
@@ -654,16 +710,45 @@ class NativeRuntimeJniTest {
             }
         }
 
-        private fun liveTranslateSession(input: DataInputStream, output: OutputStream) {
-            val update = JSONObject(readText(input, output))
+        private fun acceptWebSocket(tls: SSLContext): SSLSocket {
+            val tcp = server.accept().also { socket = it; it.soTimeout = 5_000 }
+            connectionCount.incrementAndGet()
+            check(headers(DataInputStream(tcp.getInputStream())).startsWith("CONNECT $host:443 HTTP/1.1\r\n"))
+            tcp.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII))
+            val secure = (tls.socketFactory.createSocket(tcp, host, 443, true) as SSLSocket).apply { useClientMode = false; startHandshake() }
+            socket = secure
+            val input = DataInputStream(secure.inputStream)
+            val request = headers(input)
+            check(request.startsWith(if (liveTranslate) "GET /api-ws/v1/realtime?model=qwen3.8-livetranslate-flash-realtime HTTP/1.1\r\n"
+                else if (qwen) "GET /api-ws/v1/inference HTTP/1.1\r\n" else if (tencent) "GET /asr/speech_translate/123456789?" else "GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
+            val key = request.lineSequence().first { it.startsWith("sec-websocket-key:", true) }.substringAfter(':').trim()
+            val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII)))
+            secure.outputStream.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray(Charsets.US_ASCII))
+            return secure
+        }
+
+        private fun liveTranslateSession(input: DataInputStream, output: OutputStream, connection: Int = 1) {
+            val update = JSONObject(readText(input, output, connection))
             check(update.getString("type") == "session.update")
             check(update.getJSONObject("session").getJSONObject("translation").getString("language") == "zh")
             setupSeen.countDown()
+            if (recoverOverflow && connection == 1) check(releaseFirstSetup.await(5, TimeUnit.SECONDS))
             if (!holdSetup) send(output, """{"type":"session.updated"}""")
+            if (recoverOverflow && connection == 2) reconnected.countDown()
             while (true) {
-                val message = readText(input, output)
+                val message = readText(input, output, connection)
                 if (message.isEmpty()) return
-                check(JSONObject(message).getString("type") == "session.finish")
+                val value = JSONObject(message)
+                val type = value.getString("type")
+                if (recoverOverflow && type == "input_audio_buffer.append") {
+                    if (connection == 2) {
+                        check(Base64.getDecoder().decode(value.getString("audio")).contentEquals(ByteArray(3_200) { 7 }))
+                        recoveredAudioFrames.incrementAndGet()
+                        recoveredAudio.countDown()
+                    }
+                    continue
+                }
+                check(type == "session.finish")
                 check(finishSeen.count == 1L)
                 finishSeen.countDown()
                 // Holding the response keeps the production finish future alive.
@@ -703,34 +788,39 @@ class NativeRuntimeJniTest {
             output.write(bytes)
             output.flush()
         }
-        private fun readText(input: DataInputStream, output: OutputStream): String {
-            while (true) {
-                val opcode = try { input.readUnsignedByte() and 15 } catch (error: java.io.EOFException) {
-                    if (!liveTranslate) throw error
-                    transportClosed.countDown()
-                    return ""
+        private fun readText(input: DataInputStream, output: OutputStream, connection: Int = 1): String {
+            try {
+                while (true) {
+                    val opcode = input.readUnsignedByte() and 15
+                    val flags = input.readUnsignedByte()
+                    check(flags and 128 != 0)
+                    val size = when (val short = flags and 127) { 126 -> input.readUnsignedShort(); 127 -> error("Oversized loopback frame"); else -> short }
+                    check(size <= if (liveTranslate) 8_192 else 4_096)
+                    val mask = ByteArray(4).also(input::readFully)
+                    val payload = ByteArray(size).also(input::readFully)
+                    for (index in payload.indices) payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
+                    if ((qwen || liveTranslate) && opcode == 8) {
+                        if (liveTranslate) observeTransportClosed(connection)
+                        return ""
+                    }
+                    if ((qwen || liveTranslate) && opcode == 2) continue
+                    if (opcode == 9) frame(output, 10, payload) else {
+                        check(opcode == 1) { "Unexpected loopback client frame" }
+                        return payload.toString(Charsets.UTF_8)
+                    }
                 }
-                val flags = input.readUnsignedByte()
-                check(flags and 128 != 0)
-                val size = when (val short = flags and 127) { 126 -> input.readUnsignedShort(); 127 -> error("Oversized loopback frame"); else -> short }
-                check(size <= 4_096)
-                val mask = ByteArray(4).also(input::readFully)
-                val payload = ByteArray(size).also(input::readFully)
-                for (index in payload.indices) payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
-                if ((qwen || liveTranslate) && opcode == 8) {
-                    if (liveTranslate) transportClosed.countDown()
-                    return ""
-                }
-                if ((qwen || liveTranslate) && opcode == 2) continue
-                if (opcode == 9) frame(output, 10, payload) else {
-                    check(opcode == 1) { "Unexpected loopback client frame" }
-                    return payload.toString(Charsets.UTF_8)
-                }
+            } catch (error: java.io.EOFException) {
+                if (!liveTranslate) throw error
+                observeTransportClosed(connection)
+                return ""
             }
+        }
+        private fun observeTransportClosed(connection: Int) {
+            if (connection == 2) recoveredTransportClosed.countDown() else transportClosed.countDown()
         }
         override fun close() {
             closed = true
-            nextMid.countDown(); nextFinal.countDown()
+            nextMid.countDown(); nextFinal.countDown(); releaseFirstSetup.countDown()
             socket?.close(); textSocket?.close(); server.close(); textServer?.close()
             worker.join(2_000)
             textWorker?.join(2_000)
