@@ -24,6 +24,7 @@ use mimi_runtime::{
         },
         session::TranslationSessionController,
     },
+    resource_cleanup::{CleanupOwners, CleanupTicket},
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -36,7 +37,7 @@ use std::{
 };
 use tokio::{
     runtime::Runtime,
-    sync::{watch, Notify},
+    sync::{oneshot, watch, Notify},
     task::JoinHandle,
 };
 
@@ -73,11 +74,33 @@ struct Networks {
     trust_roots: Vec<String>,
 }
 struct Connection {
+    cleanup_id: u64,
     client: TranslationClient,
     pipeline: AudioSendPipeline,
     ready: watch::Sender<bool>,
     events: ProviderEventSender,
     budget: Option<mimi_runtime::core::preview_pacing::MTRequestBudget>,
+}
+
+/// Drop the connection/pipeline before releasing its final-disconnect owner.
+/// The ticket then starts that owner even if the lease was never awaited.
+struct ConnectionLease {
+    connection: Connection,
+    release: oneshot::Sender<()>,
+    cleanup: CleanupTicket,
+}
+
+impl ConnectionLease {
+    async fn disconnected(self) {
+        let Self {
+            connection,
+            release,
+            cleanup,
+        } = self;
+        drop(connection);
+        drop(release);
+        cleanup.await;
+    }
 }
 struct AbortTask(JoinHandle<()>);
 impl AbortTask {
@@ -96,6 +119,8 @@ struct Session {
     text_network: ProviderNetwork,
     controller: Mutex<TranslationSessionController>,
     connection: Mutex<Option<Connection>>,
+    cleanup_owners: CleanupOwners,
+    cleanup_sequence: AtomicU64,
     task: Mutex<Option<JoinHandle<()>>>,
     epoch: AtomicU64,
     version: AtomicU64,
@@ -161,7 +186,19 @@ impl Session {
         client.set_audio_pending_gate(pipeline.pending_pcm_gate());
         let scope = MTBudgetScope::for_configuration("android-active".into(), &self.configuration);
         let budget = self.budget.lock().unwrap().prepare(generation, scope);
+        // Cleanup identity belongs to this actual connection, independently
+        // of a lifecycle generation or another source's connection.
+        let cleanup_id = self
+            .cleanup_sequence
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        let cleanup_id = if cleanup_id == 0 {
+            self.cleanup_sequence.fetch_add(1, Ordering::SeqCst) + 1
+        } else {
+            cleanup_id
+        };
         *self.connection.lock().unwrap() = Some(Connection {
+            cleanup_id,
             client,
             pipeline,
             ready,
@@ -177,22 +214,95 @@ impl Session {
             .as_ref()
             .and_then(|value| value.pipeline.ingress())
     }
+
+    fn take_connection_owned(&self) -> Option<ConnectionLease> {
+        let mut slot = self.connection.lock().unwrap();
+        let connection = slot.as_ref()?;
+        let client = connection.client.clone();
+        let (release, released) = oneshot::channel();
+        // Register while the slot is still occupied. Every path taking this
+        // client must leave an awaitable owner before cancellation can occur.
+        let cleanup = self.cleanup_owners.register(
+            connection.cleanup_id,
+            (),
+            move || async move {
+                let _ = released.await;
+                let _ = tokio::time::timeout(
+                    mimi_runtime::core::health::DISCONNECT_TIMEOUT,
+                    client.disconnect(),
+                )
+                .await;
+            },
+            None,
+        );
+        Some(ConnectionLease {
+            connection: slot.take().expect("the connection slot is locked"),
+            release,
+            cleanup,
+        })
+    }
+
     async fn retire(&self, generation: u64) {
-        let connection = self.connection.lock().unwrap().take();
+        let connection = self.take_connection_owned();
         if let Some(connection) = connection {
-            connection.pipeline.stop();
+            connection.connection.pipeline.stop();
             let lease = self.budget.lock().unwrap().take_lease(generation);
             if let Some((token, scope)) = lease {
-                if let Some(budget) = connection.client.suspend_mt_request_budget().await {
+                if let Some(budget) = connection
+                    .connection
+                    .client
+                    .suspend_mt_request_budget()
+                    .await
+                {
                     self.budget.lock().unwrap().remember(token, scope, budget);
                 }
             }
-            let _ = tokio::time::timeout(
-                mimi_runtime::core::health::DISCONNECT_TIMEOUT,
-                connection.client.disconnect(),
-            )
-            .await;
+            connection.disconnected().await;
         }
+    }
+
+    fn begin_start(self: &Arc<Self>) -> Result<(), &'static str> {
+        // A caller can retain this Session just before Stop removes its handle.
+        // Publish the drive atomically with Stop's task snapshot, so neither a
+        // late connection install nor an unregistered drive can escape cleanup.
+        let mut task = self.task.lock().unwrap();
+        if self.started.swap(true, Ordering::SeqCst) {
+            return Err("native_runtime_already_started");
+        }
+        if self.stopping.load(Ordering::SeqCst) {
+            return Err("native_runtime_stale_handle");
+        }
+        let _runtime = executor().enter();
+        let receiver = self.connection(1)?;
+        *task = Some(executor().spawn(self.clone().drive(receiver)));
+        Ok(())
+    }
+
+    fn begin_stop(self: &Arc<Self>) -> CleanupTicket {
+        self.stopping.store(true, Ordering::SeqCst);
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+        let task = self.task.lock().unwrap().take();
+        if let Some(task) = &task {
+            task.abort();
+        }
+        let native = Arc::clone(self);
+        // JNI is also called from JVM threads outside Tokio. Capture the same
+        // executor as Start without blocking that thread on network teardown.
+        let _runtime = executor().enter();
+        CleanupOwners::default().register(
+            1,
+            (),
+            move || async move {
+                if let Some(task) = task {
+                    // A cancelled connect can still be executing synchronous
+                    // installation. Join it before sweeping the final slot.
+                    let _ = task.await;
+                }
+                native.retire(0).await;
+                native.cleanup_owners.wait_registered().await;
+            },
+            None,
+        )
     }
     fn fail(&self, code: &str) {
         *self.error_code.lock().unwrap() = Some(code.into());
@@ -336,34 +446,33 @@ impl Session {
     }
     async fn finish_connection(&self, receiver: &mut ProviderEventReceiver) {
         self.publish(TranslationSessionController::begin_stopping);
-        let connection = self.connection.lock().unwrap().take();
+        let connection = self.take_connection_owned();
         if let Some(connection) = connection {
-            let finish = async {
-                connection
-                    .pipeline
-                    .finish(mimi_runtime::core::health::AUDIO_DRAIN_TIMEOUT)
+            {
+                let resources = &connection.connection;
+                let finish = async {
+                    resources
+                        .pipeline
+                        .finish(mimi_runtime::core::health::AUDIO_DRAIN_TIMEOUT)
+                        .await;
+                    let _ = tokio::time::timeout(
+                        mimi_runtime::core::health::PROVIDER_FINISH_TIMEOUT,
+                        resources.client.finish(),
+                    )
                     .await;
-                let _ = tokio::time::timeout(
-                    mimi_runtime::core::health::PROVIDER_FINISH_TIMEOUT,
-                    connection.client.finish(),
-                )
-                .await;
-            };
-            tokio::pin!(finish);
-            loop {
-                tokio::select! {
-                    _ = &mut finish => break,
-                    event = receiver.recv_with_revision() => {if let Some(event)=event {self.publish(|controller|controller.handle_from(AudioSource::System,event.event));}else{break;}}
+                };
+                tokio::pin!(finish);
+                loop {
+                    tokio::select! {
+                        _ = &mut finish => break,
+                        event = receiver.recv_with_revision() => {if let Some(event)=event {self.publish(|controller|controller.handle_from(AudioSource::System,event.event));}else{break;}}
+                    }
                 }
             }
             while let Ok(event) = receiver.try_recv_with_revision() {
                 self.publish(|controller| controller.handle_from(AudioSource::System, event.event));
             }
-            let _ = tokio::time::timeout(
-                mimi_runtime::core::health::DISCONNECT_TIMEOUT,
-                connection.client.disconnect(),
-            )
-            .await;
+            connection.disconnected().await;
         }
         self.publish(TranslationSessionController::did_stop);
         self.finished.store(true, Ordering::SeqCst);
@@ -648,6 +757,8 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                 text_network,
                 controller: Mutex::new(Default::default()),
                 connection: Mutex::new(None),
+                cleanup_owners: Default::default(),
+                cleanup_sequence: AtomicU64::new(0),
                 task: Mutex::new(None),
                 epoch: AtomicU64::new(1),
                 version: AtomicU64::new(1),
@@ -668,12 +779,7 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                     .as_u64()
                     .ok_or("native_runtime_invalid_request")?,
             )?;
-            if native.started.swap(true, Ordering::SeqCst) {
-                return Err("native_runtime_already_started");
-            }
-            let _guard = executor().enter();
-            let receiver = native.connection(1)?;
-            *native.task.lock().unwrap() = Some(executor().spawn(native.clone().drive(receiver)));
+            native.begin_start()?;
             json!({})
         }
         "poll" => {
@@ -703,14 +809,7 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                 .map_err(|_| "native_runtime_failed")?
                 .remove(&id)
             {
-                native.stopping.store(true, Ordering::SeqCst);
-                native.epoch.fetch_add(1, Ordering::SeqCst);
-                if let Some(task) = native.task.lock().unwrap().take() {
-                    task.abort();
-                }
-                executor().spawn(async move {
-                    native.retire(0).await;
-                });
+                drop(native.begin_stop());
             }
             json!({})
         }
@@ -746,6 +845,8 @@ mod tests {
             text_network: ProviderNetwork::resolve(&direct).unwrap(),
             controller: Mutex::new(Default::default()),
             connection: Mutex::new(None),
+            cleanup_owners: Default::default(),
+            cleanup_sequence: AtomicU64::new(0),
             task: Mutex::new(None),
             epoch: AtomicU64::new(1),
             version: AtomicU64::new(1),
@@ -760,6 +861,209 @@ mod tests {
     fn configuration() -> LiveTranslationConfiguration {
         serde_json::from_value(json!({"provider":"alibabaCloud","qwenMtModel":"lite","credentials":{"kind":"apiKey","apiKey":"synthetic-key"},"textCredentials":null,"sourceLanguage":"en","targetLanguage":"zh","translationMode":"turbo","networkProxy":{"mode":"direct"},"textNetworkProxy":{"mode":"direct"}})).unwrap()
     }
+
+    #[tokio::test]
+    async fn dropping_an_unpolled_connection_lease_stops_its_pipeline_and_finishes_cleanup() {
+        let native = fixture(configuration());
+        let _events = native.connection(1).unwrap();
+        let ingress = native.ingress().unwrap();
+        let lease = native.take_connection_owned().unwrap();
+        assert!(native.connection.lock().unwrap().is_none());
+        let owners = native.cleanup_owners.wait_registered();
+        tokio::pin!(owners);
+        assert!(tokio::time::timeout(Duration::from_millis(10), &mut owners)
+            .await
+            .is_err());
+
+        drop(lease);
+
+        tokio::time::timeout(Duration::from_secs(1), owners)
+            .await
+            .expect("a dropped lease must release its registered disconnect owner");
+        assert!(ingress.try_send(vec![0, 0]).is_err());
+    }
+
+    #[tokio::test]
+    async fn same_generation_connections_keep_independent_cleanup_owners() {
+        let native = fixture(configuration());
+        let _first_events = native.connection(7).unwrap();
+        let first = native.take_connection_owned().unwrap();
+        let first_key = first.connection.cleanup_id;
+        // A rebuild or another lane must not reuse the first client's factory,
+        // even when a caller supplies the same lifecycle generation.
+        let _second_events = native.connection(7).unwrap();
+        let second = native.take_connection_owned().unwrap();
+        assert_ne!(first_key, second.connection.cleanup_id);
+        let owners = native.cleanup_owners.wait_registered();
+        tokio::pin!(owners);
+        drop(first);
+        assert!(tokio::time::timeout(Duration::from_millis(10), &mut owners)
+            .await
+            .is_err());
+
+        drop(second);
+
+        tokio::time::timeout(Duration::from_secs(1), owners)
+            .await
+            .expect("each actual client must release its own owner");
+    }
+
+    #[tokio::test]
+    async fn hard_stop_joins_a_cancelled_drive_with_an_already_taken_connection() {
+        let native = fixture(configuration());
+        let _events = native.connection(1).unwrap();
+        let ingress = native.ingress().unwrap();
+        let (taken, was_taken) = oneshot::channel();
+        let task = tokio::spawn({
+            let native = native.clone();
+            async move {
+                let lease = native.take_connection_owned().unwrap();
+                taken.send(()).unwrap();
+                std::future::pending::<()>().await;
+                drop(lease);
+            }
+        });
+        *native.task.lock().unwrap() = Some(task);
+        was_taken.await.unwrap();
+
+        // Leave the stop ticket unpolled: aborting the drive must still drop
+        // its lease and start final disconnect before another waiter joins.
+        let stop = native.begin_stop();
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            native.cleanup_owners.wait_registered(),
+        )
+        .await
+        .expect("drive cancellation must not cancel final disconnect");
+        tokio::time::timeout(Duration::from_secs(1), stop)
+            .await
+            .expect("the stop completion must join the cancelled drive");
+        assert!(native.connection.lock().unwrap().is_none());
+        assert!(ingress.try_send(vec![0, 0]).is_err());
+    }
+
+    #[tokio::test]
+    async fn hard_stop_waits_for_late_installation_before_retiring_the_slot() {
+        struct InstallOnDrop {
+            native: Arc<Session>,
+            entered: Option<oneshot::Sender<()>>,
+            release: std::sync::mpsc::Receiver<()>,
+            installed: Option<oneshot::Sender<AudioIngress>>,
+        }
+        impl Drop for InstallOnDrop {
+            fn drop(&mut self) {
+                let _ = self.entered.take().unwrap().send(());
+                self.release.recv_timeout(Duration::from_secs(2)).unwrap();
+                let _events = self.native.connection(1).unwrap();
+                let _ = self
+                    .installed
+                    .take()
+                    .unwrap()
+                    .send(self.native.ingress().unwrap());
+            }
+        }
+        let native = fixture(configuration());
+        let (started, was_started) = oneshot::channel();
+        let (entered, was_entered) = oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let (installed, was_installed) = oneshot::channel();
+        let task = executor().spawn({
+            let native = native.clone();
+            async move {
+                let installation = InstallOnDrop {
+                    native,
+                    entered: Some(entered),
+                    release: released,
+                    installed: Some(installed),
+                };
+                started.send(()).unwrap();
+                std::future::pending::<()>().await;
+                drop(installation);
+            }
+        });
+        *native.task.lock().unwrap() = Some(task);
+        was_started.await.unwrap();
+        let stop = native.begin_stop();
+        was_entered.await.unwrap();
+        tokio::pin!(stop);
+        let still_waiting = tokio::time::timeout(Duration::from_millis(20), &mut stop)
+            .await
+            .is_err();
+        // Always release the worker before asserting, including a regression
+        // where Stop incorrectly finishes while installation is still gated.
+        release.send(()).unwrap();
+        let ingress = was_installed.await.unwrap();
+        assert!(still_waiting, "Stop must join installation before sweeping");
+        tokio::time::timeout(Duration::from_secs(1), stop)
+            .await
+            .expect("the installed client must be retired after joining");
+        assert!(native.connection.lock().unwrap().is_none());
+        assert!(ingress.try_send(vec![0, 0]).is_err());
+    }
+
+    #[tokio::test]
+    async fn retiring_a_connection_preserves_request_budget_for_the_retry() {
+        use mimi_runtime::core::preview_pacing::PreviewRequestPacer;
+        let native = fixture(configuration());
+        let _events = native.connection(7).unwrap();
+        let client = native
+            .connection
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .client
+            .clone();
+        let now = std::time::Instant::now();
+        let mut pacer = PreviewRequestPacer::default();
+        pacer.record_start(now);
+        pacer.suppress_after_rate_limit(now);
+        pacer.set_shared_cooldown(Some(now + Duration::from_secs(4)));
+        let budget = pacer.export_budget();
+        client.restore_mt_request_budget(Some(budget)).await;
+        drop(client);
+
+        native.retire(7).await;
+
+        let _retry_events = native.connection(8).unwrap();
+        let retained = native
+            .connection
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .budget
+            .expect("normal retirement must preserve request accounting");
+        assert_eq!(
+            retained.shared_cooldown_until(),
+            budget.shared_cooldown_until()
+        );
+        assert!(retained.is_preview_suppressed(now));
+        native.begin_stop().await;
+    }
+
+    #[tokio::test]
+    async fn a_retained_stopped_session_rejects_start_before_installing_resources() {
+        // A failed regression must still be confined to loopback if it
+        // mistakenly starts the drive instead of rejecting this owner.
+        let mut configuration = configuration();
+        configuration.provider = ProviderKind::CustomOpenAIASR;
+        configuration.target_language = TargetLanguage::Original;
+        configuration.credentials =
+            mimi_runtime::core::credentials::ProviderCredentials::CustomSpeech {
+                endpoint: "ws://127.0.0.1:9/v1/realtime".into(),
+                model: "synthetic-stop-owner".into(),
+                api_key: "synthetic-key".into(),
+            };
+        let native = fixture(configuration);
+        native.begin_stop().await;
+
+        assert_eq!(native.begin_start(), Err("native_runtime_stale_handle"));
+        assert_eq!(native.cleanup_sequence.load(Ordering::SeqCst), 0);
+        assert!(native.connection.lock().unwrap().is_none());
+        assert!(native.task.lock().unwrap().is_none());
+    }
+
     #[test]
     fn native_snapshot_preserves_shared_connection_and_translation_recovery() {
         use mimi_runtime::core::diagnostics::{TranslationRecovery, TranslationRecoveryReason};

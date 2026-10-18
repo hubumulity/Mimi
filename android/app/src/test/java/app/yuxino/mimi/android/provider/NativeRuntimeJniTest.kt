@@ -424,14 +424,120 @@ class NativeRuntimeJniTest {
         } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
     }
 
+    @Test fun stopDuringProviderFinishClosesTransportAndPreservesOtherHandleAcrossActualJni() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            var second: Long? = null
+            try {
+                second = create(configuration())
+                val otherState = NativeRuntimeConfiguration.command("poll", second).toString()
+                NativeRuntimeConfiguration.command("start", handle)
+                awaitRuntimeState(handle, fixture) { it.getString("connectionStatus") == "listening" }
+                NativeRuntimeConfiguration.command("finish", handle)
+                assertTrue("Provider did not receive session.finish", fixture.finishSeen.await(5, TimeUnit.SECONDS))
+                fixture.checkFailure()
+
+                stopAndAwaitTransportClosed(handle, fixture)
+                assertEquals("native_runtime_stale_handle", assertThrows(IllegalArgumentException::class.java) {
+                    NativeRuntimeConfiguration.command("poll", handle)
+                }.message)
+                NativeRuntimeConfiguration.command("stop", handle)
+                assertEquals(otherState, NativeRuntimeConfiguration.command("poll", second).toString())
+            } finally {
+                NativeRuntimeConfiguration.command("stop", handle)
+                second?.let { NativeRuntimeConfiguration.command("stop", it) }
+            }
+        }
+    }
+
+    @Test fun stopWhileProviderSetupIsPendingClosesTransportAcrossActualJni() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true, holdSetup = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            try {
+                NativeRuntimeConfiguration.command("start", handle)
+                assertTrue("Provider did not receive session.update", fixture.setupSeen.await(5, TimeUnit.SECONDS))
+                fixture.checkFailure()
+                assertEquals("connecting", NativeRuntimeConfiguration.command("poll", handle).getString("connectionStatus"))
+
+                stopAndAwaitTransportClosed(handle, fixture)
+                assertEquals(1L, fixture.finishSeen.count)
+                assertEquals("native_runtime_stale_handle", assertThrows(IllegalArgumentException::class.java) {
+                    NativeRuntimeConfiguration.command("poll", handle)
+                }.message)
+            } finally { NativeRuntimeConfiguration.command("stop", handle) }
+        }
+    }
+
+    @Test fun directStopClosesLiveTranslateTransportAcrossActualJni() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            try {
+                NativeRuntimeConfiguration.command("start", handle)
+                awaitRuntimeState(handle, fixture) { it.getString("connectionStatus") == "listening" }
+                stopAndAwaitTransportClosed(handle, fixture)
+                assertEquals(1L, fixture.finishSeen.count)
+            } finally { NativeRuntimeConfiguration.command("stop", handle) }
+        }
+    }
+
+    @Test fun gracefulLiveTranslateFinishRetainsProviderTailAcrossActualJni() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true, finishTail = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            try {
+                NativeRuntimeConfiguration.command("start", handle)
+                awaitRuntimeState(handle, fixture) { it.getString("connectionStatus") == "listening" }
+                NativeRuntimeConfiguration.command("finish", handle)
+                val finished = awaitRuntimeState(handle, fixture) { it.getBoolean("finished") }
+                assertEquals(0L, fixture.finishSeen.count)
+                val history = finished.getJSONObject("snapshot").getJSONArray("history")
+                assertEquals(1, history.length())
+                assertEquals("Synthetic finish tail.", history.getJSONObject(0).getString("source"))
+                assertEquals("合成收尾字幕。", history.getJSONObject(0).getString("translation"))
+                assertEquals("system", history.getJSONObject(0).getString("audioSource"))
+                assertTrue("Graceful finish left its transport open", fixture.transportClosed.await(3, TimeUnit.SECONDS))
+                fixture.checkFailure()
+            } finally { NativeRuntimeConfiguration.command("stop", handle) }
+        }
+    }
+
+    private fun createLiveTranslate(fixture: RealtimeLoopback): Long = NativeRuntimeConfiguration.exchange(
+        JSONObject().put("operation", "create").put("configuration", configuration()
+            .put("alibabaRealtimeMode", "liveTranslate").put("alibabaWorkspaceId", "synthetic-workspace")
+            .put("sourceLanguage", "auto")).put("network", fixture.network)).getLong("handle")
+
+    private fun awaitRuntimeState(handle: Long, fixture: RealtimeLoopback, predicate: (JSONObject) -> Boolean): JSONObject {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline) {
+            fixture.checkFailure()
+            val state = NativeRuntimeConfiguration.command("poll", handle)
+            assertTrue("Loopback runtime failed: ${state.optString("errorCode")}", state.isNull("errorCode"))
+            if (predicate(state)) return state
+            Thread.sleep(10)
+        }
+        error("LiveTranslate loopback state did not arrive")
+    }
+
+    private fun stopAndAwaitTransportClosed(handle: Long, fixture: RealtimeLoopback) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+        NativeRuntimeConfiguration.command("stop", handle)
+        val remaining = deadline - System.nanoTime()
+        assertTrue("Native stop left provider transport open beyond three seconds",
+            remaining > 0 && fixture.transportClosed.await(remaining, TimeUnit.NANOSECONDS))
+        fixture.checkFailure()
+    }
+
     /** CONNECT/TLS/WebSocket fixtures intercept the unchanged production endpoints on loopback. */
-    private class RealtimeLoopback(private val provider: ServiceProvider, private val qwenResponse: JSONObject? = null) : AutoCloseable {
+    private class RealtimeLoopback(private val provider: ServiceProvider, private val qwenResponse: JSONObject? = null,
+        private val liveTranslate: Boolean = false, private val finishTail: Boolean = false,
+        private val holdSetup: Boolean = false) : AutoCloseable {
         private val tencent = provider == ServiceProvider.TENCENT
-        private val qwen = provider == ServiceProvider.DASHSCOPE
-        private val host = if (qwen) "dashscope.aliyuncs.com" else if (tencent) "asr.cloud.tencent.com" else "aip.baidubce.com"
+        private val qwen = provider == ServiceProvider.DASHSCOPE && !liveTranslate
+        private val host = if (liveTranslate) "synthetic-workspace.cn-beijing.maas.aliyuncs.com"
+            else if (qwen) "dashscope.aliyuncs.com" else if (tencent) "asr.cloud.tencent.com" else "aip.baidubce.com"
         private val phases = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
             .bufferedReader().use { it.readText() }).let { contract ->
-            if (qwen) JSONArray(listOf(JSONArray(listOf("""{"header":{"event":"result-generated"},"payload":{"output":{"sentence":{"sentence_id":1,"sentence_end":true,"text":"Synthetic Qwen source."}}}}"""))))
+            if (liveTranslate) JSONArray()
+            else if (qwen) JSONArray(listOf(JSONArray(listOf("""{"header":{"event":"result-generated"},"payload":{"output":{"sentence":{"sentence_id":1,"sentence_end":true,"text":"Synthetic Qwen source."}}}}"""))))
             else if (tencent) contract.getJSONObject("tencentSpeechTranslation").getJSONArray("jniReplayPhases")
             else contract.getJSONObject("baiduRealtimeTranslation").getJSONArray("streams").let { streams ->
                 val frames = (0 until streams.length()).map(streams::getJSONObject)
@@ -448,6 +554,9 @@ class NativeRuntimeJniTest {
         @Volatile private var closed = false
         val nextMid = CountDownLatch(1)
         val nextFinal = CountDownLatch(1)
+        val setupSeen = CountDownLatch(1)
+        val finishSeen = CountDownLatch(1)
+        val transportClosed = CountDownLatch(1)
         val network: JSONObject
         private val worker: Thread
         private val textWorker: Thread?
@@ -505,11 +614,15 @@ class NativeRuntimeJniTest {
                     val input = DataInputStream(secure.inputStream)
                     val output = secure.outputStream
                     val request = headers(input)
-                    check(request.startsWith(if (qwen) "GET /api-ws/v1/inference HTTP/1.1\r\n" else if (tencent) "GET /asr/speech_translate/123456789?" else "GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
+                    check(request.startsWith(if (liveTranslate) "GET /api-ws/v1/realtime?model=qwen3.8-livetranslate-flash-realtime HTTP/1.1\r\n"
+                        else if (qwen) "GET /api-ws/v1/inference HTTP/1.1\r\n" else if (tencent) "GET /asr/speech_translate/123456789?" else "GET /ws/realtime_speech_trans HTTP/1.1\r\n"))
                     val key = request.lineSequence().first { it.startsWith("sec-websocket-key:", true) }.substringAfter(':').trim()
                     val accept = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII)))
                     output.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray(Charsets.US_ASCII))
-                    if (qwen) {
+                    if (liveTranslate) {
+                        liveTranslateSession(input, output)
+                        return@thread
+                    } else if (qwen) {
                         check(JSONObject(readText(input, output)).getJSONObject("header").getString("action") == "run-task")
                         send(output, """{"header":{"event":"task-started"}}""")
                     } else if (tencent) send(output, """{"code":0}""") else {
@@ -541,6 +654,33 @@ class NativeRuntimeJniTest {
             }
         }
 
+        private fun liveTranslateSession(input: DataInputStream, output: OutputStream) {
+            val update = JSONObject(readText(input, output))
+            check(update.getString("type") == "session.update")
+            check(update.getJSONObject("session").getJSONObject("translation").getString("language") == "zh")
+            setupSeen.countDown()
+            if (!holdSetup) send(output, """{"type":"session.updated"}""")
+            while (true) {
+                val message = readText(input, output)
+                if (message.isEmpty()) return
+                check(JSONObject(message).getString("type") == "session.finish")
+                check(finishSeen.count == 1L)
+                finishSeen.countDown()
+                // Holding the response keeps the production finish future alive.
+                // Read only Close/EOF after stop; no subtitle probe can retire it.
+                if (finishTail) {
+                    for (event in listOf(
+                        """{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":"Synthetic finish tail."}""",
+                        """{"type":"conversation.item.created","previous_item_id":"source","item":{"id":"out","role":"assistant"}}""",
+                        """{"type":"response.text.done","item_id":"out","response_id":"response","text":"合成收尾字幕。"}""",
+                        """{"type":"conversation.item.input_audio_transcription.completed","item_id":"source","transcript":"Synthetic finish tail."}""",
+                        """{"type":"response.done","response":{"id":"response","status":"completed","output":[]}}""",
+                        """{"type":"session.finished"}""",
+                    )) send(output, event)
+                }
+            }
+        }
+
         fun checkFailure() { failure.get()?.let { throw AssertionError("$provider loopback server failed", it) } }
         private fun headers(input: DataInputStream): String {
             val bytes = java.io.ByteArrayOutputStream()
@@ -565,7 +705,11 @@ class NativeRuntimeJniTest {
         }
         private fun readText(input: DataInputStream, output: OutputStream): String {
             while (true) {
-                val opcode = input.readUnsignedByte() and 15
+                val opcode = try { input.readUnsignedByte() and 15 } catch (error: java.io.EOFException) {
+                    if (!liveTranslate) throw error
+                    transportClosed.countDown()
+                    return ""
+                }
                 val flags = input.readUnsignedByte()
                 check(flags and 128 != 0)
                 val size = when (val short = flags and 127) { 126 -> input.readUnsignedShort(); 127 -> error("Oversized loopback frame"); else -> short }
@@ -573,8 +717,11 @@ class NativeRuntimeJniTest {
                 val mask = ByteArray(4).also(input::readFully)
                 val payload = ByteArray(size).also(input::readFully)
                 for (index in payload.indices) payload[index] = (payload[index].toInt() xor mask[index % 4].toInt()).toByte()
-                if (qwen && opcode == 8) return ""
-                if (qwen && opcode == 2) continue
+                if ((qwen || liveTranslate) && opcode == 8) {
+                    if (liveTranslate) transportClosed.countDown()
+                    return ""
+                }
+                if ((qwen || liveTranslate) && opcode == 2) continue
                 if (opcode == 9) frame(output, 10, payload) else {
                     check(opcode == 1) { "Unexpected loopback client frame" }
                     return payload.toString(Charsets.UTF_8)
