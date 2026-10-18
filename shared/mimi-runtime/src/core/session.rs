@@ -677,9 +677,23 @@ impl TranslationSessionController {
             .iter()
             .map(|source| (*source, &self.sources[source_index(*source)].state))
             .collect();
-        self.state = active[0].1.clone();
+        let primary = active[0].1;
         self.state.atomic_preview = self.atomic_preview;
-        self.state.subtitles.history = history;
+        self.state.detected_language = primary.detected_language.clone();
+        // The aggregate history belongs to the session, not its first lane.
+        // Clone only the primary presentation; cloning the whole lane state
+        // would allocate its complete history just to discard it here.
+        self.state.subtitles = SubtitleSnapshot {
+            tracks: Vec::new(),
+            source: primary.subtitles.source.clone(),
+            translation: primary.subtitles.translation.clone(),
+            history,
+            preview_pair: primary.subtitles.preview_pair.clone(),
+            realtime_preview: primary.subtitles.realtime_preview.clone(),
+            display_pair: primary.subtitles.display_pair.clone(),
+            display_pair_final: primary.subtitles.display_pair_final,
+            display_pair_created_at_ms: primary.subtitles.display_pair_created_at_ms,
+        };
         self.state.subtitles.tracks = active
             .iter()
             .map(|(source, state)| SourceSubtitleSnapshot {
@@ -1536,6 +1550,98 @@ mod dual_source_tests {
             source: source.into(),
             translation: translation.into(),
             language: Some("en".into()),
+        }
+    }
+
+    #[test]
+    fn refresh_keeps_the_complete_primary_projection_and_independent_histories() {
+        use mimi_core::{PreviewSubtitlePair, RealtimeSubtitlePreview, SubtitleLine};
+
+        let mut controller = TranslationSessionController::default();
+        controller.set_audio_input(AudioInput::Both);
+        controller.set_atomic_preview(true);
+        controller.did_connect();
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            controller.handle_from(source, final_pair(1, "Synthetic final", "Synthetic result"));
+        }
+        let aggregate_history = serde_json::to_value(&controller.state.subtitles.history).unwrap();
+        for (index, lane) in controller.sources.iter_mut().enumerate() {
+            let owner = format!("synthetic-{index}");
+            lane.state.subtitles.source =
+                SubtitleLine::for_utterance(format!("Source {index}"), false, owner.clone());
+            lane.state.subtitles.translation =
+                SubtitleLine::for_utterance(format!("Translation {index}"), false, owner.clone());
+            let pair = PreviewSubtitlePair {
+                utterance_id: Some(owner),
+                source: format!("Paired source {index}"),
+                translation: format!("Paired result {index}"),
+            };
+            lane.state.subtitles.preview_pair = Some(pair.clone());
+            lane.state.subtitles.display_pair = Some(pair);
+            lane.state.subtitles.realtime_preview = Some(RealtimeSubtitlePreview {
+                source: lane.state.subtitles.source.clone(),
+                translation: lane.state.subtitles.translation.clone(),
+            });
+            lane.state.subtitles.display_pair_final = index == 0;
+            lane.state.subtitles.display_pair_created_at_ms = Some(100 + index as u64);
+            lane.state.detected_language = Some(DetectedLanguage {
+                code: if index == 0 { "en" } else { "ja" }.into(),
+            });
+            lane.state.is_translation_pending = index == 0;
+            lane.state.is_translation_preview_pending = index == 1;
+            lane.state.is_translation_timed_out = index == 1;
+        }
+
+        for input in [AudioInput::System, AudioInput::Microphone, AudioInput::Both] {
+            // Exercise projection without a capture reconfiguration, which
+            // deliberately clears transient previews before refreshing.
+            controller.audio_input = input;
+            controller.refresh();
+            let wire = serde_json::to_value(&controller.state.subtitles).unwrap();
+            let primary = &controller.sources[source_index(input.sources()[0])].state;
+            let primary_wire = serde_json::to_value(&primary.subtitles).unwrap();
+            for (field, value) in primary_wire.as_object().unwrap() {
+                if field != "history" && field != "tracks" {
+                    assert_eq!(wire.get(field), Some(value), "primary field {field}");
+                }
+            }
+            assert_eq!(wire["history"], aggregate_history);
+            assert_eq!(
+                wire["tracks"].as_array().unwrap().len(),
+                input.sources().len()
+            );
+            for (track, source) in wire["tracks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(input.sources())
+            {
+                let lane = &controller.sources[source_index(*source)].state;
+                let lane_wire = serde_json::to_value(&lane.subtitles).unwrap();
+                for (field, value) in lane_wire.as_object().unwrap() {
+                    if field != "tracks" {
+                        assert_eq!(track.get(field), Some(value), "track field {field}");
+                    }
+                }
+                assert_eq!(track["audioSource"], serde_json::to_value(source).unwrap());
+            }
+            assert_eq!(
+                controller.state.detected_language,
+                primary.detected_language
+            );
+            assert_eq!(controller.state.atomic_preview, Some(true));
+            assert_eq!(
+                controller.state.is_translation_pending,
+                input.sources().contains(&AudioSource::System)
+            );
+            assert_eq!(
+                controller.state.is_translation_preview_pending,
+                input.sources().contains(&AudioSource::Microphone)
+            );
+            assert_eq!(
+                controller.state.is_translation_timed_out,
+                input.sources().contains(&AudioSource::Microphone)
+            );
         }
     }
 

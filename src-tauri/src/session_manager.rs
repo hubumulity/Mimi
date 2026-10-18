@@ -4478,8 +4478,13 @@ impl SessionManager {
     /// Builds the current session state snapshot without emitting it (used by
     /// windows that boot after the last broadcast, e.g. the overlay control).
     pub fn current_state_event(&self) -> SessionStateEvent {
-        let state = self.controller.lock().unwrap().state.clone();
-        let mut event = SessionStateEvent::from(&state);
+        let (mut event, status) = {
+            let controller = self.controller.lock().unwrap();
+            (
+                SessionStateEvent::from(&controller.state),
+                controller.state.status.clone(),
+            )
+        };
         event.is_active |= self.is_recovering.load(Ordering::SeqCst);
         event.is_paused = self.is_paused();
         event.is_overlay_collapsed = self.is_overlay_collapsed();
@@ -4494,7 +4499,7 @@ impl SessionManager {
             .max_by_key(|latency| latency.milliseconds);
         let (api_latency_ms, translation_latency_ms, translation_latency_kind) =
             visible_session_latencies(
-                &state.status,
+                &status,
                 event.is_paused,
                 self.is_recovering.load(Ordering::SeqCst),
                 generation,
