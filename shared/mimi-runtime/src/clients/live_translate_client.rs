@@ -1626,6 +1626,76 @@ mod tests {
     }
 
     #[test]
+    fn reliable_old_source_final_keeps_the_aligner_order_after_drafts_coalesce() {
+        for completions in [vec![], vec!["a", "c"], vec!["c", "a"]] {
+            let mut aligner = LiveTranslatePairAligner::default();
+            let (sender, mut receiver) = provider_event_channel();
+            let mut direct = crate::core::session::TranslationSessionController::default();
+            let fixture: serde_json::Value =
+                serde_json::from_str(include_str!("../../../live-pair-contracts.json")).unwrap();
+            let case = fixture["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|case| case["id"] == "queued_reliable_source_finals_keep_observation_order")
+                .unwrap();
+            let mut inputs: Vec<_> = case["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|step| {
+                    LiveTranslateServerEvent::decode_value_with_identity(&step["providerFrame"])
+                        .unwrap()
+                })
+                .collect();
+            for id in &completions {
+                inputs.push((
+                    LiveTranslateServerEvent::TranslationFinal(format!(
+                        "Synthetic {id} translation."
+                    )),
+                    identity(&format!("response_{id}"), None),
+                ));
+            }
+            for (event, identity) in inputs {
+                for (event, order) in aligner.observe_with_source_order(&event, &identity) {
+                    direct.handle(event.clone());
+                    sender.send_with_source_order(event, order).unwrap();
+                }
+            }
+            let mut held = crate::core::session::TranslationSessionController::default();
+            while let Ok(event) = receiver.try_recv_with_revision() {
+                event.apply_to(&mut held, crate::core::audio_input::AudioSource::System);
+            }
+            assert_eq!(
+                direct.state.subtitles.source.utterance_id.as_deref(),
+                Some("source_c")
+            );
+            assert_eq!(
+                serde_json::to_value(&held.state.subtitles.source).unwrap(),
+                case["expectedQueuedSource"]
+            );
+            assert_eq!(held.state.subtitles.source, direct.state.subtitles.source);
+            assert!(held.state.subtitles.source.is_final);
+            assert_eq!(held.state.subtitles.history.len(), completions.len());
+            for (pair, id) in held.state.subtitles.history.iter().zip(&completions) {
+                assert_eq!(pair.translation, format!("Synthetic {id} translation."));
+            }
+            if !completions.is_empty() {
+                assert_eq!(
+                    held.state
+                        .subtitles
+                        .display_pair
+                        .as_ref()
+                        .unwrap()
+                        .utterance_id
+                        .as_deref(),
+                    Some("source_c")
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_previous_final_preserves_source_final_without_blocking_its_translation_preview() {
         for complete_pair in [false, true] {
             let mut aligner = LiveTranslatePairAligner::default();

@@ -30,7 +30,9 @@ use crate::core::protocols::qwen_mt::QwenMTModel;
 #[cfg(test)]
 use crate::core::protocols::qwen_mt::REALTIME_MT_MODEL;
 use crate::core::provider::ProviderKind;
-use crate::core::session::{TranslationSessionController, TranslationSessionState};
+use crate::core::session::{
+    ProviderEventApplication, TranslationSessionController, TranslationSessionState,
+};
 use crate::core::support_diagnostics::{
     Availability, CaptureObservation, DiagnosticEvent, DiagnosticFacts, DiagnosticJournal,
     DiagnosticStatus, LifecycleAction, OutputSelection, RecoveryAction, SafeFailure, TextEventKind,
@@ -817,20 +819,32 @@ fn source_capture_observation(
 /// Apply the event before capturing its shared deadline. The native timer must
 /// not race the reducer and observe a missing or previous request's deadline.
 /// A provider terminating either stream terminates the selected session.
+fn apply_provider_envelope(
+    controller: &mut TranslationSessionController,
+    source: AudioSource,
+    envelope: &ProviderEvent,
+) -> ProviderEventApplication {
+    let application = envelope.clone().apply_to(controller, source);
+    match &envelope.event {
+        LiveTranslateServerEvent::SessionFinished => controller.did_stop(),
+        LiveTranslateServerEvent::Error { message, .. } => controller.did_fail(message.clone()),
+        _ => {}
+    }
+    application
+}
+
+#[cfg(test)]
 fn apply_provider_event(
     controller: &mut TranslationSessionController,
     source: AudioSource,
     event: &LiveTranslateServerEvent,
 ) -> Option<Instant> {
-    controller.handle_from(source, event.clone());
-    match event {
-        LiveTranslateServerEvent::SessionFinished => controller.did_stop(),
-        LiveTranslateServerEvent::Error { message, .. } => controller.did_fail(message.clone()),
-        _ => {}
-    }
-    matches!(event, LiveTranslateServerEvent::TranslationStarted)
-        .then(|| controller.translation_pending_deadline_from(source))
-        .flatten()
+    apply_provider_envelope(
+        controller,
+        source,
+        &ProviderEvent::unsequenced(event.clone(), 0),
+    )
+    .translation_pending_deadline
 }
 
 #[derive(Clone, Copy)]
@@ -3295,20 +3309,23 @@ impl SessionManager {
         self: &Arc<Self>,
         source: AudioSource,
         generation: u64,
-        envelope: ProviderEvent,
+        mut envelope: ProviderEvent,
     ) {
         let content = self.subtitle_content_lock.lock().await;
+        #[cfg(any(test, feature = "development-debugger"))]
+        let (content_revision, transport_sequence) =
+            (envelope.content_revision, envelope.transport_sequence);
         #[cfg(any(test, feature = "development-debugger"))]
         let debug_event = |event: &LiveTranslateServerEvent, admission| {
             if crate::core::development_debug::is_enabled() {
                 let mut observation = crate::core::development_debug::ProviderObservation::new(
                     source,
                     generation,
-                    envelope.content_revision,
+                    content_revision,
                     event,
                     admission,
                 );
-                observation.transport_sequence = envelope.transport_sequence;
+                observation.transport_sequence = transport_sequence;
                 crate::core::development_debug::record(
                     crate::core::development_debug::DebugEvent::Provider { observation },
                 );
@@ -3329,10 +3346,10 @@ impl SessionManager {
             );
             return;
         }
-        let mut event = envelope.event;
-        if !self.accepts_event(generation, &event) || self.is_paused() {
+        let event = &envelope.event;
+        if !self.accepts_event(generation, event) || self.is_paused() {
             debug_event(
-                &event,
+                event,
                 if self.is_paused() {
                     crate::core::development_debug::Admission::Paused
                 } else {
@@ -3350,7 +3367,7 @@ impl SessionManager {
             LiveTranslateServerEvent::SessionCreated | LiveTranslateServerEvent::SessionUpdated
         ) {
             debug_event(
-                &event,
+                event,
                 crate::core::development_debug::Admission::SetupAcknowledgement,
             );
             return;
@@ -3361,7 +3378,7 @@ impl SessionManager {
             source: source_text,
             translation,
             ..
-        } = &event
+        } = event
         {
             // A replay is not an accepted final: it must not cancel a newer
             // request's timeout or inflate the content-free journal counts.
@@ -3372,7 +3389,7 @@ impl SessionManager {
                 translation,
             ) {
                 debug_event(
-                    &event,
+                    event,
                     crate::core::development_debug::Admission::DuplicateFinal,
                 );
                 return;
@@ -3384,7 +3401,7 @@ impl SessionManager {
             source: source_text,
             translation,
             ..
-        } = &event
+        } = event
         {
             if !self
                 .controller
@@ -3393,29 +3410,30 @@ impl SessionManager {
                 .accepts_identified_final_pair_from(source, utterance_id, source_text, translation)
             {
                 debug_event(
-                    &event,
+                    event,
                     crate::core::development_debug::Admission::DuplicateFinal,
                 );
                 return;
             }
         }
 
-        if let LiveTranslateServerEvent::Error { code, message } = &mut event {
+        if let LiveTranslateServerEvent::Error { code, message } = &mut envelope.event {
             if normalize_provider_error_code(code) == "credential_authentication_failed" {
                 *message = "credential_authentication_failed".into();
             }
         }
+        let event = &envelope.event;
 
-        if !self.record_accepted_provider_event(generation, &event) {
+        if !self.record_accepted_provider_event(generation, event) {
             debug_event(
-                &event,
+                event,
                 crate::core::development_debug::Admission::StaleGeneration,
             );
             return;
         }
-        debug_event(&event, crate::core::development_debug::Admission::Accepted);
+        debug_event(event, crate::core::development_debug::Admission::Accepted);
 
-        if let LiveTranslateServerEvent::Error { code, message } = &event {
+        if let LiveTranslateServerEvent::Error { code, message } = event {
             if provider_error_is_retryable(code) {
                 let _teardown = self.begin_teardown_operation();
                 let _operation = self.begin_lifecycle_operation();
@@ -3455,31 +3473,6 @@ impl SessionManager {
             }
         }
 
-        // A final translation resolves any pending timeout; a fresh
-        // TranslationStarted arms a new one.
-        let resolves_translation_timeout = match &event {
-            LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { utterance_id, .. } => self
-                .controller
-                .lock()
-                .unwrap()
-                .identified_source_is_current_from(source, utterance_id),
-            _ => matches!(
-                event,
-                LiveTranslateServerEvent::TranslationFinal(_)
-                    | LiveTranslateServerEvent::SubtitleFinalPair { .. }
-                    | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
-                    | LiveTranslateServerEvent::UtteranceText {
-                        role: UtteranceRole::Translation,
-                        is_final: true,
-                        ..
-                    }
-                    | LiveTranslateServerEvent::Error { .. }
-                    | LiveTranslateServerEvent::TranslationDeferred(_)
-            ),
-        };
-        if resolves_translation_timeout {
-            self.cancel_source_translation_timeout(source);
-        }
         let is_terminal = matches!(
             event,
             LiveTranslateServerEvent::Error { .. } | LiveTranslateServerEvent::SessionFinished
@@ -3496,13 +3489,13 @@ impl SessionManager {
             self.clear_active_settings_for_generation(generation);
             self.cancel_translation_timeout();
         }
-        let (newly_confirmed, translation_deadline) = {
+        let (newly_confirmed, application) = {
             let mut controller = self.controller.lock().unwrap();
             #[cfg(any(test, feature = "development-debugger"))]
             let debug_before = crate::core::development_debug::is_enabled()
                 .then(|| controller.state.subtitles.clone());
             let previous = controller.state.subtitles.history.last().cloned();
-            let deadline = apply_provider_event(&mut controller, source, &event);
+            let application = apply_provider_envelope(&mut controller, source, &envelope);
             #[cfg(any(test, feature = "development-debugger"))]
             if let Some(before) = debug_before {
                 crate::core::development_debug::record(
@@ -3519,9 +3512,12 @@ impl SessionManager {
             let confirmed = confirmed_history_tail_changed(previous.as_ref(), current)
                 .then(|| current.cloned())
                 .flatten();
-            (confirmed, deadline)
+            (confirmed, application)
         };
-        if let Some(deadline) = translation_deadline {
+        if application.resolves_translation_timeout {
+            self.cancel_source_translation_timeout(source);
+        }
+        if let Some(deadline) = application.translation_pending_deadline {
             self.arm_translation_timeout(source, generation, deadline);
         }
         if let Some(pair) = newly_confirmed {
@@ -3558,7 +3554,7 @@ impl SessionManager {
             // Provider error codes are not universally trustworthy (some
             // protocols carry arbitrary server strings). Keep diagnostics on
             // a fixed local label just like free-text messages.
-            let label = match &event {
+            let label = match event {
                 LiveTranslateServerEvent::Error { .. } => "provider_terminal_error",
                 LiveTranslateServerEvent::SessionFinished => "session_finished",
                 _ => "terminal_event",
@@ -5717,6 +5713,92 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn provider_application_keeps_the_current_timer_when_an_old_pair_enters_history() {
+        let mut controller = TranslationSessionController::default();
+        controller.set_audio_input(AudioInput::Both);
+        controller.did_connect();
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            for (id, source_order) in [("previous", 1), ("current", 2)] {
+                apply_provider_event(
+                    &mut controller,
+                    source,
+                    &LiveTranslateServerEvent::SubtitleSourceBoundary {
+                        utterance_id: id.into(),
+                        source_order,
+                    },
+                );
+            }
+            apply_provider_event(
+                &mut controller,
+                source,
+                &LiveTranslateServerEvent::UtteranceText {
+                    utterance_id: "current".into(),
+                    role: UtteranceRole::Source,
+                    text: "Synthetic current source.".into(),
+                    is_final: true,
+                    language: None,
+                },
+            );
+            let deadline = apply_provider_event(
+                &mut controller,
+                source,
+                &LiveTranslateServerEvent::TranslationStarted,
+            )
+            .unwrap();
+            let pair = |id: &str| LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+                utterance_id: id.into(),
+                source: format!("Synthetic {id} source."),
+                translation: format!("Synthetic {id} translation."),
+                language: None,
+            };
+            let old = apply_provider_envelope(
+                &mut controller,
+                source,
+                &ProviderEvent::unsequenced(pair("previous"), 0),
+            );
+            assert!(!old.resolves_translation_timeout);
+            assert!(old.translation_pending_deadline.is_none());
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                Some(deadline)
+            );
+            assert_eq!(
+                controller
+                    .state
+                    .subtitles
+                    .tracks
+                    .iter()
+                    .find(|track| track.audio_source == source)
+                    .unwrap()
+                    .source
+                    .utterance_id
+                    .as_deref(),
+                Some("current")
+            );
+            let current = ProviderEvent::unsequenced(pair("current"), 0);
+            assert!(
+                apply_provider_envelope(&mut controller, source, &current)
+                    .resolves_translation_timeout
+            );
+            let restarted = apply_provider_event(
+                &mut controller,
+                source,
+                &LiveTranslateServerEvent::TranslationStarted,
+            )
+            .unwrap();
+            assert!(
+                !apply_provider_envelope(&mut controller, source, &current)
+                    .resolves_translation_timeout
+            );
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                Some(restarted)
+            );
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 4);
+    }
+
+    #[test]
     fn either_source_finishing_or_failing_ends_all_selected_sources() {
         for source in [AudioSource::System, AudioSource::Microphone] {
             for event in [
@@ -5905,11 +5987,7 @@ mod lifecycle_tests {
         ] {
             assert!(subtitle_content_is_current(
                 generation,
-                &ProviderEvent {
-                    transport_sequence: None,
-                    content_revision: 0,
-                    event
-                },
+                &ProviderEvent::unsequenced(event, 0),
                 (generation, sender.content_revision())
             ));
         }

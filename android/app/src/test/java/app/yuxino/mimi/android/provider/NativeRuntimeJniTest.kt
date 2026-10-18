@@ -673,18 +673,78 @@ class NativeRuntimeJniTest {
         } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
     }
 
+    @Test fun liveTranslateSourceOrderAndCompletedHistorySurviveNormalAndFinishDelivery() {
+        SubtitleBus.clear()
+        SubtitleBus.setHistoryLimit(3)
+        try {
+            RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true, sourceOrderReplay = true).use { fixture ->
+                val handle = createLiveTranslate(fixture)
+                fun awaitState(predicate: (JSONObject) -> Boolean): JSONObject {
+                    val state = awaitRuntimeState(handle, fixture, predicate)
+                    SubtitleBus.onRuntimeSnapshot(state, false)
+                    return state
+                }
+                fun assertCurrent(snapshot: JSONObject) {
+                    assertEquals("source_a", snapshot.getJSONObject("source").getString("utteranceId"))
+                    assertEquals("Synthetic current final.", snapshot.getJSONObject("source").getString("text"))
+                    assertTrue(snapshot.getJSONObject("source").getBoolean("isFinal"))
+                    assertEquals("Synthetic current final.", SubtitleBus.displaySnapshot().currentSource.text)
+                }
+                try {
+                    NativeRuntimeConfiguration.command("start", handle)
+                    awaitState { it.getJSONObject("snapshot").getJSONObject("source").optString("utteranceId") == "source_a" }
+                    fixture.nextMid.countDown()
+                    val previous = awaitState { it.getJSONObject("snapshot").getJSONArray("history").length() == 1 }.getJSONObject("snapshot")
+                    assertCurrent(previous)
+                    assertEquals("Synthetic late old final.", previous.getJSONArray("history").getJSONObject(0).getString("source"))
+                    assertEquals("Synthetic previous translation.", previous.getJSONObject("displayPair").getString("translation"))
+                    fixture.nextFinal.countDown()
+                    val preview = awaitState { it.getJSONObject("snapshot").getJSONObject("translation").getString("text") == "Synthetic current preview" }.getJSONObject("snapshot")
+                    assertCurrent(preview)
+                    assertFalse(preview.getJSONObject("translation").getBoolean("isFinal"))
+                    NativeRuntimeConfiguration.command("finish", handle)
+                    val finished = awaitState { it.getBoolean("finished") }.getJSONObject("snapshot")
+                    assertCurrent(finished)
+                    assertEquals(2, finished.getJSONArray("history").length())
+                    assertEquals("Synthetic current translation.", finished.getJSONObject("displayPair").getString("translation"))
+                    assertTrue(finished.getBoolean("displayPairFinal"))
+                    assertEquals("Synthetic late old final.", finished.getJSONArray("history").getJSONObject(0).getString("source"))
+                    assertEquals("Synthetic current final.", finished.getJSONArray("history").getJSONObject(1).getString("source"))
+                    fixture.checkFailure()
+                } finally { NativeRuntimeConfiguration.command("stop", handle) }
+            }
+        } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
+    }
+
     /** CONNECT/TLS/WebSocket fixtures intercept the unchanged production endpoints on loopback. */
     private class RealtimeLoopback(private val provider: ServiceProvider, private val qwenResponse: JSONObject? = null,
         private val liveTranslate: Boolean = false, private val finishTail: Boolean = false,
         private val holdSetup: Boolean = false, private val recoverOverflow: Boolean = false,
-        private val lateFinalReplay: Boolean = false) : AutoCloseable {
+        private val lateFinalReplay: Boolean = false, private val sourceOrderReplay: Boolean = false) : AutoCloseable {
         private val tencent = provider == ServiceProvider.TENCENT
         private val qwen = provider == ServiceProvider.DASHSCOPE && !liveTranslate
         private val host = if (liveTranslate) "synthetic-workspace.cn-beijing.maas.aliyuncs.com"
             else if (qwen) "dashscope.aliyuncs.com" else if (tencent) "asr.cloud.tencent.com" else "aip.baidubce.com"
         private val phases = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
             .bufferedReader().use { it.readText() }).let { contract ->
-            if (lateFinalReplay) JSONArray(listOf(
+            if (sourceOrderReplay) JSONArray(listOf(
+                JSONArray(listOf(
+                    """{"type":"conversation.item.created","item":{"id":"translation_z"},"previous_item_id":"source_z"}""",
+                    """{"type":"conversation.item.created","item":{"id":"translation_a"},"previous_item_id":"source_a"}""",
+                    """{"type":"conversation.item.input_audio_transcription.delta","item_id":"source_z","delta":"Synthetic old draft"}""",
+                    """{"type":"conversation.item.input_audio_transcription.delta","item_id":"source_a","delta":"Synthetic current draft"}""",
+                    """{"type":"conversation.item.input_audio_transcription.completed","item_id":"source_a","transcript":"Synthetic current final."}""",
+                    """{"type":"conversation.item.input_audio_transcription.completed","item_id":"source_z","transcript":"Synthetic late old final."}""",
+                )),
+                JSONArray(listOf(
+                    """{"type":"response.done","response":{"id":"response_z","status":"completed","output":[{"id":"translation_z","content":[{"type":"output_text","text":"Synthetic previous translation."}]}]}}""",
+                )),
+                JSONArray(listOf(
+                    """{"type":"conversation.item.input_audio_transcription.delta","item_id":"source_z","delta":"Synthetic old replay"}""",
+                    """{"type":"response.text.delta","item_id":"translation_a","delta":"Synthetic current preview"}""",
+                )),
+            ))
+            else if (lateFinalReplay) JSONArray(listOf(
                 JSONArray(listOf(
                     """{"type":"conversation.item.created","item":{"id":"translation_z"},"previous_item_id":"source_z"}""",
                     """{"type":"conversation.item.input_audio_transcription.completed","item_id":"source_z","transcript":"Synthetic first sentence.","language":"en"}""",
@@ -857,7 +917,7 @@ class NativeRuntimeJniTest {
             if (recoverOverflow && connection == 1) check(releaseFirstSetup.await(5, TimeUnit.SECONDS))
             if (!holdSetup) send(output, """{"type":"session.updated"}""")
             if (recoverOverflow && connection == 2) reconnected.countDown()
-            if (lateFinalReplay) {
+            if (lateFinalReplay || sourceOrderReplay) {
                 fun phase(index: Int) {
                     val frames = phases.getJSONArray(index)
                     repeat(frames.length()) { send(output, frames.getString(it)) }
@@ -886,7 +946,10 @@ class NativeRuntimeJniTest {
                 finishSeen.countDown()
                 // Holding the response keeps the production finish future alive.
                 // Read only Close/EOF after stop; no subtitle probe can retire it.
-                if (finishTail) {
+                if (sourceOrderReplay) {
+                    send(output, """{"type":"response.done","response":{"id":"response_a","status":"completed","output":[{"id":"translation_a","content":[{"type":"output_text","text":"Synthetic current translation."}]}]}}""")
+                    send(output, """{"type":"session.finished"}""")
+                } else if (finishTail) {
                     for (event in listOf(
                         """{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","delta":"Synthetic finish tail."}""",
                         """{"type":"conversation.item.created","previous_item_id":"source","item":{"id":"out","role":"assistant"}}""",

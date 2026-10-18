@@ -11,6 +11,12 @@ use std::time::{Duration, Instant};
 /// Clear a provider's stuck waiting-for-final indicator without changing text.
 pub const TRANSLATION_PENDING_TIMEOUT: Duration = Duration::from_secs(6);
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ProviderEventApplication {
+    pub resolves_translation_timeout: bool,
+    pub translation_pending_deadline: Option<Instant>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranslationSessionState {
     pub status: SessionStatus,
@@ -152,9 +158,19 @@ impl SourceSessionController {
         self.handle_at(event, Instant::now());
     }
 
+    #[cfg(test)]
     fn handle_at(&mut self, event: LiveTranslateServerEvent, now: Instant) {
+        let _ = self.handle_ordered_at(event, now, None);
+    }
+
+    fn handle_ordered_at(
+        &mut self,
+        event: LiveTranslateServerEvent,
+        now: Instant,
+        source_ordinal: Option<u64>,
+    ) -> Option<ProviderEventApplication> {
         if !event.text_within_limit() {
-            return;
+            return None;
         }
         // Alibaba teardown can emit synthetic source/translation cleanup
         // finals, which are intentionally ignored. OpenAI has no separate
@@ -170,8 +186,44 @@ impl SourceSessionController {
                     | LiveTranslateServerEvent::UtteranceRegistered { .. }
             )
         {
-            return;
+            return None;
         }
+
+        if let Some(order) = source_ordinal
+            .and_then(|ordinal| ordinal.checked_add(1))
+            .filter(|order| *order <= i64::MAX as u64)
+        {
+            if let LiveTranslateServerEvent::UtteranceText { utterance_id, .. }
+            | LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { utterance_id, .. } = &event
+            {
+                if !self
+                    .subtitle_reducer
+                    .register_source_order(utterance_id, order)
+                {
+                    return None;
+                }
+            }
+        }
+
+        let resolves_translation_timeout = match &event {
+            LiveTranslateServerEvent::SubtitleIdentifiedFinalPair { utterance_id, .. } => self
+                .subtitle_reducer
+                .identified_source_is_current(utterance_id),
+            _ => matches!(
+                event,
+                LiveTranslateServerEvent::TranslationFinal(_)
+                    | LiveTranslateServerEvent::SubtitleFinalPair { .. }
+                    | LiveTranslateServerEvent::SubtitleConfirmedPair { .. }
+                    | LiveTranslateServerEvent::UtteranceText {
+                        role: UtteranceRole::Translation,
+                        is_final: true,
+                        ..
+                    }
+                    | LiveTranslateServerEvent::Error { .. }
+                    | LiveTranslateServerEvent::TranslationDeferred(_)
+            ),
+        };
+        let starts_translation = matches!(event, LiveTranslateServerEvent::TranslationStarted);
 
         match event {
             LiveTranslateServerEvent::SubtitleSourceBoundary {
@@ -359,7 +411,7 @@ impl SourceSessionController {
                 translation,
             } => {
                 if !self.accepts_confirmed_pair(utterance_id, &source, &translation) {
-                    return;
+                    return None;
                 }
                 self.clear_preview_pending();
                 self.state.translation_recovery = None;
@@ -381,7 +433,7 @@ impl SourceSessionController {
                 translation,
             } => {
                 if !self.accepts_identified_final_pair(&utterance_id, &source, &translation) {
-                    return;
+                    return None;
                 }
                 if self
                     .subtitle_reducer
@@ -412,13 +464,19 @@ impl SourceSessionController {
             }
             LiveTranslateServerEvent::SessionFinished => self.did_stop(),
             LiveTranslateServerEvent::Error { message, .. } => self.did_fail(message),
-            LiveTranslateServerEvent::Ignored { .. } => return,
+            LiveTranslateServerEvent::Ignored { .. } => return None,
         }
 
         self.state.subtitles = self.subtitle_reducer.snapshot.clone();
         if !self.state.is_translation_pending {
             self.translation_pending_deadline = None;
         }
+        Some(ProviderEventApplication {
+            resolves_translation_timeout,
+            translation_pending_deadline: starts_translation
+                .then_some(self.translation_pending_deadline)
+                .flatten(),
+        })
     }
 
     fn update_detected_language(&mut self, reported_language: Option<&str>) {
@@ -636,8 +694,18 @@ impl TranslationSessionController {
         event: LiveTranslateServerEvent,
         now: Instant,
     ) {
+        self.handle_ordered_from_at(audio_source, event, now, None);
+    }
+
+    pub(crate) fn handle_ordered_from_at(
+        &mut self,
+        audio_source: AudioSource,
+        event: LiveTranslateServerEvent,
+        now: Instant,
+        source_ordinal: Option<u64>,
+    ) -> ProviderEventApplication {
         if !self.audio_input.sources().contains(&audio_source) || !event.text_within_limit() {
-            return;
+            return ProviderEventApplication::default();
         }
         let lane = &mut self.sources[source_index(audio_source)];
         let before = lane
@@ -646,7 +714,9 @@ impl TranslationSessionController {
             .history
             .last()
             .map(|pair| pair.created_at_ms);
-        lane.handle_at(event, now);
+        let application = lane
+            .handle_ordered_at(event, now, source_ordinal)
+            .unwrap_or_default();
         if let Some(pair) = lane.state.subtitles.history.last_mut() {
             if before != Some(pair.created_at_ms) {
                 // The aggregate list must stay monotonically ordered even when
@@ -667,6 +737,7 @@ impl TranslationSessionController {
             }
         }
         self.refresh();
+        application
     }
 
     fn refresh(&mut self) {
