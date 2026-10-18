@@ -72,6 +72,48 @@
 - 无 native 构建、真实 provider、捕获、私有字幕或凭据；浏览器几何与
   合成 bridge 不能代替原生 Wayland 输入区域、穿透和 compositor 交互验收。
 
+## 2026-10-18：嵌入 popup 测量的字幕 mutation 范围
+
+- 基于 main `4ae49cbd3c9983a9cff6d522994b6a911cbc180b` 的独立 dirty frontend
+  工作树，范围见[设计记录](../plans/2026-10-18-embedded-popup-mutation-scope.md)。
+  caption-only／latency-only × 无 layer／仅 menu／仅 toast／两者的八个
+  真实 OverlayWindow 正式负例均先红；初次面板 focus frame 先执行，再打开
+  菜单并断言 layer 确实存在，避免场景退化。旧策略每三个显示更新都新增
+  三次 popup 测量查询，修后查询、layer rect 和 bounds IPC 均新增零次。
+- 仅传既有稳定 subtitleRootRef 并过滤明确字幕 sibling 子树，未知、祖先、
+  portal、STYLE／LINK 与 mixed batch 保留原 schedule；初次测量、resize、
+  几何去重与退出 clear 不变。正式组件对照覆盖真实 toast 替换／移除、menu
+  几何／增删、stylesheet 子树／Text／LINK、未知 sibling、mixed 与 pending
+  frame 退出；额外 callback fixture 覆盖 null／替换／两向不安全 ref、Text／
+  Document／未知类型／空 batch，后者不冒充真实 body observer emission。
+- 独立源码复核无阻断；quick frontend 的 provider-copy、类型、选定 lint、
+  diff 与 13 文件／210 项回归全过，保留三模式 50 快照 memo 零额外 control
+  model、最新字幕／节点身份与两种 445-draft 对照。完整前端留给冻结变更的
+  组合验收，没有改超时或弱化断言。
+- 相同冻结生产源码的真实 Chromium 矩阵通过：原 50 次逐条显示字幕／latency
+  的 menu 读取由 100 降为 0，toast 共存的 8 次显示更新由各 16 次降为 0；
+  另将 caption-only／latency-only 分开，八种 layer 组合各实际显示三次，
+  popup measure／rect／IPC 均零，parent 正常更新、control render／model
+  保持零，几何／节点身份不变。三模式 50 快照与最新草稿仍通过。
+- 十四个实际几何／订阅对照的最后 menu／notification 上报均等于真实 rect：
+  真正 toast 文案替换、STYLE 子树／Text／移除、LINK 增删、mixed、祖先
+  transform、portal 尺寸／增删、locale 和 viewport。通知及样式对照真实
+  改变 toast 宽高；本例 locale 几何相同，正确不发额外 bounds IPC。
+  两张真实 panel／toast、可见菜单截图均已查看，browser errors 为空。
+  首次工具匹配因 prop 签名换行中止；修正后仍严格单匹配并保留实际实现。
+- 受测生产文件之后未改（SHA-256 前缀 control `40b649018ea4ddf5`、overlay
+  `ebbb04b6b938cd27`）。浏览器 controller 均关闭；Vite 命令 session 已退出
+  130，但 1430 仍响应且环境看不到所属 PID，已交 coordinator 处理，不将其
+  写成清场成功。临时 browser 证据尚未归档为可重启持久样本。
+- 本轮没有 native 构建、真实 provider、音频捕获或私有内容。仅以调度／
+  DOM 读取次数描述收益，不推算 CPU、FPS；native Wayland 输入区域与
+  compositor 仍需平台验收。
+- root 与独立名称修复组成冻结 `7ba8423b4c6d1d14b3f79df6a52be9e94988a9a0`，
+  单 worker 完整 146 文件／2,398 项（232.17s）、全量 lint、provider-copy、
+  带类型检查的 production build／图标验证和 17 文件 debugger 扫描均过。
+  后续仅补证据，无断言／超时变化。最终明确 net-enabled 查询仍看不到
+  1430 所属 PID，未终止其他进程，也未将清场记成成功。
+
 ## 2026-10-18：可靠迟到原文保持服务观察顺序
 
 - 基于 `d5664012c7d95d962799df5f2e8b9cfd6adcd038` 的 dirty debug 工作树，
