@@ -51,6 +51,28 @@
   后续原生验收重点为拖动时锁定、
   收起／沉浸、错误恢复，以及快速释放后重新开始；仍不宣称跨 IPC 请求 FIFO。
 
+## 2026-10-18：Android 硬停后的连接清理归属
+
+- 基于 `ffddc20` 的 dirty 修复工作树，原 JNI adapter 在 `a1fe131` 至该基线
+  间未改。范围见[设计记录](../plans/2026-10-18-android-stop-resource-ownership.md)。
+  本地 CONNECT／TLS／WebSocket 夹具经实际 Java JNI export 调用共享客户端；
+  无真实 provider、凭据、音频、capture 或外网连接。
+- 旧 native library 在服务端收到 `session.finish` 后硬停，9,621ms 后仍能回复
+  Ping，证实已取走 Connection 的 receive loop 没被清理；同配置修后立即
+  Close。direct stop、暂扣 setup ack 时 stop、正常 finish 保留末尾一对字幕
+  均通过，Close 在夹具关闭前检查。第二 handle 仅 create／poll，快照与句柄
+  隔离通过，不声称两个活跃网络连接的验收。
+- JNI 正式 Rust 14 项通过；runtime 完整低并发 797 项通过、既有 ignored 1，
+  含迁移后的 owner 10 项。首次默认并行运行有既有 xAI 50ms idle 观察用例
+  失败（796 passed／1 failed／1 ignored）；隔离及完整双线程复跑通过，
+  保留原测试和时限。移除 Stop join、把实际连接 key 改回重试 generation
+  的临时生产代码负对照均被正式回归拒绝。
+- owner 迁移仅 public 可见性和文档不同；真实共享库＋桌面 re-export 的
+  无 GTK 补充 driver 9 项通过。runtime／JNI strict Clippy、三个受影响
+  Rust manifest 的 fmt、架构及 diff 检查通过。四个维护中的 Kotlin/JNI
+  loopback 回归尚待 CI 真正编译执行；本机缺 Kotlin／Gradle 和桌面 GTK
+  开发依赖，实际设备、全平台 native 与 signed capture 未验收。
+
 ## 2026-10-18：共享会话与桌面快照分配
 
 - 调查基于 `10d726e`，提交前更新到 `58901be`，受测 shared／桌面源码未变。
