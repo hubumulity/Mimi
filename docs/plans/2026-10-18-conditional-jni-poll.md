@@ -98,5 +98,21 @@ key order may change; JSON fields, values, types and nulls remain equivalent.
 
 These are Rust snapshot-serialization measurements, excluding request parsing,
 JNI string conversion, Kotlin parsing, CPU, peak live memory and device latency.
-Earlier design-prototype numbers are not used as final results. Full canonical
-and platform checks remain separate gates for the eventual rebased revision.
+Earlier design-prototype numbers are not used as final results.
+
+## Combined revision acceptance
+
+The implementation was rebased onto the following-draft repair in main
+`7bf13f1fd33d39416cb6d6ca9545185bf5fa05c5`; its three production files are
+unchanged from the focused implementation. The no-argument canonical check on
+the combined tree passed core 95 plus four contracts, runtime 810 with one
+existing ignored test, JNI 24 and updater four, including format, strict shared
+Clippy and architecture checks. Desktop compilation then stopped at this host's
+missing `glib-2.0.pc`; full native and Android platform checks remain merge gates.
+
+An incremental combined native build produced SHA-256
+`ed597bce98ee1acc0849684556b57306bf7572c5c801048df5d39eaa3bcd8f5a`.
+All five actual Java JNI scenarios passed again: the conditional-response
+contract, graceful TLS tail, fatal TLS error and both old-library full-response
+fallback controls. The final main rebase preserved the complete tested tree;
+subsequent changes only record this evidence.

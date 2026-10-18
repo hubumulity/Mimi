@@ -6,7 +6,8 @@
 
 ## 2026-10-18：JNI 稳定快照轻量轮询与版本一致性
 
-- 基于 `8d60c7613a076c971a17b9f2ee7578ade4cef712` 的 dirty debug 工作树，
+- 最初基于 `8d60c7613a076c971a17b9f2ee7578ade4cef712`，随后组合并变基到
+  main `7bf13f1fd33d39416cb6d6ca9545185bf5fa05c5`，生产修改保持不变，
   范围见[设计记录](../plans/2026-10-18-conditional-jni-poll.md)。可选
   `sinceVersion` 相等时只返回版本与当前终态信息；旧 poll 及旧 native 回退
   保持 full。controller 与 revision 同锁发布、捕获后解锁再序列化；无响应缓存。
@@ -22,8 +23,13 @@
 - 实际 Java JNI 新协议旧库红／新库绿；本地TLS正常tail与fatal error都保留
   当前终态并关闭socket，旧库同请求返回full的两项兼容对照也过。纯Kotlin
   6项JUnit经项目固定编译器版本通过，Network adapter临时stub未调用；未冒充
-  完整Gradle/JNI suite。维护中的Kotlin/JNI与完整canonical留给精确提交CI；
+  完整Gradle/JNI suite。维护中的Kotlin/JNI与原生平台检查留给精确提交CI；
   协议夹具只走loopback，无真实provider、生产凭据或原生采集验收。
+- 组合树无参数canonical通过 core 95＋4契约、runtime 810＋既有ignored 1、
+  JNI 24、updater 4及共享fmt／strict Clippy／架构检查；桌面编译止于本机
+  缺少 `glib-2.0.pc`。组合SO固定SHA-256 `ed597bce…bcd8f5a`，实际Java
+  JNI协议、TLS正常tail、fatal error及旧库两项full回退共5场景重跑全过。
+  最终变基后的完整tree与该组合验证相同，仅随后补充本证据记录。
 
 ## 2026-10-18：历史页日期格式器复用
 
