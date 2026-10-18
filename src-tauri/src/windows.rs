@@ -1366,27 +1366,40 @@ impl OverlayWindowManager {
     ) {
         let (work_areas, primary_work_area) = available_work_areas(app);
         let mut state = overlay_state.lock().unwrap();
-        state.resize_drag = None;
-        state.resize_start = None;
-        if state.mode != OverlayMode::Expanded || state.session_error {
+        let Some(frame_to_persist) = finish_resize_drag(&mut state, &work_areas, primary_work_area)
+        else {
             return;
-        }
-        state.presentation_frame = None;
-        state.native_drag_start = None;
-        let minimum_height = state.minimum_height;
-        fit_user_frame_to_work_areas(
-            &mut state.user_frame,
-            &work_areas,
-            primary_work_area,
-            minimum_height,
-        );
-        let frame_to_persist = state.user_frame;
+        };
         let expected_state = OverlayApplySnapshot::from(&*state);
         drop(state);
         persist_user_frame_if_current(overlay_state, settings, frame_to_persist);
         Self::apply_if_geometry_current(app, overlay_state, expected_state, false);
         tracing::info!("resize end");
     }
+}
+
+fn finish_resize_drag(
+    state: &mut OverlayState,
+    work_areas: &[LogicalWorkArea],
+    primary_work_area: Option<LogicalWorkArea>,
+) -> Option<OverlayFrame> {
+    // Error presentation already cancels its resize owner. A later WebView
+    // cleanup must not replace the recovered Space frame or a native move.
+    state.resize_drag?;
+    state.resize_drag = None;
+    state.resize_start = None;
+    if state.mode != OverlayMode::Expanded || state.session_error {
+        return None;
+    }
+    state.presentation_frame = None;
+    state.native_drag_start = None;
+    fit_user_frame_to_work_areas(
+        &mut state.user_frame,
+        work_areas,
+        primary_work_area,
+        state.minimum_height,
+    );
+    Some(state.user_frame)
 }
 
 /// WebView `screenX`/`screenY` are not a stable global coordinate space on a
@@ -4002,10 +4015,111 @@ mod geometry_tests {
         });
         let queued_move = OverlayApplySnapshot::from(&state);
 
-        state.resize_drag = None;
-        state.resize_start = None;
+        assert_eq!(
+            finish_resize_drag(&mut state, &[WORK_AREA], Some(WORK_AREA)),
+            Some(frame(400.0, 700.0, 640.0, 136.0))
+        );
 
         assert!(!apply_snapshot_is_current(&state, queued_move));
+    }
+
+    #[test]
+    fn resize_end_without_an_active_gesture_preserves_new_presentation_and_move() {
+        let saved = frame(400.0, 300.0, 640.0, 400.0);
+        let mut state = state_with_frame(saved);
+        state.presentation_frame = Some(frame(-1200.0, 200.0, 640.0, 400.0));
+        state.native_drag_start = Some((-1200.0, 200.0));
+        let before = OverlayGeometrySnapshot::from(&state);
+
+        assert_eq!(finish_resize_drag(&mut state, &[], None), None);
+
+        assert_eq!(OverlayGeometrySnapshot::from(&state), before);
+    }
+
+    #[test]
+    fn resize_end_after_error_recovery_cannot_restore_an_old_saved_frame() {
+        let saved = frame(400.0, 300.0, 640.0, 400.0);
+        let followed = frame(-1200.0, 200.0, 640.0, 400.0);
+        let mut state = state_with_frame(saved);
+        state.presentation_frame = Some(followed);
+        state.resize_drag = Some(ResizeRegion::BottomRight);
+        state.resize_start = Some(ResizeGesture {
+            pointer: (-1200.0, 200.0),
+            frame: followed,
+            work_area: WORK_AREA,
+        });
+        state.set_session_error(true);
+        state.set_session_error(false);
+        let before = OverlayGeometrySnapshot::from(&state);
+
+        assert_eq!(
+            finish_resize_drag(&mut state, &[WORK_AREA], Some(WORK_AREA)),
+            None
+        );
+
+        assert_eq!(OverlayGeometrySnapshot::from(&state), before);
+        assert_eq!(state.effective_frame(), followed);
+        assert_eq!(state.user_frame, saved);
+    }
+
+    #[test]
+    fn resize_end_in_a_transient_mode_only_clears_the_resize_owner() {
+        for (mode, session_error) in [
+            (OverlayMode::Collapsed, false),
+            (OverlayMode::Expanded, true),
+        ] {
+            let saved = frame(400.0, 300.0, 640.0, 400.0);
+            let followed = frame(-1200.0, 200.0, 640.0, 400.0);
+            let mut state = state_with_frame(saved);
+            state.mode = mode;
+            state.session_error = session_error;
+            state.presentation_frame = Some(followed);
+            state.native_drag_start = Some((-1200.0, 200.0));
+            state.resize_drag = Some(ResizeRegion::BottomRight);
+            state.resize_start = Some(ResizeGesture {
+                pointer: (-1200.0, 200.0),
+                frame: followed,
+                work_area: WORK_AREA,
+            });
+
+            assert_eq!(
+                finish_resize_drag(&mut state, &[WORK_AREA], Some(WORK_AREA)),
+                None
+            );
+
+            assert_eq!(state.resize_drag, None);
+            assert_eq!(state.resize_start, None);
+            assert_eq!(state.mode, mode);
+            assert_eq!(state.session_error, session_error);
+            assert_eq!(state.presentation_frame, Some(followed));
+            assert_eq!(state.native_drag_start, Some((-1200.0, 200.0)));
+            assert_eq!(state.user_frame, saved);
+        }
+    }
+
+    #[test]
+    fn resize_end_fits_the_active_frame_and_a_second_end_is_a_noop() {
+        let mut state = state_with_frame(frame(1400.0, 900.0, 640.0, 400.0));
+        state.resize_drag = Some(ResizeRegion::BottomRight);
+        state.resize_start = Some(ResizeGesture {
+            pointer: (1400.0, 900.0),
+            frame: state.user_frame,
+            work_area: WORK_AREA,
+        });
+        let fitted = frame(872.0, 582.0, 640.0, 400.0);
+
+        assert_eq!(
+            finish_resize_drag(&mut state, &[WORK_AREA], Some(WORK_AREA)),
+            Some(fitted)
+        );
+        assert_eq!(state.user_frame, fitted);
+        assert_eq!(state.resize_drag, None);
+        assert_eq!(state.resize_start, None);
+        assert!(active_space_follow_allowed(&state));
+        assert_eq!(
+            finish_resize_drag(&mut state, &[WORK_AREA], Some(WORK_AREA)),
+            None
+        );
     }
 
     #[test]

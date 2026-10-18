@@ -10,6 +10,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 const originalRect = HTMLElement.prototype.getBoundingClientRect;
 const captureDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "setPointerCapture");
+const releaseDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "releasePointerCapture");
 let host: HTMLDivElement;
 let root: Root;
 let onResize: ReturnType<typeof vi.fn>;
@@ -20,6 +21,7 @@ beforeEach(() => {
   vi.stubGlobal("screen", { width: 1512, availHeight: 958 });
   HTMLElement.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 640, 482);
   HTMLElement.prototype.setPointerCapture = vi.fn();
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
   runtime.isTauri = false;
   invoke.mockReset().mockResolvedValue(undefined); onResize = vi.fn();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -29,21 +31,19 @@ afterEach(async () => {
   HTMLElement.prototype.getBoundingClientRect = originalRect;
   if (captureDescriptor) Object.defineProperty(HTMLElement.prototype, "setPointerCapture", captureDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, "setPointerCapture");
+  if (releaseDescriptor) Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", releaseDescriptor);
+  else Reflect.deleteProperty(HTMLElement.prototype, "releasePointerCapture");
   vi.unstubAllGlobals();
 });
-async function mount(minimumHeight?: number) {
-  await act(async () => root.render(<ResizeHandles disabled={false} onResize={onResize} minimumHeight={minimumHeight} />));
+async function mount(minimumHeight?: number, disabled = false) {
+  await act(async () => root.render(<ResizeHandles disabled={disabled} onResize={onResize} minimumHeight={minimumHeight} />));
 }
 function topHandle(): HTMLElement {
   return [...host.querySelectorAll<HTMLElement>("div")]
     .find(node => node.style.cursor === "ns-resize" && node.style.top === "0px")!;
 }
 async function pointer(type: string, clientY: number) {
-  await act(async () => {
-    const event = new MouseEvent(type, { bubbles: true, clientX: 400, clientY });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    topHandle().dispatchEvent(event);
-  });
+  await dispatchPointer(topHandle(), type, { clientX: 400, clientY });
 }
 
 function cornerHandle(vertical: "top" | "bottom", horizontal: "left" | "right"): HTMLElement {
@@ -53,10 +53,14 @@ function cornerHandle(vertical: "top" | "bottom", horizontal: "left" | "right"):
 }
 
 async function cornerPointer(handle: HTMLElement, type: string, clientX: number, clientY: number) {
+  await dispatchPointer(handle, type, { clientX, clientY, screenX: clientX + 400, screenY: clientY + 300 });
+}
+
+async function dispatchPointer(target: EventTarget, type: string, init: MouseEventInit = {}, pointerId = 1, isPrimary = true) {
   await act(async () => {
-    const event = new MouseEvent(type, { bubbles: true, clientX, clientY, screenX: clientX + 400, screenY: clientY + 300 });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    handle.dispatchEvent(event);
+    const event = new MouseEvent(type, { bubbles: true, buttons: type === "pointerdown" || type === "pointermove" ? 1 : 0, ...init });
+    Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: isPrimary } });
+    target.dispatchEvent(event);
   });
 }
 
@@ -121,4 +125,160 @@ it("still forwards the original native corner name and screen positions without 
     ["resize_end"],
   ]);
   expect(onResize).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("finishes a capture-lost drag without forwarding later hover movement (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await dispatchPointer(handle, "lostpointercapture");
+  await cornerPointer(handle, "pointermove", 450, 330);
+  expect(onResize).not.toHaveBeenCalled();
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(native ? ["resize_start", "resize_end"] : []);
+  expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledWith(1);
+});
+
+it.each([false, true])("finishes when the owning pointer moves with its primary button released (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await dispatchPointer(handle, "pointermove", { buttons: 0, clientX: 450, clientY: 330 });
+  await cornerPointer(handle, "pointermove", 500, 360);
+  expect(onResize).not.toHaveBeenCalled();
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(native ? ["resize_start", "resize_end"] : []);
+});
+
+it.each([false, true])("cleans up an active drag on disable and permits a fresh drag after reenable (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await mount(undefined, true);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  await cornerPointer(handle, "pointerdown", 450, 330);
+  expect(onResize).not.toHaveBeenCalled();
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(native ? ["resize_start", "resize_end"] : []);
+  await mount();
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  if (native) expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_end", "resize_start", "resize_move"]);
+  else expect(onResize).toHaveBeenCalledExactlyOnceWith(590, 452, 450, 330);
+});
+
+it.each([false, true])("cleans up capture and native state before handles unmount (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  await cornerPointer(cornerHandle("top", "left"), "pointerdown", 400, 300);
+  await act(async () => root.render(null));
+  await dispatchPointer(window, "pointerup");
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1);
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(native ? ["resize_start", "resize_end"] : []);
+});
+
+it.each([false, true].flatMap(native => ["pointerup", "pointercancel", "blur"].map(type => ({ native, type }))))("ends drags on window $type when capture is unavailable (native=$native)", async ({ native, type }) => {
+  runtime.isTauri = native;
+  HTMLElement.prototype.setPointerCapture = vi.fn(() => { throw new Error("capture unavailable"); });
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  if (type === "blur") await act(async () => window.dispatchEvent(new Event(type)));
+  else await dispatchPointer(window, type);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  expect(onResize).not.toHaveBeenCalled();
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(native ? ["resize_start", "resize_end"] : []);
+});
+
+it.each([false, true])("keeps a drag owned by its original pointer and ignores other-pointer releases (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  // Another device can have its own primary pointer; it still cannot take over.
+  await dispatchPointer(handle, "pointerdown", { clientX: 800, clientY: 800 }, 2);
+  await dispatchPointer(handle, "pointermove", { clientX: 800, clientY: 800 }, 2);
+  await dispatchPointer(window, "pointerup", {}, 2, false);
+  await dispatchPointer(window, "pointercancel", {}, 2, false);
+  await dispatchPointer(handle, "lostpointercapture", {}, 2, false);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  if (native) expect(invoke.mock.calls).toEqual([
+    ["resize_start", { region: "topLeft", x: 800, y: 600 }],
+    ["resize_move", { x: 850, y: 630 }],
+  ]);
+  else expect(onResize).toHaveBeenCalledExactlyOnceWith(590, 452, 450, 330);
+  await cornerPointer(handle, "pointerup", 450, 330);
+});
+
+it.each([false, true])("ignores right-click and nonprimary starts (native=%s)", async native => {
+  runtime.isTauri = native;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await dispatchPointer(handle, "pointerdown", { button: 2, buttons: 2 });
+  await cornerPointer(handle, "pointermove", 450, 330);
+  await dispatchPointer(handle, "pointerdown", {}, 2, false);
+  await dispatchPointer(handle, "pointermove", { clientX: 450, clientY: 330 }, 2, false);
+  expect(invoke).not.toHaveBeenCalled();
+  expect(onResize).not.toHaveBeenCalled();
+  expect(HTMLElement.prototype.setPointerCapture).not.toHaveBeenCalled();
+});
+
+it.each(["pointerup", "pointercancel", "blur"])("ends a native drag once across %s, capture loss, disable and unmount", async type => {
+  runtime.isTauri = true;
+  await mount();
+  const handle = cornerHandle("top", "left");
+  HTMLElement.prototype.releasePointerCapture = vi.fn(() => {
+    const event = new MouseEvent("lostpointercapture", { bubbles: true });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    handle.dispatchEvent(event);
+  });
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  if (type === "blur") await act(async () => window.dispatchEvent(new Event(type)));
+  else await dispatchPointer(window, type);
+  await dispatchPointer(handle, "lostpointercapture");
+  await dispatchPointer(window, "pointerup");
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  await mount(undefined, true);
+  await act(async () => root.render(null));
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_end"]);
+  expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1);
+});
+
+it("does not notify native resize_end for ordinary capture loss without a resize owner", async () => {
+  runtime.isTauri = true;
+  await mount();
+  await dispatchPointer(cornerHandle("top", "left"), "lostpointercapture");
+  await dispatchPointer(window, "pointerup");
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it.each(["resize_start", "resize_move", "resize_end"])("keeps cleanup safe when %s throws synchronously", async failedCommand => {
+  runtime.isTauri = true;
+  invoke.mockImplementation((command: string) => {
+    if (command === failedCommand) throw new Error("bridge unavailable");
+    return Promise.resolve();
+  });
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  await cornerPointer(handle, "pointerup", 450, 330);
+  await dispatchPointer(handle, "lostpointercapture");
+  await act(async () => root.render(null));
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_move", "resize_end"]);
+  expect(HTMLElement.prototype.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1);
+});
+
+it("contains rejected IPC promises while retaining a single cleanup", async () => {
+  runtime.isTauri = true;
+  invoke.mockRejectedValue(new Error("bridge unavailable"));
+  await mount();
+  const handle = cornerHandle("top", "left");
+  await cornerPointer(handle, "pointerdown", 400, 300);
+  await cornerPointer(handle, "pointermove", 450, 330);
+  await cornerPointer(handle, "pointerup", 450, 330);
+  await dispatchPointer(handle, "lostpointercapture");
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["resize_start", "resize_move", "resize_end"]);
 });
