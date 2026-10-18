@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Select } from "./Select";
@@ -55,6 +55,56 @@ const partlyUnavailable = [
 async function choiceKey(key: string) {
   await act(() => trigger().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
 }
+
+it("builds option rows only while open, including after closing a filtered menu", async () => {
+  const unselectedLabel = vi.fn(() => "Another application");
+  const choices = [{ value: "selected", label: "Selected application" },
+    ...Array.from({ length: 40 }, (_, index) => ({ value: `app-${index}`, get label() { return unselectedLabel(); } }))];
+  const show = () => root.render(<Select label="Applications" value="selected" options={choices} searchLabel="Search" onChange={onChange} />);
+  await act(show);
+  expect(unselectedLabel).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="option"]')).toBeNull();
+
+  await act(() => trigger().click());
+  expect(document.querySelectorAll('[role="option"]')).toHaveLength(41);
+  expect(unselectedLabel).toHaveBeenCalled();
+  const input = document.querySelector<HTMLInputElement>(".mimi-select__search")!;
+  await act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Selected");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
+  await act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  unselectedLabel.mockClear();
+  await act(show);
+  expect(unselectedLabel).not.toHaveBeenCalled();
+  expect(trigger().textContent).toBe("Selected application");
+  expect(trigger().getAttribute("aria-expanded")).toBe("false");
+});
+
+it("ignores repeated pointer movement within one row while preserving pointer and keyboard selection", async () => {
+  const committed = vi.fn();
+  await act(() => root.render(<Profiler id="select" onRender={committed}>
+    <Select label="Choice" value="alpha" options={partlyUnavailable} onChange={onChange} />
+  </Profiler>));
+  await act(() => trigger().click());
+  const beta = document.querySelectorAll<HTMLElement>('[role="option"]')[3];
+  await act(() => beta.dispatchEvent(new Event("pointermove", { bubbles: true })));
+  expect(document.querySelector('[data-active="true"]')?.textContent).toBe("Beta");
+  committed.mockClear();
+  for (let index = 0; index < 20; index++) {
+    await act(() => beta.dispatchEvent(new Event("pointermove", { bubbles: true })));
+  }
+  expect(committed).not.toHaveBeenCalled();
+  const alpha = document.querySelectorAll<HTMLElement>('[role="option"]')[1];
+  await act(() => alpha.dispatchEvent(new Event("pointermove", { bubbles: true })));
+  expect(committed).toHaveBeenCalledOnce();
+  expect(document.querySelector('[data-active="true"]')?.textContent).toBe("Alpha");
+  await choiceKey("ArrowDown");
+  expect(document.querySelector('[data-active="true"]')?.textContent).toBe("Beta");
+  await choiceKey("Enter");
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("beta");
+});
 
 it("keeps decorative option icons beside unchanged labels and preserves keyboard typeahead", async () => {
   await act(() => root.render(<Select label="文字翻译" value="default" options={translatorOptions} onChange={onChange} />));

@@ -64,10 +64,11 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
   const [popup, setPopup] = useState<MenuStyle | null>(null);
   const [query, setQuery] = useState("");
   const searchable = searchLabel !== undefined;
+  const open = popup !== null && !disabled;
   const visible = useMemo(() => {
-    const text = searchable ? query.trim().toLocaleLowerCase() : "";
-    return options.filter(option => !text || option.label.toLocaleLowerCase().includes(text) || option.value.toLocaleLowerCase().includes(text));
-  }, [options, query, searchable]);
+    const text = open && searchable ? query.trim().toLocaleLowerCase() : "";
+    return text ? options.filter(option => option.label.toLocaleLowerCase().includes(text) || option.value.toLocaleLowerCase().includes(text)) : options;
+  }, [options, query, searchable, open]);
   const selected = options.findIndex((option) => option.value === value);
   const selectedLabel = options[selected]?.label ?? valueLabel ?? value;
   const selectedIcon = selected >= 0 ? options[selected].icon : valueIcon;
@@ -81,7 +82,6 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
     return nextEnabledOption(visible, Math.min(visible.length - 1, preferred) - 1, 1);
   };
   const active = resolveCursor(cursor);
-  const open = popup !== null && !disabled;
 
   // A native connection/busy transition closes the current interaction. Keep
   // it closed after unlocking until the user explicitly opens the picker.
@@ -90,6 +90,8 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
 
   function setActive(index: number | ((previous: number) => number), reveal = true) {
     revealActive.current = reveal;
+    // Keyboard intent also reveals an unchanged active row after manual
+    // scrolling. Repeated pointer movement is filtered at the row instead.
     setCursor(previous => ({
       selection: value,
       query,
@@ -262,13 +264,17 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
     setCursor({ selection: value, query: text, index: 0 });
   }
 
-  const rows = visible.map((option, index) => (
+  const rows = open ? visible.map((option, index) => (
     <div key={option.value} id={`${id}-${index}`} ref={node => {
       if (node) optionNodes.current.set(option.value, node);
       else optionNodes.current.delete(option.value);
     }} className="mimi-select__option" role="option"
       aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-active={index === active}
-      onPointerMove={() => { if (!option.disabled) setActive(index, false); }} onPointerDown={(event) => event.preventDefault()}
+      onPointerMove={() => {
+        if (option.disabled) return;
+        revealActive.current = false;
+        if (cursor.selection !== value || cursor.query !== query || cursor.index !== index) setActive(index, false);
+      }} onPointerDown={(event) => event.preventDefault()}
       onClick={() => choose(index)}>
       <span className="mimi-select__content">
         {option.icon && <span className="mimi-select__icon" aria-hidden="true">{option.icon}</span>}
@@ -277,7 +283,7 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
         </span>
       </span>{option.value === value && <Icon name="checkmark" />}
     </div>
-  ));
+  )) : null;
   const activeId = open && active >= 0 ? `${id}-${active}` : undefined;
 
   return (

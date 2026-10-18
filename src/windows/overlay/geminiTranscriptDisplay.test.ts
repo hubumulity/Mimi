@@ -21,4 +21,25 @@ describe("Gemini display-only sentence breaks", () => {
     expect(format('This is a long synthetic "sentence." Next.', 20)).toBe('This is a long synthetic "sentence."\nNext.');
     expect(format("translation is very very good.")).toBe("translation is very very good.");
   });
+
+  it.each([false, true])("scans long runs of Unicode closing punctuation at most linearly (after period=%s)", afterPeriod => {
+    const closers = '”’"\'」』）)】》'.repeat(800);
+    const raw = afterPeriod ? `Synthetic sentence.${closers}\tNext 😀` : closers;
+    const expected = afterPeriod ? `Synthetic sentence.${closers}\nNext 😀` : closers;
+    const closerPattern = /^[”’"'」』）)】》]$/u.source;
+    const test = RegExp.prototype.test;
+    let comparisons = 0;
+    try {
+      RegExp.prototype.test = function (value: string) {
+        if (this.source === closerPattern && ++comparisons > raw.length * 3) {
+          throw new Error("Repeated closing punctuation exceeded its linear scan budget");
+        }
+        return test.call(this, value);
+      };
+      expect(format(raw)).toBe(expected);
+    } finally {
+      RegExp.prototype.test = test;
+    }
+    expect(comparisons).toBeLessThanOrEqual(raw.length * 3);
+  });
 });

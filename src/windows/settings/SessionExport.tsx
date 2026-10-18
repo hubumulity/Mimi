@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Switch } from "../../components/Switch";
 import { effectiveUiLanguage, I18N } from "../../lib/i18n";
@@ -14,6 +14,7 @@ import {
   sessionHistoryDelete,
 } from "../../lib/ipc";
 import { useStore } from "../../lib/store";
+import { useDocumentVisibility } from "../../lib/useDocumentVisibility";
 import type { AudioSource, SessionArchiveState, SessionHistoryItem, SettingsDraft, TranscriptPage } from "../../lib/types";
 import {
   InlineFeedback,
@@ -26,6 +27,8 @@ import { SettingsConfirmation } from "./DestructiveConfirmation";
 import { useSettingsToast } from "./useSettingsToast";
 
 export function SessionExport({ visible }: { visible: boolean }) {
+  const documentVisible = useDocumentVisibility();
+  const pageVisible = visible && documentVisible;
   const active = useStore((state) => state.session.isActive);
   const retainHistory = useStore(
     (state) => state.settings.retainSessionHistory,
@@ -34,7 +37,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const audioInput = useStore((state) => state.settings.audioInput);
   const saveSettings = useStore((state) => state.saveSettings);
   const [archive, setArchive] = useState<SessionArchiveState>();
-  const [transcript, setTranscript] = useState<TranscriptPage>();
+  const [transcript, setTranscript] = useState<{ owner: symbol | string; page: TranscriptPage }>();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [transcriptError, setTranscriptError] = useState(false);
@@ -58,12 +61,25 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const audioInFlight = useRef(false);
   const interaction = useRef(0);
   const selectedHistoryId = useRef<string | null>(null);
+  // Counts can match across a reset. Current reads belong to an exact local
+  // lifecycle, while saved-history reads remain independent of live capture.
+  const archiveContext = useMemo(() => Symbol(`${active}:${retainHistory}`), [active, retainHistory]);
+  const transcriptContext = selectedId ?? archiveContext;
+  const transcriptEnabled = selectedId !== null || retainHistory;
+  const [renderedArchiveContext, setRenderedArchiveContext] = useState(archiveContext);
+  if (renderedArchiveContext !== archiveContext) {
+    setRenderedArchiveContext(archiveContext);
+    if (selectedId === null) {
+      setTranscript(undefined);
+      setTranscriptError(false);
+    }
+  }
 
   const selected = history.find((item) => item.id === selectedId);
   const audioSources = selected ? selected.audioSources ?? ["system" as const] : archive?.audioSources ?? ["system" as const];
   const selectedAudioSource = audioSources.includes(recordingSource) ? recordingSource : audioSources[0];
   const availableCount = selectedId ? (selected?.count ?? 0) : (archive?.transcriptCount ?? 0);
-  const displayedTranscript = availableCount ? transcript : undefined;
+  const displayedTranscript = availableCount && transcript?.owner === transcriptContext ? transcript.page : undefined;
 
   function selectHistory(id: string | null) {
     if (id === selectedHistoryId.current) return;
@@ -116,7 +132,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (!visible || !isTauri) return;
+    if (!pageVisible || !isTauri) return;
     const current = monitorSessionArchive(
       sessionArchiveState,
       (state) => {
@@ -130,18 +146,18 @@ export function SessionExport({ visible }: { visible: boolean }) {
       current.stop();
       if (monitor.current === current) monitor.current = null;
     };
-  }, [visible]);
+  }, [pageVisible]);
 
   useEffect(() => {
     interaction.current += 1;
-  }, [visible]);
+  }, [pageVisible]);
 
   useEffect(() => {
     monitor.current?.refresh();
   }, [active, retainHistory, recordAudio]);
 
   useEffect(() => {
-    if (!visible || !isTauri) return;
+    if (!pageVisible || !isTauri) return;
     const request = ++historyRequest.current;
     void sessionHistoryList().then(
       (items) => {
@@ -152,14 +168,14 @@ export function SessionExport({ visible }: { visible: boolean }) {
       () => { if (request === historyRequest.current) setHistoryError(true); },
     );
     return () => { historyRequest.current += 1; };
-  }, [visible, active]);
+  }, [pageVisible, active]);
 
   useEffect(() => {
     return () => { if (audioUrl) URL.revokeObjectURL(audioUrl); };
   }, [audioUrl]);
 
   useEffect(() => {
-    if (!visible || !isTauri || !availableCount) {
+    if (!pageVisible || !isTauri || !availableCount || !transcriptEnabled) {
       transcriptRequest.current += 1;
       return;
     }
@@ -168,7 +184,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
       void (selectedId ? sessionHistoryPage(selectedId, query, page) : sessionTranscriptPage(query, page)).then(
         (result) => {
           if (request !== transcriptRequest.current) return;
-          setTranscript(result);
+          setTranscript({ owner: transcriptContext, page: result });
           setTranscriptError(false);
           if (result.page !== page) setPage(result.page);
         },
@@ -181,7 +197,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
       transcriptRequest.current += 1;
       clearTimeout(timer);
     };
-  }, [visible, availableCount, selectedId, query, page]);
+  }, [pageVisible, availableCount, selectedId, query, page, transcriptEnabled, transcriptContext]);
 
   async function perform(action: () => Promise<"saved" | "cleared" | null>, failureMessage = I18N.settings.sessionExportFailed) {
     if (!isTauri || operation.current || useStore.getState().session.isActive)
