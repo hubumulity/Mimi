@@ -361,6 +361,22 @@ it("does not glide a new line that still fits the compact lane", async () => {
   transforms.mockRestore();
 });
 
+it("keeps the first line in place when a chunk crosses from one line to five", async () => {
+  viewportHeight = 80;
+  measuredHeight = 24;
+  const timeline = await render([{ ...confirmed, source: null }], 18, true);
+  const lane = timeline.querySelector<HTMLElement>("[aria-label]:not([role])")!;
+  const inner = lane.firstElementChild as HTMLElement;
+  const transforms = vi.spyOn(inner.style, "transform", "set");
+  measuredHeight = 120;
+  await act(async () => { resize.forEach(callback => callback()); });
+  expect(lane.style.height).toBe("72px");
+  // bottom:0 moves the first line up 48px. Restoring 96px (the full growth)
+  // would instead jump it down 48px and clip the newly arrived lines.
+  expect(transforms.mock.calls.map(([value]) => value)).toEqual(["translateY(48px)", "translateY(0)"]);
+  transforms.mockRestore();
+});
+
 it("stops an active glide and keeps further growth still when motion is disabled", async () => {
   viewportHeight = 60;
   measuredHeight = 48;

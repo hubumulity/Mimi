@@ -137,6 +137,27 @@ describe("mergeSettingsSnapshot", () => {
 });
 
 describe("SettingsSaveCoordinator", () => {
+  it("previews a font choice immediately, preserves it across another edit and rolls back a failed reset", async () => {
+    const coordinator = new SettingsSaveCoordinator();
+    const original = { ...SETTINGS, subtitleFontFamily: "Original Font" };
+    let current: SettingsSnapshot = original;
+    let finish!: () => void;
+    const save = coordinator.save(current, { subtitleFontFamily: "Selected Font" }, () => new Promise(resolve => {
+      finish = () => resolve({ ...original, subtitleFontFamily: "Selected Font" });
+    }), snapshot => { current = snapshot; });
+    expect(current.subtitleFontFamily).toBe("Selected Font");
+    await Promise.resolve();
+    finish();
+    await save;
+    await coordinator.save(current, { fontSize: 20 }, async () => ({ ...current, fontSize: 20 }), snapshot => { current = snapshot; });
+    expect(current.subtitleFontFamily).toBe("Selected Font");
+
+    const reset = coordinator.save(current, { subtitleFontFamily: "" }, async () => { throw new Error("save failed"); }, snapshot => { current = snapshot; });
+    expect(current.subtitleFontFamily).toBe("");
+    await expect(reset).rejects.toThrow("save failed");
+    expect(current).toMatchObject({ subtitleFontFamily: "Selected Font", fontSize: 20 });
+  });
+
   it("rolls the latest optimistic draft back when persistence fails", async () => {
     const coordinator = new SettingsSaveCoordinator();
     let current = SETTINGS;

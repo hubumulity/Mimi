@@ -218,6 +218,9 @@ pub enum OverlayMode {
 #[derive(Debug)]
 pub struct OverlayState {
     pub mode: OverlayMode,
+    /// Distinguishes repeated visits to the same mode, so an interrupted
+    /// animation cannot become current again after another collapse/expand.
+    mode_revision: u64,
     /// Current subtitle requirement; part of every queued geometry transaction.
     minimum_height: f64,
     /// Temporary readable, interactive presentation; never persisted.
@@ -250,6 +253,7 @@ pub struct OverlayState {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OverlayApplySnapshot {
     mode: OverlayMode,
+    mode_revision: u64,
     session_error: bool,
     minimum_height: f64,
     user_frame: OverlayFrame,
@@ -269,6 +273,7 @@ impl From<&OverlayState> for OverlayApplySnapshot {
     fn from(state: &OverlayState) -> Self {
         Self {
             mode: state.mode,
+            mode_revision: state.mode_revision,
             session_error: state.session_error,
             minimum_height: state.minimum_height,
             user_frame: state.user_frame,
@@ -496,6 +501,7 @@ impl OverlayState {
         fit_user_frame_to_screen(app, &mut user_frame, minimum_height);
         Self {
             mode: OverlayMode::Expanded,
+            mode_revision: 0,
             minimum_height,
             user_frame,
             presentation_frame: None,
@@ -1095,61 +1101,26 @@ impl OverlayWindowManager {
     ) {
         let (mut state, observed_frame, work_areas, primary_work_area) =
             lock_overlay_after_native_geometry_read(app, overlay_state);
-        let manual_drag =
-            reconcile_native_drag(&mut state, observed_frame, &work_areas, primary_work_area);
-        let frame_to_persist = manual_drag.promoted.then_some(state.user_frame);
-        let new_mode = if collapsed {
-            OverlayMode::Collapsed
-        } else {
-            OverlayMode::Expanded
-        };
-        if state.mode == new_mode {
-            let expected_state = OverlayApplySnapshot::from(&*state);
-            drop(state);
-            if let Some(frame) = frame_to_persist {
-                persist_user_frame_if_current(overlay_state, settings, frame);
-            }
-            if manual_drag.fit_changed {
-                Self::apply_if_geometry_current(app, overlay_state, expected_state, false);
-            }
-            return;
-        }
-        if collapsed {
-            // Adopt the exact current window frame before shrinking so an
-            // expand later restores precisely what the user saw. A temporary
-            // active-Space frame is already exact but must not become saved
-            // merely because the user collapsed the surface.
-            if should_sync_before_collapse(manual_drag, &state) {
-                if let Some(observed_frame) = observed_frame {
-                    state.user_frame = observed_frame;
-                    state.user_frame.height = state.user_frame.height.max(state.minimum_height);
-                }
-            }
-        } else if !state.session_error {
-            // The screen configuration may have changed while collapsed;
-            // keep the expanded frame on the visible screen.
-            let minimum_height = state.minimum_height;
-            if let Some(frame) = state.presentation_frame.as_mut() {
-                fit_user_frame_to_work_areas(frame, &work_areas, primary_work_area, minimum_height);
-            } else {
-                fit_user_frame_to_work_areas(
-                    &mut state.user_frame,
-                    &work_areas,
-                    primary_work_area,
-                    minimum_height,
-                );
-            }
-        }
-        state.mode = new_mode;
-        if state.session_error {
-            state.native_drag_start = None;
-        }
+        let transition = transition_overlay_mode(
+            &mut state,
+            observed_frame,
+            &work_areas,
+            primary_work_area,
+            collapsed,
+        );
         let expected_state = OverlayApplySnapshot::from(&*state);
         drop(state);
-        if let Some(frame) = frame_to_persist {
+        if let Some(frame) = transition.frame_to_persist {
             persist_user_frame_if_current(overlay_state, settings, frame);
         }
-        Self::apply_if_geometry_current(app, overlay_state, expected_state, true);
+        if transition.geometry_changed {
+            Self::apply_if_geometry_current(
+                app,
+                overlay_state,
+                expected_state,
+                transition.mode_changed,
+            );
+        }
     }
 
     /// Handles OS Moved/Resized events for the overlay. Never persists
@@ -1986,14 +1957,16 @@ fn promote_observed_user_frame(state: &mut OverlayState, observed: OverlayFrame)
         }
         return;
     }
+    // start_dragging only moves the window; custom resize gestures own size.
+    // Its observed dimensions may still belong to an expansion animation.
+    let native_move = state.native_drag_start.take().is_some();
     state.presentation_frame = None;
-    state.native_drag_start = None;
     match state.mode {
-        OverlayMode::Expanded => {
+        OverlayMode::Expanded if !native_move => {
             state.user_frame = observed;
             state.user_frame.height = state.user_frame.height.max(state.minimum_height);
         }
-        OverlayMode::Collapsed => {
+        OverlayMode::Expanded | OverlayMode::Collapsed => {
             state.user_frame.x = observed.x;
             state.user_frame.y = observed.y;
         }
@@ -2007,6 +1980,60 @@ fn promote_observed_user_frame(state: &mut OverlayState, observed: OverlayFrame)
 struct NativeDragReconcile {
     promoted: bool,
     fit_changed: bool,
+}
+
+#[derive(Debug)]
+struct OverlayModeTransition {
+    mode_changed: bool,
+    geometry_changed: bool,
+    frame_to_persist: Option<OverlayFrame>,
+}
+
+/// Native observations reconcile explicit movement only. An unmarked size can
+/// be an intermediate animation frame and must never replace the expanded
+/// target when the user reverses a transition.
+fn transition_overlay_mode(
+    state: &mut OverlayState,
+    observed: Option<OverlayFrame>,
+    work_areas: &[LogicalWorkArea],
+    primary_work_area: Option<LogicalWorkArea>,
+    collapsed: bool,
+) -> OverlayModeTransition {
+    let manual_drag = reconcile_native_drag(state, observed, work_areas, primary_work_area);
+    let frame_to_persist = manual_drag.promoted.then_some(state.user_frame);
+    let new_mode = if collapsed {
+        OverlayMode::Collapsed
+    } else {
+        OverlayMode::Expanded
+    };
+    let mode_changed = state.mode != new_mode;
+    if mode_changed {
+        if !collapsed && !state.session_error {
+            // The screen configuration may have changed while collapsed;
+            // keep the expanded frame on the visible screen.
+            let minimum_height = state.minimum_height;
+            if let Some(frame) = state.presentation_frame.as_mut() {
+                fit_user_frame_to_work_areas(frame, work_areas, primary_work_area, minimum_height);
+            } else {
+                fit_user_frame_to_work_areas(
+                    &mut state.user_frame,
+                    work_areas,
+                    primary_work_area,
+                    minimum_height,
+                );
+            }
+        }
+        state.mode = new_mode;
+        state.mode_revision = state.mode_revision.wrapping_add(1);
+        if state.session_error {
+            state.native_drag_start = None;
+        }
+    }
+    OverlayModeTransition {
+        mode_changed,
+        geometry_changed: mode_changed || manual_drag.fit_changed,
+        frame_to_persist,
+    }
 }
 
 fn reconcile_native_drag(
@@ -2080,10 +2107,6 @@ fn positions_approximately_equal(left: (f64, f64), right: (f64, f64)) -> bool {
 
 fn native_drag_changed_position(start: (f64, f64), observed: &OverlayFrame) -> bool {
     !positions_approximately_equal(start, (observed.x, observed.y))
-}
-
-fn should_sync_before_collapse(reconciliation: NativeDragReconcile, state: &OverlayState) -> bool {
-    !state.session_error && !reconciliation.promoted && state.presentation_frame.is_none()
 }
 
 fn frames_approximately_equal(left: &OverlayFrame, right: &OverlayFrame) -> bool {
@@ -3238,6 +3261,7 @@ mod geometry_tests {
     fn state_with_frame(user_frame: OverlayFrame) -> OverlayState {
         OverlayState {
             mode: OverlayMode::Expanded,
+            mode_revision: 0,
             minimum_height: SubtitleOverlayMetrics::MINIMUM_HEIGHT,
             user_frame,
             presentation_frame: None,
@@ -3283,10 +3307,6 @@ mod geometry_tests {
         assert!(state.resize_drag.is_none());
         assert!(state.native_drag_start.is_none());
         assert!(!active_space_follow_allowed(&state));
-        assert!(!should_sync_before_collapse(
-            NativeDragReconcile::default(),
-            &state
-        ));
         assert_eq!(state.effective_frame(), followed);
         assert!(state.set_session_error(false));
         assert_eq!(state.presentation_frame, Some(followed));
@@ -3389,15 +3409,24 @@ mod geometry_tests {
     }
 
     #[test]
-    fn ordinary_drag_reconciliation_still_adopts_and_fits_the_complete_frame() {
+    fn ordinary_native_drag_reconciles_position_without_adopting_observed_dimensions() {
         let mut state = state_with_frame(frame(400.0, 300.0, 640.0, 136.0));
         state.native_drag_start = Some((400.0, 300.0));
         let moved = frame(1200.0, 400.0, 700.0, 200.0);
         let result = reconcile_native_drag(&mut state, Some(moved), &[WORK_AREA], Some(WORK_AREA));
         assert!(result.promoted);
         assert!(result.fit_changed);
-        assert_eq!(state.user_frame, frame(812.0, 400.0, 700.0, 200.0));
+        assert_eq!(state.user_frame, frame(872.0, 400.0, 640.0, 136.0));
         assert!(state.native_drag_start.is_none());
+    }
+
+    #[test]
+    fn resize_observation_without_a_native_move_still_updates_the_complete_frame() {
+        let mut state = state_with_frame(frame(400.0, 300.0, 640.0, 136.0));
+        let resized = frame(400.0, 300.0, 700.0, 200.0);
+
+        assert!(adopt_observed_frame(&mut state, resized));
+        assert_eq!(state.user_frame, resized);
     }
 
     #[test]
@@ -3855,6 +3884,103 @@ mod geometry_tests {
     }
 
     #[test]
+    fn interrupted_expansion_keeps_the_saved_frame_and_cancels_the_earlier_animation() {
+        let saved = frame(400.0, 300.0, 659.0, 328.0);
+        let collapsed = frame(400.0, 300.0, 280.0, 54.0);
+        let halfway = frame(400.0, 300.0, 469.5, 191.0);
+        let mut state = state_with_frame(saved);
+        transition_overlay_mode(&mut state, Some(saved), &[WORK_AREA], Some(WORK_AREA), true);
+        transition_overlay_mode(
+            &mut state,
+            Some(collapsed),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            false,
+        );
+        let earlier_expansion = OverlayApplySnapshot::from(&state);
+
+        let recollapse = transition_overlay_mode(
+            &mut state,
+            Some(halfway),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            true,
+        );
+        assert!(recollapse.mode_changed);
+        assert!(recollapse.geometry_changed);
+        assert!(recollapse.frame_to_persist.is_none());
+        assert_eq!(state.user_frame, saved);
+        assert_eq!(state.mode, OverlayMode::Collapsed);
+
+        transition_overlay_mode(
+            &mut state,
+            Some(collapsed),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            false,
+        );
+        assert_eq!(state.effective_frame(), saved);
+        assert_eq!(state.mode, earlier_expansion.mode);
+        // The mode and complete frame now match the earlier expansion, but its
+        // queued steps must stay cancelled instead of interleaving with this one.
+        assert!(!apply_snapshot_is_current(&state, earlier_expansion));
+    }
+
+    #[test]
+    fn repeated_mode_requests_do_not_cancel_the_current_animation() {
+        let saved = frame(400.0, 300.0, 659.0, 328.0);
+        let mut state = state_with_frame(saved);
+        transition_overlay_mode(&mut state, Some(saved), &[WORK_AREA], Some(WORK_AREA), true);
+        let animation = OverlayApplySnapshot::from(&state);
+
+        let repeated = transition_overlay_mode(
+            &mut state,
+            Some(frame(400.0, 300.0, 469.5, 191.0)),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            true,
+        );
+        assert!(!repeated.geometry_changed);
+        assert!(apply_snapshot_is_current(&state, animation));
+        assert_eq!(state.user_frame, saved);
+    }
+
+    #[test]
+    fn native_move_during_expansion_preserves_the_saved_size_when_recollapsed() {
+        let saved = frame(400.0, 300.0, 659.0, 328.0);
+        let mut state = state_with_frame(saved);
+        transition_overlay_mode(&mut state, Some(saved), &[WORK_AREA], Some(WORK_AREA), true);
+        transition_overlay_mode(
+            &mut state,
+            Some(frame(400.0, 300.0, 280.0, 54.0)),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            false,
+        );
+        state.native_drag_start = Some((saved.x, saved.y));
+
+        let recollapse = transition_overlay_mode(
+            &mut state,
+            Some(frame(420.0, 300.0, 469.5, 191.0)),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            true,
+        );
+        let moved = frame(420.0, 300.0, saved.width, saved.height);
+        assert_eq!(state.user_frame, moved);
+        assert_eq!(recollapse.frame_to_persist, Some(moved));
+
+        transition_overlay_mode(
+            &mut state,
+            Some(frame(420.0, 300.0, 280.0, 54.0)),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            false,
+        );
+        assert_eq!(state.effective_frame(), moved);
+    }
+
+    #[test]
     fn native_drag_marker_does_not_strand_an_animation_mid_size() {
         let mut state = state_with_frame(frame(400.0, 700.0, 640.0, 136.0));
         state.mode = OverlayMode::Collapsed;
@@ -3897,14 +4023,22 @@ mod geometry_tests {
     }
 
     #[test]
-    fn promoted_drag_is_not_resynced_over_its_fitted_user_frame() {
-        let state = state_with_frame(frame(872.0, 400.0, 640.0, 136.0));
-        let reconciliation = NativeDragReconcile {
-            promoted: true,
-            fit_changed: true,
-        };
+    fn collapse_reconciles_a_manual_drag_without_overwriting_its_fitted_frame() {
+        let saved = frame(400.0, 300.0, 640.0, 136.0);
+        let mut state = state_with_frame(saved);
+        state.native_drag_start = Some((saved.x, saved.y));
+        let transition = transition_overlay_mode(
+            &mut state,
+            Some(frame(1200.0, 400.0, 700.0, 200.0)),
+            &[WORK_AREA],
+            Some(WORK_AREA),
+            true,
+        );
+        let fitted = frame(872.0, 400.0, saved.width, saved.height);
 
-        assert!(!should_sync_before_collapse(reconciliation, &state));
+        assert_eq!(state.user_frame, fitted);
+        assert_eq!(state.mode, OverlayMode::Collapsed);
+        assert_eq!(transition.frame_to_persist, Some(fitted));
     }
 
     #[test]

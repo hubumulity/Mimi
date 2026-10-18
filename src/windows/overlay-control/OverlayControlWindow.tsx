@@ -216,6 +216,7 @@ export function OverlayControlWindow({ embedded = false }: { embedded?: boolean 
           isPaused={sessionIsPaused}
           isWaitingForFinalTranslation={isWaiting}
           expanded={false}
+          animationVisible={mode === "island"}
           isStopping={sessionStatusKind === "stopping"}
           onToggle={toggle}
           onWidthChange={isTauri ? reportIslandWidth : undefined}

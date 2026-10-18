@@ -21,6 +21,8 @@ interface LanguageStatusCapsuleProps {
   isPaused: boolean;
   isWaitingForFinalTranslation: boolean;
   expanded: boolean;
+  /** A hidden island still measures its full content without animating it. */
+  animationVisible?: boolean;
   isStopping?: boolean;
   onToggle: () => void;
   onWidthChange?: (width: number) => void;
@@ -34,6 +36,7 @@ export function LanguageStatusCapsule({
   isPaused,
   isWaitingForFinalTranslation,
   expanded,
+  animationVisible = true,
   isStopping = false,
   onToggle,
   onWidthChange,
@@ -93,7 +96,7 @@ export function LanguageStatusCapsule({
       aria-expanded={expanded ? undefined : false}
       aria-controls={expanded ? undefined : "overlay-control-panel"}
     >
-      <PulseRing phase={phase} compact motionEnabled={pulseOn} pulseStyle={settings.pulseStyle} />
+      <PulseRing phase={phase} compact motionEnabled={pulseOn} animationVisible={animationVisible} pulseStyle={settings.pulseStyle} />
       <AudioInputIndicator input={settings.audioInput} target={settings.systemAudioTarget} />
       {transientPhase && (
         <span className="overlay-control-island__phase">{compact.phase}</span>

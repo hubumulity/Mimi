@@ -114,6 +114,20 @@ export const Timeline = memo(function Timeline({
   useEffect(() => { onReadingHistoryChange?.(readingHistory); }, [onReadingHistoryChange, readingHistory]);
   useEffect(() => () => onReadingHistoryChange?.(false), [onReadingHistoryChange]);
 
+  useEffect(() => {
+    // Pointer release can happen outside the subtitle viewport after a click
+    // interrupted its glide. Do not leave automatic following suspended.
+    const release = () => { if (containerRef.current) scroll.pointerUp(containerRef.current); };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      window.removeEventListener("blur", release);
+    };
+  }, [scroll]);
+
   useLayoutEffect(() => {
     if (containerRef.current) scroll.reflow(containerRef.current);
   }, [readingHistory, viewportHeight, showSubtitleDividers, showTimestamps, audioInput, scroll]);
@@ -136,7 +150,7 @@ export const Timeline = memo(function Timeline({
     }
   }, [followTailRequest, scroll]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = containerRef.current;
     if (!element) return;
     const newBlock = blocks.length !== prevBlockCountRef.current;
@@ -144,7 +158,7 @@ export const Timeline = memo(function Timeline({
     // Do not overwrite the new mode's sentence anchor with a second passive
     // effect in the same render. Real subsequent text still follows the tail.
     if (modeChangedRef.current) { modeChangedRef.current = false; return; }
-    scroll.contentChanged(element, newBlock && motionEnabled ? "smooth" : "instant");
+    scroll.contentChanged(element, newBlock && motionEnabled ? "smooth" : "instant", motionEnabled);
   }, [blocks.length, lastTextLength, fontSize, fontFamily, alignment, blendsWithBackground, motionEnabled, displayMode, scroll]);
 
   useLayoutEffect(() => {
@@ -194,10 +208,10 @@ export const Timeline = memo(function Timeline({
       }}
       onTouchEnd={() => { touchStartYRef.current = null; scroll.endUserIntent(); }}
       onTouchCancel={() => { touchStartYRef.current = null; scroll.endUserIntent(); }}
-      onPointerDown={(event) => scroll.userIntent(event.currentTarget)}
+      onPointerDown={(event) => scroll.pointerDown(event.currentTarget)}
       onPointerMove={(event) => { if (event.buttons !== 0) scroll.userIntent(event.currentTarget); }}
-      onPointerUp={() => scroll.endUserIntent()}
-      onPointerCancel={() => scroll.endUserIntent()}
+      onPointerUp={(event) => scroll.pointerUp(event.currentTarget)}
+      onPointerCancel={(event) => scroll.pointerUp(event.currentTarget)}
       onKeyDown={(event) => {
         if (event.key === "Home") {
           event.preventDefault();
@@ -520,7 +534,7 @@ function CompactLane({
   const { overflowed, innerHeight } = useLaneOverflow(viewportRef, onMeasure);
   const maximumHeight = Math.round(lines * lineHeightPx);
   // Let the text glide upward when a new line pushes it instead of jumping.
-  useRollupGlide(innerRef, innerHeight, motionEnabled && innerHeight > maximumHeight + 2);
+  useRollupGlide(innerRef, innerHeight, maximumHeight, motionEnabled);
   return (
     <div
       ref={viewportRef}
@@ -602,29 +616,32 @@ function useLaneOverflow(viewportRef: RefObject<HTMLDivElement | null>, onMeasur
 function useRollupGlide(
   innerRef: RefObject<HTMLSpanElement | null>,
   innerHeight: number,
+  maximumHeight: number,
   enabled: boolean,
 ): void {
-  const previousHeightRef = useRef(0);
-  useEffect(() => {
+  const previousSizeRef = useRef({ height: 0, maximumHeight });
+  useLayoutEffect(() => {
     const inner = innerRef.current;
-    const previous = previousHeightRef.current;
-    previousHeightRef.current = innerHeight;
+    const previous = previousSizeRef.current;
+    previousSizeRef.current = { height: innerHeight, maximumHeight };
     if (inner === null) return;
-    if (!enabled) {
+    if (!enabled || innerHeight <= maximumHeight + 2 || previous.maximumHeight !== maximumHeight) {
       inner.style.transition = "none";
       inner.style.transform = "translateY(0)";
       return;
     }
-    if (previous === 0 || innerHeight <= previous) return;
-    // bottom:0 has already moved existing text up by the new line's height.
+    if (previous.height === 0 || innerHeight <= previous.height) return;
+    // Only growth beyond the clip budget moves existing text. A chunk can
+    // cross from one fitting line to several overflowing lines at once.
     // Restore its previous position with a positive offset, then slide up.
-    const shift = innerHeight - previous;
+    const shift = Math.max(0, innerHeight - maximumHeight)
+      - Math.max(0, previous.height - maximumHeight);
     inner.style.transition = "none";
     inner.style.transform = `translateY(${shift}px)`;
     void inner.offsetHeight;
     inner.style.transition = "transform 180ms ease-out";
     inner.style.transform = "translateY(0)";
-  }, [innerRef, innerHeight, enabled]);
+  }, [innerRef, innerHeight, maximumHeight, enabled]);
 }
 
 /** Confirmed subtitle time, in local HH:mm:ss; never a fabricated live clock. */
