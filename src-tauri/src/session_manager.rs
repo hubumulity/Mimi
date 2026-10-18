@@ -49,6 +49,15 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex as TokioMutex, Notify, OwnedMutexGuard};
 use tokio::task::JoinHandle;
 
+mod cleanup_owner;
+mod recovery_cleanup;
+
+use cleanup_owner::{CleanupOwners, CleanupTicket};
+use recovery_cleanup::{
+    activate_start_if_current, cancel_recovery_task, prepare_recovery_cleanup,
+    retire_recovery_for_start,
+};
+
 /// UI-only buffers contain synthetic fixtures. An explicit export fixture keeps
 /// them in memory after stop so QA can reach the real picker and write path.
 /// This helper is never used by production history finalization.
@@ -338,6 +347,16 @@ fn start_request_can_proceed(
     active_generation: u64,
 ) -> bool {
     !has_active_session || (is_recovering && active_generation == NO_GENERATION)
+}
+
+fn start_request_can_proceed_after_teardown(
+    has_active_session: bool,
+    is_recovering: bool,
+    active_generation: u64,
+    accepted_recovery_replacement: bool,
+) -> bool {
+    start_request_can_proceed(has_active_session, is_recovering, active_generation)
+        || (accepted_recovery_replacement && active_generation == NO_GENERATION)
 }
 
 fn apply_establish_failure_state(
@@ -944,6 +963,9 @@ pub struct SessionManager {
     generation_transition: Arc<Mutex<()>>,
     teardown_operations: Arc<AtomicUsize>,
     teardown_notify: Arc<Notify>,
+    /// Registered synchronously before a teardown can expose a newer start.
+    /// Its independent owner survives cancellation of any individual waiter.
+    cleanup_owners: CleanupOwners,
 }
 
 impl SessionManager {
@@ -1013,6 +1035,7 @@ impl SessionManager {
             generation_transition: Arc::new(Mutex::new(())),
             teardown_operations: Arc::new(AtomicUsize::new(0)),
             teardown_notify: Arc::new(Notify::new()),
+            cleanup_owners: CleanupOwners::default(),
         })
     }
 
@@ -1564,9 +1587,10 @@ impl SessionManager {
         let _start_request = StartRequestGuard {
             in_progress: Arc::clone(&self.start_in_progress),
         };
+        let accepted_recovery_replacement = self.is_recovering.load(Ordering::SeqCst);
         if !start_request_can_proceed(
             self.has_active_session(),
-            self.is_recovering.load(Ordering::SeqCst),
+            accepted_recovery_replacement,
             self.active_generation.load(Ordering::SeqCst),
         ) {
             self.record_diagnostic_event(DiagnosticEvent::Lifecycle {
@@ -1578,11 +1602,26 @@ impl SessionManager {
         let _operation = self.begin_lifecycle_operation();
         let request_generation = self.next_lifecycle_request();
         let lifecycle = self.lock_after_teardown().await;
+        let replacement_cleanup = if accepted_recovery_replacement {
+            let Some(cleanup) = retire_recovery_for_start(
+                &self.generation_transition,
+                &self.lifecycle_sequence,
+                &self.active_generation,
+                request_generation,
+                |generation| self.cleanup_generation(generation),
+            ) else {
+                return Ok(());
+            };
+            cleanup
+        } else {
+            CleanupTicket::completed()
+        };
         if !self.is_lifecycle_request_current(request_generation)
-            || !start_request_can_proceed(
+            || !start_request_can_proceed_after_teardown(
                 self.has_active_session(),
                 self.is_recovering.load(Ordering::SeqCst),
                 self.active_generation.load(Ordering::SeqCst),
+                accepted_recovery_replacement,
             )
         {
             self.record_diagnostic_event(DiagnosticEvent::Lifecycle {
@@ -1611,6 +1650,10 @@ impl SessionManager {
         // Cancel the old owner before installing this generation so its
         // global recovery flag cannot affect the new session's error path.
         self.cancel_recovery().await;
+        replacement_cleanup.await;
+        if !self.is_lifecycle_request_current(request_generation) {
+            return Ok(());
+        }
         self.persist_current_history()
             .map_err(|_| "Could not save the previous session history.".to_string())?;
         let preferences = self.settings.preferences();
@@ -1630,8 +1673,14 @@ impl SessionManager {
                 .begin(id, started_at_ms)
                 .map_err(|_| "Could not start local session history.".to_string())?;
         }
-        self.active_generation
-            .store(request_generation, Ordering::SeqCst);
+        if !activate_start_if_current(
+            &self.generation_transition,
+            &self.lifecycle_sequence,
+            &self.active_generation,
+            request_generation,
+        ) {
+            return Ok(());
+        }
         self.stopping_tail_generation
             .store(NO_GENERATION, Ordering::SeqCst);
         self.is_paused.store(false, Ordering::SeqCst);
@@ -1739,14 +1788,18 @@ impl SessionManager {
                     self.publish_settings();
                 }
                 pipeline_log!("session establish failed label=provider_or_capture_setup");
+                // Reserve teardown before invalidation permits a newer start.
+                // Dropping this ticket still starts the independent owner.
+                let cleanup = self.cleanup_generation_without_pump(generation);
                 // Claim failure before cleanup can await. Otherwise a provider
                 // pump can claim recovery during teardown and then be aborted
                 // before it installs the retry task.
                 let Some(failure_epoch) = self.invalidate_generation_with_epoch(generation) else {
-                    self.cleanup_generation_without_pump(generation).await;
+                    cleanup.await;
                     return Err(SESSION_START_CANCELLED.into());
                 };
                 self.cleanup_generation(generation).await;
+                drop(cleanup);
                 let _lifecycle = Arc::clone(&self.lifecycle_lock).lock_owned().await;
                 if self.lifecycle_sequence.load(Ordering::SeqCst) != failure_epoch {
                     return Err(SESSION_START_CANCELLED.into());
@@ -1898,18 +1951,14 @@ impl SessionManager {
             let connect_result = match connect_result {
                 Ok(result) => result,
                 Err(error) => {
-                    self.remember_mt_request_budget(source, generation, &client)
-                        .await;
-                    let _ = tokio::time::timeout(Duration::from_secs(1), client.disconnect()).await;
+                    self.cleanup_generation_without_pump(generation).await;
                     return Err(error);
                 }
             };
             connect_result.map_err(|error| error.to_string())?;
             tokio::task::yield_now().await;
             if let Err(error) = self.ensure_generation_current(generation) {
-                self.remember_mt_request_budget(source, generation, &client)
-                    .await;
-                let _ = tokio::time::timeout(Duration::from_secs(1), client.disconnect()).await;
+                self.cleanup_generation_without_pump(generation).await;
                 return Err(error);
             }
             pipeline_log!("asr websocket connected");
@@ -2002,16 +2051,16 @@ impl SessionManager {
                     // delivered. Always request generation-scoped teardown;
                     // the platform implementation also cleans up its own
                     // start token before returning this error.
-                    self.stop_capture_for_generation(source, generation).await;
+                    self.cleanup_generation_without_pump(generation).await;
                     return Err(error.to_string());
                 }
                 Err(error) => {
-                    self.stop_capture_for_generation(source, generation).await;
+                    self.cleanup_generation_without_pump(generation).await;
                     return Err(error);
                 }
             }
             if let Err(error) = self.ensure_generation_current(generation) {
-                self.stop_capture_for_generation(source, generation).await;
+                self.cleanup_generation_without_pump(generation).await;
                 return Err(error);
             }
             pipeline_log!("audio capture started");
@@ -2898,10 +2947,9 @@ impl SessionManager {
         self.cancel_recovery().await;
         self.controller.lock().unwrap().begin_connecting();
         self.publish_state();
+        let cleanup = self.cleanup_generation(old_generation);
         drop(lifecycle);
-        if old_generation != NO_GENERATION {
-            self.cleanup_generation(old_generation).await;
-        }
+        cleanup.await;
         let lifecycle = Arc::clone(&self.lifecycle_lock).lock_owned().await;
         if !self.is_lifecycle_request_current(reconnect_generation) {
             return Err("language_switch_superseded".into());
@@ -3442,6 +3490,10 @@ impl SessionManager {
             return;
         }
         if is_terminal {
+            // A same-generation settings rebuild may already own an Abort
+            // cleanup. Its completion can abort this pump while it waits for
+            // teardown, so retire terminal settings before the first await.
+            self.clear_active_settings_for_generation(generation);
             self.cancel_translation_timeout();
         }
         let (newly_confirmed, translation_deadline) = {
@@ -3516,7 +3568,6 @@ impl SessionManager {
             self.stop_health_checks().await;
             self.cancel_recovery().await;
             self.cleanup_generation_without_pump(generation).await;
-            self.clear_active_settings_for_generation(generation);
             drop(terminal_operation);
             drop(terminal_teardown);
         }
@@ -3828,14 +3879,18 @@ impl SessionManager {
         }
         self.record_recovery_if_current(RecoveryAction::Retrying, recovery_generation);
         pipeline_log!("session recovery started");
-        self.is_recovering.store(true, Ordering::SeqCst);
-        self.recovery_retry_generation
-            .store(NO_GENERATION, Ordering::SeqCst);
-        self.stop_health_checks().await;
-        self.controller.lock().unwrap().begin_connecting();
-        self.publish_state();
-        drop(lifecycle);
-        self.cleanup_generation(failed_generation).await;
+        prepare_recovery_cleanup(
+            lifecycle,
+            &self.is_recovering,
+            &self.recovery_retry_generation,
+            || self.cleanup_generation(failed_generation),
+            || async {
+                self.stop_health_checks().await;
+                self.controller.lock().unwrap().begin_connecting();
+                self.publish_state();
+            },
+        )
+        .await;
 
         let mut recovered = false;
         let mut terminal_failure = None;
@@ -3938,12 +3993,13 @@ impl SessionManager {
     }
 
     async fn cancel_recovery(&self) {
-        let mut slot = self.recovery_task.lock().unwrap();
-        self.recovery_task_id.store(NO_GENERATION, Ordering::SeqCst);
-        clear_recovery_atoms(&self.is_recovering, &self.recovery_retry_generation);
-        if let Some(task) = slot.take() {
-            task.abort();
-        }
+        let task = {
+            let mut slot = self.recovery_task.lock().unwrap();
+            self.recovery_task_id.store(NO_GENERATION, Ordering::SeqCst);
+            clear_recovery_atoms(&self.is_recovering, &self.recovery_retry_generation);
+            slot.take()
+        };
+        cancel_recovery_task(task, &self.cleanup_owners).await;
     }
 
     async fn finish_source_pipeline(&self, source: AudioSource, timeout: Duration) {
@@ -4394,17 +4450,43 @@ impl SessionManager {
         }
     }
 
-    async fn cleanup_generation(&self, generation: u64) {
+    fn cleanup_generation(&self, generation: u64) -> CleanupTicket {
         self.cleanup_generation_resources(generation, EventPumpCleanup::Abort)
-            .await;
     }
 
-    async fn cleanup_generation_without_pump(&self, generation: u64) {
+    fn cleanup_generation_without_pump(&self, generation: u64) -> CleanupTicket {
         self.cleanup_generation_resources(generation, EventPumpCleanup::Preserve)
-            .await;
     }
 
-    async fn cleanup_generation_resources(&self, generation: u64, pumps: EventPumpCleanup) {
+    fn cleanup_generation_resources(
+        &self,
+        generation: u64,
+        pumps: EventPumpCleanup,
+    ) -> CleanupTicket {
+        if generation == NO_GENERATION {
+            return CleanupTicket::completed();
+        }
+        let guard = self.begin_teardown_operation();
+        let manager = self.clone();
+        let after = if matches!(pumps, EventPumpCleanup::Abort) {
+            let manager = self.clone();
+            Some(Box::new(move || {
+                for source in [AudioSource::System, AudioSource::Microphone] {
+                    manager.stop_pump_for_generation(source, generation);
+                }
+            }) as cleanup_owner::CleanupAfter)
+        } else {
+            None
+        };
+        self.cleanup_owners.register(
+            generation,
+            guard,
+            move || async move { manager.cleanup_generation_owned(generation).await },
+            after,
+        )
+    }
+
+    async fn cleanup_generation_owned(&self, generation: u64) {
         self.retire_audio_attempt(generation);
         if let Some(echo) = self.take_echo_pipeline(generation) {
             echo.stop();
@@ -4423,9 +4505,6 @@ impl SessionManager {
                 self.remember_mt_request_budget(source, generation, &client)
                     .await;
                 let _ = tokio::time::timeout(DISCONNECT_TIMEOUT, client.disconnect()).await;
-            }
-            if matches!(pumps, EventPumpCleanup::Abort) {
-                self.stop_pump_for_generation(source, generation);
             }
         }
     }
