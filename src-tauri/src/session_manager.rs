@@ -5799,6 +5799,38 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn source_text_without_runtime_activity_metadata_cannot_replace_the_native_timer() {
+        let mut controller = TranslationSessionController::default();
+        controller.set_audio_input(AudioInput::Both);
+        controller.did_connect();
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            let deadline = apply_provider_event(
+                &mut controller,
+                source,
+                &LiveTranslateServerEvent::TranslationStarted,
+            )
+            .unwrap();
+            let final_ = ProviderEvent::unsequenced(
+                LiveTranslateServerEvent::UtteranceText {
+                    utterance_id: "synthetic-original-only".into(),
+                    role: UtteranceRole::Source,
+                    text: "Synthetic source without translation activity.".into(),
+                    is_final: true,
+                    language: None,
+                },
+                0,
+            );
+            let application = apply_provider_envelope(&mut controller, source, &final_);
+            assert!(application.translation_pending_deadline.is_none());
+            assert!(!application.resolves_translation_timeout);
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                Some(deadline)
+            );
+        }
+    }
+
+    #[test]
     fn either_source_finishing_or_failing_ends_all_selected_sources() {
         for source in [AudioSource::System, AudioSource::Microphone] {
             for event in [

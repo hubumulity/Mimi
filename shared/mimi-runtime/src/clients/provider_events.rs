@@ -22,6 +22,7 @@ struct SequencedEvent {
     // Optional admission evidence from the shared identity aligner, never
     // inferred from opaque provider IDs or from delivery order.
     source_ordinal: Option<u64>,
+    starts_translation: bool,
     event: LiveTranslateServerEvent,
 }
 
@@ -50,6 +51,7 @@ pub struct ProviderEvent {
     pub content_revision: u64,
     pub event: LiveTranslateServerEvent,
     source_ordinal: Option<u64>,
+    starts_translation: bool,
 }
 
 impl ProviderEvent {
@@ -65,6 +67,7 @@ impl ProviderEvent {
             content_revision,
             event,
             source_ordinal: None,
+            starts_translation: false,
         }
     }
 
@@ -82,7 +85,13 @@ impl ProviderEvent {
         source: crate::core::audio_input::AudioSource,
         now: std::time::Instant,
     ) -> crate::core::session::ProviderEventApplication {
-        controller.handle_ordered_from_at(source, self.event, now, self.source_ordinal)
+        controller.handle_ordered_from_at(
+            source,
+            self.event,
+            now,
+            self.source_ordinal,
+            self.starts_translation,
+        )
     }
 }
 
@@ -331,7 +340,17 @@ impl ProviderEventSender {
         event: LiveTranslateServerEvent,
         source_ordinal: Option<u64>,
     ) -> Result<(), ProviderEventSendError> {
-        self.send_if_with_source_order(event, source_ordinal, || true)
+        self.send_if_with_source_order(event, source_ordinal, false, || true)
+    }
+
+    /// Commit source text and its activity hint in one publication. The
+    /// controller still decides whether this identity can start a new wait.
+    pub(crate) fn send_translating_source_final(
+        &self,
+        event: LiveTranslateServerEvent,
+        source_ordinal: Option<u64>,
+    ) -> Result<(), ProviderEventSendError> {
+        self.send_if_with_source_order(event, source_ordinal, true, || true)
     }
 
     /// Checks validity in the same critical section as sequence allocation and
@@ -342,13 +361,14 @@ impl ProviderEventSender {
         event: LiveTranslateServerEvent,
         is_current: impl FnOnce() -> bool,
     ) -> Result<(), ProviderEventSendError> {
-        self.send_if_with_source_order(event, None, is_current)
+        self.send_if_with_source_order(event, None, false, is_current)
     }
 
     fn send_if_with_source_order(
         &self,
         event: LiveTranslateServerEvent,
         source_ordinal: Option<u64>,
+        starts_translation: bool,
         is_current: impl FnOnce() -> bool,
     ) -> Result<(), ProviderEventSendError> {
         // Sequence allocation and lane publication are one tiny synchronous
@@ -394,6 +414,15 @@ impl ProviderEventSender {
         let event = SequencedEvent {
             content_revision: self.content_revision(),
             source_ordinal,
+            starts_translation: starts_translation
+                && matches!(
+                    &event,
+                    LiveTranslateServerEvent::UtteranceText {
+                        role: UtteranceRole::Source,
+                        is_final: true,
+                        ..
+                    }
+                ),
             sequence: self
                 .inner
                 .sequence
@@ -709,6 +738,7 @@ impl ProviderEventReceiver {
             transport_sequence: Some(event.sequence),
             content_revision: event.content_revision,
             source_ordinal: event.source_ordinal,
+            starts_translation: event.starts_translation,
             event: event.event,
         }
     }
@@ -746,6 +776,7 @@ impl ProviderEventReceiver {
             transport_sequence: Some(event.sequence),
             content_revision: event.content_revision,
             source_ordinal: event.source_ordinal,
+            starts_translation: event.starts_translation,
             event: event.event,
         })
     }
@@ -1699,6 +1730,139 @@ mod tests {
             );
         }
         assert_eq!(controller.state.subtitles.history.len(), 4);
+    }
+
+    fn translating_final(id: &str, text: &str) -> LiveTranslateServerEvent {
+        LiveTranslateServerEvent::UtteranceText {
+            utterance_id: id.into(),
+            role: UtteranceRole::Source,
+            text: text.into(),
+            is_final: true,
+            language: None,
+        }
+    }
+
+    #[test]
+    fn translating_source_final_commits_one_envelope_and_one_timer_per_source() {
+        use crate::core::audio_input::{AudioInput, AudioSource};
+        use crate::core::session::{TranslationSessionController, TRANSLATION_PENDING_TIMEOUT};
+        let mut controller = TranslationSessionController::default();
+        controller.set_audio_input(AudioInput::Both);
+        controller.did_connect();
+        let now = std::time::Instant::now();
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            // One remaining reliable slot is enough for both text and activity.
+            let (sender, mut receiver) = provider_event_channel_with_capacity(1);
+            let final_ = translating_final("current", "Synthetic current source.");
+            sender
+                .send_translating_source_final(final_.clone(), Some(0))
+                .unwrap();
+            let envelope = receiver.try_recv_with_revision().unwrap();
+            assert_eq!(envelope.event, final_);
+            assert!(envelope.starts_translation);
+            let application = envelope.clone().apply_to_at(&mut controller, source, now);
+            assert_eq!(
+                application.translation_pending_deadline,
+                Some(now + TRANSLATION_PENDING_TIMEOUT)
+            );
+            assert!(!application.resolves_translation_timeout);
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                application.translation_pending_deadline
+            );
+            assert!(receiver.try_recv_with_revision().is_err());
+        }
+        assert!(controller.expire_translation_pending_from(
+            AudioSource::System,
+            now + TRANSLATION_PENDING_TIMEOUT
+        ));
+        assert!(controller
+            .translation_pending_deadline_from(AudioSource::Microphone)
+            .is_some());
+    }
+
+    #[test]
+    fn translating_activity_is_cleared_or_rejected_with_its_source_final() {
+        use crate::core::audio_input::AudioSource;
+        let (sender, mut receiver) = provider_event_channel_with_capacity(1);
+        sender
+            .send_translating_source_final(
+                translating_final("cleared", "Synthetic cleared source"),
+                Some(0),
+            )
+            .unwrap();
+        sender.advance_content_revision();
+        assert!(receiver.try_recv_with_revision().is_err());
+
+        sender
+            .send(LiveTranslateServerEvent::SessionCreated)
+            .unwrap();
+        assert_eq!(
+            sender.send_translating_source_final(
+                translating_final("rejected", "Synthetic rejected source"),
+                Some(1)
+            ),
+            Err(ProviderEventSendError::Backpressure)
+        );
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        let mut controls = 0;
+        while let Ok(envelope) = receiver.try_recv_with_revision() {
+            controls += usize::from(matches!(
+                envelope.event,
+                LiveTranslateServerEvent::Error { .. }
+            ));
+            assert!(!envelope.starts_translation);
+            assert!(envelope
+                .apply_to(&mut controller, AudioSource::System)
+                .translation_pending_deadline
+                .is_none());
+        }
+        assert_eq!(controls, 1);
+        assert!(!controller.state.is_translation_pending);
+        assert!(controller.state.subtitles.source.text.is_empty());
+    }
+
+    #[test]
+    fn only_valid_identified_source_finals_can_carry_translation_activity() {
+        use crate::core::audio_input::AudioSource;
+        let oversized = "x".repeat(crate::core::models::MAX_SUBTITLE_TEXT_BYTES + 1);
+        for event in [
+            stamped_draft("draft", UtteranceRole::Source, "Synthetic draft"),
+            LiveTranslateServerEvent::TranslationStarted,
+            LiveTranslateServerEvent::Error {
+                code: "synthetic_error".into(),
+                message: "Synthetic failure".into(),
+            },
+            translating_final("oversized-text", &oversized),
+        ] {
+            let (sender, mut receiver) = provider_event_channel();
+            let result = sender.send_translating_source_final(event, Some(0));
+            assert!(result.is_ok() || result == Err(ProviderEventSendError::TextTooLarge));
+            assert!(
+                !receiver
+                    .try_recv_with_revision()
+                    .unwrap()
+                    .starts_translation
+            );
+        }
+        for (id, text) in [
+            (" ", "Synthetic source"),
+            ("empty", " \u{3000}"),
+            (oversized.as_str(), "Synthetic source"),
+        ] {
+            let (sender, mut receiver) = provider_event_channel();
+            sender
+                .send_translating_source_final(translating_final(id, text), None)
+                .unwrap();
+            let mut controller = crate::core::session::TranslationSessionController::default();
+            controller.did_connect();
+            let application = receiver
+                .try_recv_with_revision()
+                .unwrap()
+                .apply_to(&mut controller, AudioSource::System);
+            assert!(application.translation_pending_deadline.is_none());
+            assert!(!controller.state.is_translation_pending);
+        }
     }
 
     #[test]

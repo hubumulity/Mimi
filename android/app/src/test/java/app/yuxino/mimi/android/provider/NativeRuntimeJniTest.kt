@@ -716,18 +716,48 @@ class NativeRuntimeJniTest {
         } finally { SubtitleBus.clear(); SubtitleBus.setHistoryLimit(0) }
     }
 
+    @Test fun identifiedSourceActivityCannotRestartAfterTheCurrentPairCompleted() {
+        RealtimeLoopback(ServiceProvider.DASHSCOPE, liveTranslate = true, translationStartReplay = true).use { fixture ->
+            val handle = createLiveTranslate(fixture)
+            try {
+                NativeRuntimeConfiguration.command("start", handle)
+                val completed = awaitRuntimeState(handle, fixture) { it.getJSONObject("snapshot").getJSONArray("history").length() == 1 }
+                assertFalse(completed.getBoolean("isTranslationPending"))
+                fixture.nextMid.countDown()
+                val old = awaitRuntimeState(handle, fixture) { it.getJSONObject("snapshot").getJSONArray("history").length() == 2 }
+                assertFalse(old.getBoolean("isTranslationPending"))
+                assertFalse(old.getBoolean("isTranslationTimedOut"))
+                assertEquals("source_current", old.getJSONObject("snapshot").getJSONObject("source").getString("utteranceId"))
+                assertEquals("Synthetic current translation.", old.getJSONObject("snapshot").getJSONObject("displayPair").getString("translation"))
+                fixture.nextFinal.countDown()
+                awaitRuntimeState(handle, fixture) {
+                    it.getBoolean("isTranslationPending") && it.getJSONObject("snapshot").getJSONObject("source").optString("utteranceId") == "source_next"
+                }
+                NativeRuntimeConfiguration.command("finish", handle)
+                val finished = awaitRuntimeState(handle, fixture) { it.getBoolean("finished") }
+                assertFalse(finished.getBoolean("isTranslationPending"))
+                assertEquals(3, finished.getJSONObject("snapshot").getJSONArray("history").length())
+                assertEquals("Synthetic next translation.", finished.getJSONObject("snapshot").getJSONObject("displayPair").getString("translation"))
+                fixture.checkFailure()
+            } finally { NativeRuntimeConfiguration.command("stop", handle) }
+        }
+    }
+
     /** CONNECT/TLS/WebSocket fixtures intercept the unchanged production endpoints on loopback. */
     private class RealtimeLoopback(private val provider: ServiceProvider, private val qwenResponse: JSONObject? = null,
         private val liveTranslate: Boolean = false, private val finishTail: Boolean = false,
         private val holdSetup: Boolean = false, private val recoverOverflow: Boolean = false,
-        private val lateFinalReplay: Boolean = false, private val sourceOrderReplay: Boolean = false) : AutoCloseable {
+        private val lateFinalReplay: Boolean = false, private val sourceOrderReplay: Boolean = false,
+        private val translationStartReplay: Boolean = false) : AutoCloseable {
         private val tencent = provider == ServiceProvider.TENCENT
         private val qwen = provider == ServiceProvider.DASHSCOPE && !liveTranslate
         private val host = if (liveTranslate) "synthetic-workspace.cn-beijing.maas.aliyuncs.com"
             else if (qwen) "dashscope.aliyuncs.com" else if (tencent) "asr.cloud.tencent.com" else "aip.baidubce.com"
         private val phases = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
             .bufferedReader().use { it.readText() }).let { contract ->
-            if (sourceOrderReplay) JSONArray(listOf(
+            if (translationStartReplay) JSONObject(requireNotNull(javaClass.getResourceAsStream("/live-pair-contracts.json"))
+                .bufferedReader().use { it.readText() }).getJSONObject("translationStartActivity").getJSONArray("phases")
+            else if (sourceOrderReplay) JSONArray(listOf(
                 JSONArray(listOf(
                     """{"type":"conversation.item.created","item":{"id":"translation_z"},"previous_item_id":"source_z"}""",
                     """{"type":"conversation.item.created","item":{"id":"translation_a"},"previous_item_id":"source_a"}""",
@@ -917,10 +947,10 @@ class NativeRuntimeJniTest {
             if (recoverOverflow && connection == 1) check(releaseFirstSetup.await(5, TimeUnit.SECONDS))
             if (!holdSetup) send(output, """{"type":"session.updated"}""")
             if (recoverOverflow && connection == 2) reconnected.countDown()
-            if (lateFinalReplay || sourceOrderReplay) {
+            if (lateFinalReplay || sourceOrderReplay || translationStartReplay) {
                 fun phase(index: Int) {
                     val frames = phases.getJSONArray(index)
-                    repeat(frames.length()) { send(output, frames.getString(it)) }
+                    repeat(frames.length()) { send(output, if (translationStartReplay) frames.getJSONObject(it).toString() else frames.getString(it)) }
                 }
                 phase(0)
                 check(nextMid.await(10, TimeUnit.SECONDS))
@@ -946,7 +976,11 @@ class NativeRuntimeJniTest {
                 finishSeen.countDown()
                 // Holding the response keeps the production finish future alive.
                 // Read only Close/EOF after stop; no subtitle probe can retire it.
-                if (sourceOrderReplay) {
+                if (translationStartReplay) {
+                    val tail = JSONObject(requireNotNull(javaClass.getResourceAsStream("/live-pair-contracts.json"))
+                        .bufferedReader().use { it.readText() }).getJSONObject("translationStartActivity").getJSONArray("finishFrames")
+                    repeat(tail.length()) { send(output, tail.getJSONObject(it).toString()) }
+                } else if (sourceOrderReplay) {
                     send(output, """{"type":"response.done","response":{"id":"response_a","status":"completed","output":[{"id":"translation_a","content":[{"type":"output_text","text":"Synthetic current translation."}]}]}}""")
                     send(output, """{"type":"session.finished"}""")
                 } else if (finishTail) {

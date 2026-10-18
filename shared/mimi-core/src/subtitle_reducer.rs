@@ -155,6 +155,30 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             .is_none_or(|item| self.can_present_identity(item, false))
     }
 
+    /// Activity may start only for a meaningful source the reducer can accept.
+    /// Register any provider order before querying this admission decision.
+    pub fn can_start_identified_translation(&self, id: &str, text: &str) -> bool {
+        if id.trim().is_empty()
+            || text.trim().is_empty()
+            || !crate::models::subtitle_text_within_limit(id)
+            || !crate::models::subtitle_text_within_limit(text)
+            || self.discarded_source_ids.iter().any(|old| old == id)
+        {
+            return false;
+        }
+        self.identified_sources
+            .iter()
+            .find(|item| item.id == id)
+            .map_or_else(
+                || {
+                    self.next_source_ordinal
+                        .checked_add(1)
+                        .is_some_and(|next| next < u64::MAX)
+                },
+                |item| !item.confirmed && self.can_present_identity(item, false),
+            )
+    }
+
     /// Retains provider sentence order even when replaceable drafts coalesce.
     /// Registration carries no caption, confirmation, or display mutation.
     pub fn register_source_identity(&mut self, id: &str) {
@@ -1202,6 +1226,61 @@ mod tests {
     use crate::models::{SubtitleLine, SubtitlePair};
 
     type SubtitleReducer = super::SubtitleReducer<BoundedTestArchive>;
+
+    #[test]
+    fn translation_start_requires_a_meaningful_current_unconfirmed_source() {
+        let mut reducer = SubtitleReducer::default();
+        assert!(reducer.can_start_identified_translation("current", "Synthetic source"));
+        assert!(reducer.register_source_order("current", 2));
+        reducer.apply(identified_text(
+            "current",
+            UtteranceRole::Source,
+            "Synthetic source",
+        ));
+        assert!(reducer.register_source_order("unseen-old", 1));
+        assert!(!reducer.can_start_identified_translation("unseen-old", "Synthetic old source"));
+        reducer.discard_source_id("discarded".into());
+        let oversized = "x".repeat(crate::models::MAX_SUBTITLE_TEXT_BYTES + 1);
+        for (id, text) in [
+            ("", "Synthetic source"),
+            (" \u{3000}", "Synthetic source"),
+            ("current", ""),
+            ("current", " \u{3000}"),
+            ("discarded", "Synthetic source"),
+            (oversized.as_str(), "Synthetic source"),
+            ("current", oversized.as_str()),
+        ] {
+            assert!(!reducer.can_start_identified_translation(id, text));
+        }
+        reducer.apply(SubtitleEvent::IdentifiedFinalPair {
+            utterance_id: "current".into(),
+            source: "Synthetic source".into(),
+            translation: "Synthetic translation".into(),
+        });
+        assert!(!reducer.can_start_identified_translation("current", "Synthetic revised source"));
+        assert!(reducer.can_start_identified_translation("newer", "Synthetic next source"));
+    }
+
+    #[test]
+    fn translation_start_cannot_admit_an_unknown_identity_after_ordinal_exhaustion() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.apply(identified_text(
+            "known",
+            UtteranceRole::Source,
+            "Synthetic source",
+        ));
+        reducer.next_source_ordinal = u64::MAX - 1;
+        assert!(reducer.validate_state(100).is_ok());
+        assert!(reducer.can_start_identified_translation("known", "Synthetic revised source"));
+        assert!(!reducer.can_start_identified_translation("unknown", "Synthetic next source"));
+        let before = reducer.snapshot.clone();
+        reducer.apply(identified_text(
+            "unknown",
+            UtteranceRole::Source,
+            "Synthetic next source",
+        ));
+        assert_eq!(reducer.snapshot, before);
+    }
 
     #[test]
     fn source_order_limits_and_exhausted_auto_order_keep_state_restorable() {

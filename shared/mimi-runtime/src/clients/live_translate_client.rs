@@ -733,18 +733,30 @@ fn emit_server_event_with_source_order(
                 ..
             }
     );
+    let starts_identified_translation = inner.translates_audio
+        && matches!(
+            &event,
+            LiveTranslateServerEvent::UtteranceText {
+                role: UtteranceRole::Source,
+                is_final: true,
+                ..
+            }
+        );
     if source_final_arrived
         && inner.translates_audio
+        && !starts_identified_translation
         && events
             .send(LiveTranslateServerEvent::TranslationStarted)
             .is_err()
     {
         return false;
     }
-    if events
-        .send_with_source_order(event, source_ordinal)
-        .is_err()
-    {
+    let result = if starts_identified_translation {
+        events.send_translating_source_final(event, source_ordinal)
+    } else {
+        events.send_with_source_order(event, source_ordinal)
+    };
+    if result.is_err() {
         if *setup.borrow() == SetupState::Awaiting {
             let _ = setup.send(SetupState::Rejected);
         }
@@ -1021,6 +1033,166 @@ mod tests {
             receive_task: Mutex::new(None),
             translation_latency: Default::default(),
         }
+    }
+
+    #[test]
+    fn identified_source_final_does_not_restart_a_newer_translation_wait() {
+        use crate::core::audio_input::AudioSource;
+        use crate::core::session::TranslationSessionController;
+
+        for completed in [false, true] {
+            let inner = test_inner();
+            let (sender, mut receiver) = provider_event_channel();
+            let (setup, _setup_rx) = watch::channel(SetupState::Ready);
+            let mut controller = TranslationSessionController::default();
+            controller.did_connect();
+            let now = Instant::now();
+            let source = |id: &str, is_final| LiveTranslateServerEvent::UtteranceText {
+                utterance_id: id.into(),
+                role: UtteranceRole::Source,
+                text: format!("Synthetic {id} source."),
+                is_final,
+                language: None,
+            };
+            for (event, order) in [(source("old", false), 0), (source("current", true), 1)] {
+                assert!(emit_server_event_with_source_order(
+                    &inner,
+                    &sender,
+                    &setup,
+                    event,
+                    Some(order),
+                ));
+                while let Ok(event) = receiver.try_recv_with_revision() {
+                    event.apply_to_at(&mut controller, AudioSource::System, now);
+                }
+            }
+            if completed {
+                assert!(emit_server_event_with_source_order(
+                    &inner,
+                    &sender,
+                    &setup,
+                    LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+                        utterance_id: "current".into(),
+                        source: "Synthetic current source.".into(),
+                        translation: "Synthetic current translation.".into(),
+                        language: None,
+                    },
+                    Some(1),
+                ));
+                receiver.try_recv_with_revision().unwrap().apply_to_at(
+                    &mut controller,
+                    AudioSource::System,
+                    now,
+                );
+            }
+            let before = controller.state.clone();
+            let deadline = controller.translation_pending_deadline_from(AudioSource::System);
+            assert!(emit_server_event_with_source_order(
+                &inner,
+                &sender,
+                &setup,
+                source("old", true),
+                Some(0),
+            ));
+            while let Ok(event) = receiver.try_recv_with_revision() {
+                let application = event.apply_to_at(
+                    &mut controller,
+                    AudioSource::System,
+                    now + Duration::from_secs(5),
+                );
+                assert!(application.translation_pending_deadline.is_none());
+                assert!(!application.resolves_translation_timeout);
+            }
+            assert_eq!(controller.state, before);
+            assert_eq!(
+                controller.translation_pending_deadline_from(AudioSource::System),
+                deadline
+            );
+            assert_eq!(controller.tick(now + Duration::from_secs(6)), !completed);
+        }
+    }
+
+    #[test]
+    fn real_emission_owns_activity_through_late_source_and_graceful_tail_replay() {
+        use crate::core::audio_input::AudioSource;
+        use crate::core::session::TranslationSessionController;
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../live-pair-contracts.json")).unwrap();
+        let replay = &fixture["translationStartActivity"];
+        let inner = test_inner();
+        let (sender, mut receiver) = provider_event_channel();
+        let (setup, _setup_rx) = watch::channel(SetupState::Ready);
+        let mut decoder = AlibabaRealtimeEventDecoder::new(AlibabaRealtimeMode::LiveTranslate);
+        let mut aligner = LiveTranslatePairAligner::default();
+        let mut controller = TranslationSessionController::default();
+        controller.did_connect();
+        let now = Instant::now();
+        for phase in 0..4 {
+            if phase == 3 {
+                controller.begin_stopping();
+            }
+            let frames = if phase == 3 {
+                &replay["finishFrames"]
+            } else {
+                &replay["phases"][phase]
+            };
+            let mut armed = 0;
+            for frame in frames.as_array().unwrap() {
+                for (event, identity) in decoder.decode(&frame.to_string()).unwrap() {
+                    for (event, order) in aligner.observe_with_source_order(&event, &identity) {
+                        assert!(emit_server_event_with_source_order(
+                            &inner, &sender, &setup, event, order
+                        ));
+                    }
+                }
+            }
+            while let Ok(event) = receiver.try_recv_with_revision() {
+                assert!(!matches!(
+                    event.event,
+                    LiveTranslateServerEvent::TranslationStarted
+                ));
+                armed += usize::from(
+                    event
+                        .apply_to_at(
+                            &mut controller,
+                            AudioSource::System,
+                            now + Duration::from_secs(phase as u64),
+                        )
+                        .translation_pending_deadline
+                        .is_some(),
+                );
+            }
+            assert_eq!(armed, usize::from(phase == 0 || phase == 2));
+            assert_eq!(controller.state.is_translation_pending, phase == 2);
+            assert!(!controller.state.is_translation_timed_out);
+            assert_eq!(
+                controller.state.subtitles.history.len(),
+                [1, 2, 2, 3][phase]
+            );
+            assert_eq!(
+                controller.state.subtitles.source.utterance_id.as_deref(),
+                Some(if phase < 2 {
+                    "source_current"
+                } else {
+                    "source_next"
+                })
+            );
+        }
+        assert_eq!(
+            controller.state.status,
+            // Native adapters finalize Stopping after draining this tail.
+            crate::core::models::SessionStatus::Stopping
+        );
+        assert_eq!(
+            controller
+                .state
+                .subtitles
+                .display_pair
+                .as_ref()
+                .unwrap()
+                .translation,
+            "Synthetic next translation."
+        );
     }
 
     #[tokio::test]

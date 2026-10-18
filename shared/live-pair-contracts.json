@@ -1,6 +1,29 @@
 {
   "schemaVersion": 1,
   "description": "Synthetic identity pairing events; providerFrame is the corresponding public wire shape, never a captured response.",
+  "translationStartActivity": {
+    "phases": [
+      [
+        {"type":"conversation.item.created","item":{"id":"translation_old"},"previous_item_id":"source_old"},
+        {"type":"conversation.item.created","item":{"id":"translation_current"},"previous_item_id":"source_current"},
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"source_old","delta":"Synthetic old draft"},
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"source_current","transcript":"Synthetic current source."},
+        {"type":"response.done","response":{"id":"response_current","status":"completed","output":[{"id":"translation_current","content":[{"type":"output_text","text":"Synthetic current translation."}]}]}}
+      ],
+      [
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"source_old","transcript":"Synthetic late old source."},
+        {"type":"response.done","response":{"id":"response_old","status":"completed","output":[{"id":"translation_old","content":[{"type":"output_text","text":"Synthetic old translation."}]}]}}
+      ],
+      [
+        {"type":"conversation.item.created","item":{"id":"translation_next"},"previous_item_id":"source_next"},
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"source_next","transcript":"Synthetic next source."}
+      ]
+    ],
+    "finishFrames": [
+      {"type":"response.done","response":{"id":"response_next","status":"completed","output":[{"id":"translation_next","content":[{"type":"output_text","text":"Synthetic next translation."}]}]}},
+      {"type":"session.finished"}
+    ]
+  },
   "cases": [
     {
       "id": "queued_reliable_source_finals_keep_observation_order",
