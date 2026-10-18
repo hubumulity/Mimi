@@ -462,6 +462,17 @@ non-sensitive; do not change permissions or reset TCC to repair the fixture.
 See [the integration learning loop](integration-learning-loop.md) for comparable
 samples and [the run ledger](integration-runs.md) for this check's exact scope.
 
+## Desktop recovery teardown ownership
+
+An empty generation tag or client slot does not prove that capture stop or
+disconnect finished. Reserve teardown synchronously before exposing recovery or
+releasing admission, and give the work an owner that survives cancellation of
+its waiter. Test both cancellation before the first cleanup poll and after a
+client has been removed from its slot. An admitted replacement Start must retain
+its intent across teardown and recheck the lifecycle epoch before activation.
+Preserve normal Stop's drain/finish path. A caller already holding a teardown
+guard must wait for concrete owners rather than its own global counter.
+
 ## Native exit and acceptance evidence
 
 - macOS's predefined Quit invokes AppKit termination directly; in the locked

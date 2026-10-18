@@ -24,6 +24,27 @@
 - 审查另外确认 recovery 清理 owner 被取消的问题，保留复现与后续方案；
   本轮只修分配开销，没有把未完成的生命周期方案混入。
 
+## 2026-10-18：恢复任务取消与原生清理归属
+
+- 基于 `10d726e` 复现，提交前更新至 `8ec3d62`，受测 teardown helpers
+  保持不变。范围见[设计记录](../plans/2026-10-18-recovery-cleanup-ownership.md)。
+  真实 manager 方法的 Tokio 门闩夹具证实：旧恢复任务被 Start 取消时，
+  可留下 generation 71 的 client／pump，导致新代安装失败；不依赖真实服务。
+- 同步登记与独立 owner 使 capture stop／disconnect 不随等待者取消。
+  复审额外查出 Start 第二门禁丢失恢复接管意图、旧 attempt 迟到安装和
+  Stop 抢占后 Start 重新激活，均纳入正式编排回归；正常 Stop 的 drain／finish
+  保持。空 slot／generation tag 不再当作完整 teardown 已完成的证据。
+- 两个正式 production helper 模块 19 项回归通过；实际 manager／完整
+  recover_connection／真实共享 RecoverySchedule 的临时补充夹具 4 项通过。
+  四个负对照分别还原旧二次门禁、不清 active generation、忽略退役 epoch、
+  忽略激活 epoch，均被正式测试拒绝。临时抽取 driver 不作为持久测试交付。
+- helper 严格 Clippy、desktop fmt、共享架构与 diff 检查通过；quick desktop
+  检查在缺少 `glib-2.0.pc` 处停止，完整 Tauri 编译／测试以平台 CI 为门槛。
+  没有真实采集、provider、凭据或签名原生交互验收。
+- 该 owner 协调 desktop adapter 的 native capture／slot／双门禁；不复制到
+  Kotlin。Android drive 取走 Connection 后被硬停的取消安全另待本地模拟服务
+  验证，未把相似 await 结构直接宣称为已确认泄漏或完整修复。
+
 ## 2026-10-18：前端重复工作、可见性与快照归属
 
 - 基于 `10d726e`，范围见[设计记录](../plans/2026-10-18-frontend-work-and-snapshots.md)。
