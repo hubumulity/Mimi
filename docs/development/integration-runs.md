@@ -51,6 +51,37 @@
   仍可能按既有策略再次溢出重连，不承诺全局重试次数上限、无损超预算音频
   或 setup 延迟改善。设备、真实 provider 和原生捕获仍未验收。
 
+## 2026-10-18：迟到确认与下一句草稿的队列边界
+
+- 基于 `90fa8cb` 复现，受测源码冻结为 `4a479e8`（基于 `a71680c`）；范围见
+  [设计记录](../plans/2026-10-18-provider-draft-final-barrier.md)。真实共享
+  aligner → 有界 mailbox → session controller 的正式 Rust 红回归证明：
+  A 原文 final、B draft、迟到 A 译文 final 在消费者积压时保留 A 历史，
+  却把当前 B 丢掉。修复仅携带核心既有顺序的私有元数据，不新增可靠队列
+  消息、身份集合、Kotlin 规则或 session snapshot 字段。
+- 独立复审另使两个正式回归先失败：迟到 A 不能让尚未交付的旧 B 越过已
+  交付 C 的 final／draft。常量大小的已交付顺序前沿保持单调，并区分原文
+  final 与完整 pair final；额外覆盖 C 译文 preview 先交付的跨 lane 情况。
+  B 原文已 final 后，合法 B 译文 preview 仍可更新。
+- 首轮默认并行 shared 检查出现既有 xAI reconnect 用例在 50 ms 观察窗口
+  后确认历史仍为空；未改该用例、阈值或 xAI 实现，两个线程下单独复跑通过。
+  最终两个线程的 quick shared 全过：core 95＋4 契约、runtime 810（既有
+  ignored 1）、Rust JNI adapter 14、updater 4，以及格式、严格 Clippy、
+  架构和 diff 检查；独立源码审查无阻断。未跑完整 canonical 或 native UI。
+- 同一冻结源码构建的 debug JNI 库经实际 Java exchange → 本地 CONNECT／
+  TLS／WebSocket 三阶段验证通过：B 当前草稿、A 单次历史、旧 A draft／final
+  不回退、B 译文 preview 与正常 finish 均保持，且 transport 在硬停前已关闭。
+  单连接、8 个合成内容事件、20 次 poll；证据只含计数、结果和受测库 hash。
+- 随后只将本轮改动重放到 `8d60c76`，三个共享生产文件与 `4a479e8` 逐字
+  相同；保留 main 五个硬停／正常收尾／PCM 回归并合并新的 loopback 模式。
+  上述实际 Java 库仍对应 `4a479e8` 的 JNI adapter；组合后的 adapter／Kotlin
+  验收另由 root 的精确提交检查负责，未把旧库当作组合构建证据。
+- Android 新增 maintained JNI loopback 用例。公开 poll 只读快照，不能暂停
+  native 消费者；该用例验证正常分阶段
+  协议映射与 Kotlin 发布，确定性 backlog 由 Rust 门闩覆盖，不把它描述成
+  JNI 稳定复现旧队列故障。本机缺 Kotlin／Gradle／JUnit 工具缓存，完整
+  Kotlin suite 仍是平台 CI 门槛，无真实 provider、采集、凭据或设备验收。
+
 ## 2026-10-18：缩放 IPC 有界串行
 
 - 基于 `ba87a50`，范围见[设计记录](../plans/2026-10-18-bounded-resize-ipc.md)。

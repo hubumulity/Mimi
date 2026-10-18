@@ -117,6 +117,8 @@ pub struct LivePairAligner {
     // survives retirement of complete pairs so old replays cannot move it back.
     #[serde(default)]
     source_order: VecDeque<String>,
+    #[serde(default)]
+    source_order_start: u64,
     utterances: HashMap<String, TrackedUtterance>,
     utterance_order: VecDeque<String>,
     responses: HashMap<String, String>,
@@ -147,6 +149,7 @@ impl LivePairAligner {
         }
         self.current_source_id = None;
         self.source_order.clear();
+        self.source_order_start = 0;
         self.utterances.clear();
         self.utterance_order.clear();
         self.responses.clear();
@@ -277,6 +280,15 @@ impl LivePairAligner {
         }
     }
 
+    /// Stable order of an observed source in the current bounded content window.
+    /// Unknown or retired-from-window identities supply no ordering evidence.
+    pub fn source_ordinal(&self, source_id: &str) -> Option<u64> {
+        self.source_order
+            .iter()
+            .position(|id| id == source_id)
+            .and_then(|index| self.source_order_start.checked_add(index as u64))
+    }
+
     /// Moves the recognition stream to `source_id`. Keep a previous source
     /// without a translation so a late response can still find its own text.
     fn start_utterance(&mut self, source_id: &str) -> Vec<LivePairEvent> {
@@ -286,6 +298,7 @@ impl LivePairAligner {
         self.source_order.push_back(source_id.to_string());
         while self.source_order.len() > MAX_TRACKED_ITEMS {
             self.source_order.pop_front();
+            self.source_order_start = self.source_order_start.saturating_add(1);
         }
         let previous = self.current_source_id.replace(source_id.to_string());
         previous
@@ -318,6 +331,7 @@ impl LivePairAligner {
         }
         while self.source_order.len() > MAX_TRACKED_ITEMS {
             self.source_order.pop_front();
+            self.source_order_start = self.source_order_start.saturating_add(1);
         }
     }
 
@@ -446,6 +460,56 @@ mod tests {
             item_id: Some(item.into()),
             previous_item_id: previous.map(String::from),
         }
+    }
+
+    #[test]
+    fn source_ordinals_survive_window_eviction_and_serialization() {
+        let mut aligner = LivePairAligner::default();
+        let source = LivePairEvent::SourceDraft {
+            text: "Synthetic source".into(),
+            language: None,
+        };
+        for index in 0..=MAX_TRACKED_ITEMS {
+            aligner.observe_at(&source, &identity(&format!("source-{index}"), None), 0);
+        }
+        assert_eq!(aligner.source_ordinal("source-0"), None);
+        assert_eq!(aligner.source_ordinal("source-1"), Some(1));
+        assert_eq!(
+            aligner.source_ordinal(&format!("source-{MAX_TRACKED_ITEMS}")),
+            Some(MAX_TRACKED_ITEMS as u64)
+        );
+        let restored: LivePairAligner =
+            serde_json::from_value(serde_json::to_value(&aligner).unwrap()).unwrap();
+        assert_eq!(restored.source_ordinal("source-0"), None);
+        assert_eq!(restored.source_ordinal("source-1"), Some(1));
+        assert_eq!(
+            restored.source_ordinal(&format!("source-{MAX_TRACKED_ITEMS}")),
+            Some(MAX_TRACKED_ITEMS as u64)
+        );
+        assert!(restored.validate_state().is_ok());
+    }
+
+    #[test]
+    fn source_ordinal_defaults_for_old_states_and_resets_with_content() {
+        let mut aligner = LivePairAligner::default();
+        let source = LivePairEvent::SourceDraft {
+            text: "Synthetic source".into(),
+            language: None,
+        };
+        for id in ["source-z", "source-a"] {
+            aligner.observe_at(&source, &identity(id, None), 0);
+        }
+        let mut legacy = serde_json::to_value(&aligner).unwrap();
+        legacy.as_object_mut().unwrap().remove("source_order_start");
+        let mut restored: LivePairAligner = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.source_ordinal("source-z"), Some(0));
+        assert_eq!(restored.source_ordinal("source-a"), Some(1));
+        restored.clear_content();
+        assert_eq!(restored.source_ordinal("source-z"), None);
+        assert_eq!(restored.source_ordinal("source-a"), None);
+        restored.observe_at(&source, &identity("source-new", None), 0);
+        assert_eq!(restored.source_ordinal("source-new"), Some(0));
+        assert!(restored.validate_state().is_ok());
     }
 
     #[test]
