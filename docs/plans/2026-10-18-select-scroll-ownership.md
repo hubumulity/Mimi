@@ -28,7 +28,22 @@ four cases fail: the two unrelated Element targets, explicit Window scroll and
 the caption integration. The quick frontend check passes typecheck, selected
 test lint, provider-copy and diff checks plus 73 cases across Select, Timeline
 scroll and embedded-control tests; production Select lint also passes.
-These regressions establish event policy with synthetic
-scroll geometry; they do not establish native Wayland transport or compositor
-behavior. Actual browser scrolling and signed platform interaction remain
-separate acceptance checks. No capture, provider or private configuration is used.
+These regressions establish event policy with synthetic scroll geometry.
+
+Root also compared the original and fixed production components in actual
+Chromium. The real Timeline layout and `scrollTo` generated an actual scroll
+event after adding a synthetic caption: the old menu closed, while the fixed
+menu stayed open. Scrolling the menu itself preserved it; scrolling its trigger's
+ancestor and changing the browser viewport dismissed it. No scroll delivery was
+stubbed in this browser run. The resulting screenshot was inspected and the
+preview closed. This does not establish native Wayland transport, signed-window
+interaction or compositor behavior. No capture, provider or private configuration
+was used. Rebasing onto main `1b3b111` changed no frontend source.
+
+Complete frontend acceptance passed 145 files / 2,356 tests with one worker,
+full lint, typechecked production build and all 17 production debugger boundary
+checks. The first two-worker suite passed 2,355 cases but its existing 445-draft
+Gemini case reached the unchanged five-second timeout. Both variants passed in
+isolation (2.09 and 1.54 seconds), then the complete single-worker suite passed.
+No assertion, timeout or product code changed for these reruns. No unrelated
+native suite was run for this frontend-only listener change.

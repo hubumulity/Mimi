@@ -16,8 +16,16 @@
 - 比例 quick frontend 的类型、选定 test lint、provider-copy、diff 与
   3 文件／73 项回归通过；生产 Select 独立 lint 通过。
 - JSDOM 仅为实际 scrollTo 补异步非 bubbling 事件，验证事件归属策略；
-  未据此宣称真实浏览器布局或 native Wayland／compositor 已验收。
-  无 Vite、cargo、provider、采集、用户配置或完整 suite 操作。
+  未据此宣称 native Wayland／compositor 已验收。
+- Root 实际 Chromium 使用真实 Select＋Timeline、布局及浏览器 scroll 事件：
+  新 caption 在旧实现关闭菜单，修后保持；菜单自身滚动保持，trigger祖先
+  实际滚动及 viewport resize 关闭。未stub scrollTo／事件，已查看截图并
+  关闭预览。变基到 main `1b3b111` 后前端源码未变；无 cargo、provider、
+  采集或用户配置操作。完整前端检查另记，native compositor 未实测。
+- 完整前端145文件／2,356项、全量lint、带类型检查的production build及
+  17项生产边界检查通过。首次双worker全量中，既有445-draft Gemini一例
+  触及原5秒上限，其余2,355项通过；该例两版本隔离为2.09／1.54秒通过，
+  随后单worker完整全绿，未改断言、超时或产品实现，未跑无关native suite。
 
 ## 2026-10-18：JNI 稳定快照轻量轮询与版本一致性
 
