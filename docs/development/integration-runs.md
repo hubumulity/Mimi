@@ -4,6 +4,36 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：可靠迟到原文保持服务观察顺序
+
+- 基于 `d5664012c7d95d962799df5f2e8b9cfd6adcd038` 的 dirty debug 工作树，
+  范围见[设计记录](../plans/2026-10-18-provider-source-order-admission.md)。
+  同一真实 aligner → 暂扣 mailbox → controller 四输入在修前把旧句当作
+  新句，直接交付则保留当前句；原 main 与上一轮 provider 修复都有此问题。
+  正式回归的四输入、旧译文先完成、新译文先完成三种断言均先红后绿。
+- 只将既有私有 source ordinal 接入共享 admission，不加可靠消息、身份集合、
+  IPC 字段或 Kotlin 排序规则。64 项身份窗口保持；常量大小的各行 owner
+  顺序与独立当前／完整显示前沿保护混合有序／无序、淘汰与晚 metadata。
+  旧完整 pair 仍进历史，不能回退当前句；原 Volcano mutable clock 契约保留。
+- 最终 quick shared 通过 core 104＋4 契约、runtime 814（既有 ignored 1）、
+  Rust JNI 18、updater 4、格式、严格 Clippy、架构和 diff 检查。独立实际
+  源码复核覆盖具体反例及 100,000 个固定 seed 操作，每步状态校验均通过。
+  desktop 的正式 helper timeout 回归还经实际源码提取编译通过，包含双源、
+  旧历史、当前确认和重复 final；未将此当作整个 native crate 编译。
+- 同一受测生产源码的固定 debug JNI 库 hash `7325798b`，实际 Java exchange
+  经本地 CONNECT／TLS／WebSocket 通过：1 连接、10 内容事件、21 poll，
+  当前原文 final、旧历史、旧重放、当前译文 preview 与正常 finish 的两对
+  历史均保持；transport 在硬停前关闭。上一轮 draft-barrier 的原三阶段
+  Java/JNI 回归也用同一固定库复测。证据只含结果、计数和库 hash。
+- maintained Kotlin/JNI 用例使用真正 completed response.done 完成 pair，
+  覆盖 SubtitleBus 和正常／finish 交付；本机缺 Kotlin／Gradle 工具，仍待
+  精确提交 CI 编译执行。JNI poll 不能暂停 native 消费者，确定性 backlog
+  只由 Rust 用例覆盖。本机缺 GTK，完整桌面 native 亦待 CI；无真实 provider、
+  凭据、采集、设备或 UI 验收。临时复现日志尚未作为可重启样本归档。
+- 额外实测确认 unchanged emitter 的既有边界：迟到 source final 之前的
+  ID-less TranslationStarted 仍会重设当前 deadline；本修复只确保后续旧
+  identified pair 不取消该 deadline 并保留历史，start 身份归属另行处理。
+
 ## 2026-10-18：字幕滚动与下拉菜单归属
 
 - 基于 `7bf13f1`，范围见[设计记录](../plans/2026-10-18-select-scroll-ownership.md)。

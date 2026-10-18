@@ -3,6 +3,55 @@
   "description": "Synthetic identity pairing events; providerFrame is the corresponding public wire shape, never a captured response.",
   "cases": [
     {
+      "id": "queued_reliable_source_finals_keep_observation_order",
+      "queueBeforeDrain": true,
+      "expectedQueuedSource": { "text": "Synthetic current final.", "isFinal": true, "utteranceId": "source_c" },
+      "steps": [
+        {
+          "event": { "type": "item_created" },
+          "identity": { "item_id": "response_a", "previous_item_id": "source_a" },
+          "providerFrame": { "type": "conversation.item.created", "item_id": "response_a", "previous_item_id": "source_a" },
+          "atNs": 0,
+          "expected": []
+        },
+        {
+          "event": { "type": "item_created" },
+          "identity": { "item_id": "response_c", "previous_item_id": "source_c" },
+          "providerFrame": { "type": "conversation.item.created", "item_id": "response_c", "previous_item_id": "source_c" },
+          "atNs": 0,
+          "expected": []
+        },
+        {
+          "event": { "type": "source_draft", "text": "Synthetic old draft", "language": null },
+          "identity": { "item_id": "source_a", "previous_item_id": null },
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.text", "item_id": "source_a", "text": "Synthetic old draft" },
+          "atNs": 1,
+          "expected": [{ "type": "utterance_text", "utterance_id": "source_a", "role": "source", "text": "Synthetic old draft", "is_final": false, "language": null }]
+        },
+        {
+          "event": { "type": "source_draft", "text": "Synthetic current draft", "language": null },
+          "identity": { "item_id": "source_c", "previous_item_id": null },
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.text", "item_id": "source_c", "text": "Synthetic current draft" },
+          "atNs": 2,
+          "expected": [{ "type": "utterance_text", "utterance_id": "source_c", "role": "source", "text": "Synthetic current draft", "is_final": false, "language": null }]
+        },
+        {
+          "event": { "type": "source_final", "text": "Synthetic current final.", "language": null },
+          "identity": { "item_id": "source_c", "previous_item_id": null },
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.completed", "item_id": "source_c", "transcript": "Synthetic current final." },
+          "atNs": 3,
+          "expected": [{ "type": "utterance_text", "utterance_id": "source_c", "role": "source", "text": "Synthetic current final.", "is_final": true, "language": null }]
+        },
+        {
+          "event": { "type": "source_final", "text": "Synthetic late old final.", "language": null },
+          "identity": { "item_id": "source_a", "previous_item_id": null },
+          "providerFrame": { "type": "conversation.item.input_audio_transcription.completed", "item_id": "source_a", "transcript": "Synthetic late old final." },
+          "atNs": 4,
+          "expected": [{ "type": "utterance_text", "utterance_id": "source_a", "role": "source", "text": "Synthetic late old final.", "is_final": true, "language": null }]
+        }
+      ]
+    },
+    {
       "id": "queued_late_translation_preserves_following_draft",
       "queueBeforeDrain": true,
       "expectedQueuedSource": {

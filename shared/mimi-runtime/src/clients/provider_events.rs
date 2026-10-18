@@ -49,11 +49,40 @@ pub struct ProviderEvent {
     pub transport_sequence: Option<u64>,
     pub content_revision: u64,
     pub event: LiveTranslateServerEvent,
+    source_ordinal: Option<u64>,
 }
 
 impl ProviderEvent {
     pub fn is_content(&self) -> bool {
         is_content_event(&self.event)
+    }
+
+    /// Local controls and fixtures have no aligner ordering evidence.
+    pub fn unsequenced(event: LiveTranslateServerEvent, content_revision: u64) -> Self {
+        Self {
+            #[cfg(any(test, feature = "development-debugger"))]
+            transport_sequence: None,
+            content_revision,
+            event,
+            source_ordinal: None,
+        }
+    }
+
+    pub fn apply_to(
+        self,
+        controller: &mut crate::core::session::TranslationSessionController,
+        source: crate::core::audio_input::AudioSource,
+    ) -> crate::core::session::ProviderEventApplication {
+        self.apply_to_at(controller, source, std::time::Instant::now())
+    }
+
+    pub fn apply_to_at(
+        self,
+        controller: &mut crate::core::session::TranslationSessionController,
+        source: crate::core::audio_input::AudioSource,
+        now: std::time::Instant,
+    ) -> crate::core::session::ProviderEventApplication {
+        controller.handle_ordered_from_at(source, self.event, now, self.source_ordinal)
     }
 }
 
@@ -535,12 +564,7 @@ impl ProviderEventReceiver {
     }
 
     fn control_event(&self, event: LiveTranslateServerEvent) -> ProviderEvent {
-        ProviderEvent {
-            #[cfg(any(test, feature = "development-debugger"))]
-            transport_sequence: None,
-            content_revision: self.content_revision.load(Ordering::SeqCst),
-            event,
-        }
+        ProviderEvent::unsequenced(event, self.content_revision.load(Ordering::SeqCst))
     }
 
     async fn recv_unfiltered(&mut self) -> Option<ProviderEvent> {
@@ -684,6 +708,7 @@ impl ProviderEventReceiver {
             #[cfg(any(test, feature = "development-debugger"))]
             transport_sequence: Some(event.sequence),
             content_revision: event.content_revision,
+            source_ordinal: event.source_ordinal,
             event: event.event,
         }
     }
@@ -720,6 +745,7 @@ impl ProviderEventReceiver {
             #[cfg(any(test, feature = "development-debugger"))]
             transport_sequence: Some(event.sequence),
             content_revision: event.content_revision,
+            source_ordinal: event.source_ordinal,
             event: event.event,
         })
     }
@@ -1577,6 +1603,189 @@ mod tests {
             is_final: false,
             language: None,
         }
+    }
+
+    #[test]
+    fn ordered_application_preserves_current_deadlines_and_duplicate_final_ownership() {
+        use crate::core::audio_input::{AudioInput, AudioSource};
+        use crate::core::session::TranslationSessionController;
+        let mut controller = TranslationSessionController::default();
+        controller.set_audio_input(AudioInput::Both);
+        controller.did_connect();
+        let now = std::time::Instant::now();
+        let mut deadlines = Vec::new();
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            let (sender, mut receiver) = provider_event_channel();
+            sender
+                .send_with_source_order(
+                    stamped_draft("current", UtteranceRole::Source, "Synthetic current"),
+                    Some(1),
+                )
+                .unwrap();
+            receiver
+                .try_recv_with_revision()
+                .unwrap()
+                .apply_to(&mut controller, source);
+            let started =
+                ProviderEvent::unsequenced(LiveTranslateServerEvent::TranslationStarted, 0)
+                    .apply_to_at(&mut controller, source, now);
+            deadlines.push((source, started.translation_pending_deadline.unwrap()));
+            sender
+                .send_with_source_order(
+                    identified_final("old", "Synthetic previous complete"),
+                    Some(0),
+                )
+                .unwrap();
+            let old = receiver
+                .try_recv_with_revision()
+                .unwrap()
+                .apply_to(&mut controller, source);
+            assert!(!old.resolves_translation_timeout);
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                started.translation_pending_deadline
+            );
+            assert_eq!(
+                controller
+                    .state
+                    .subtitles
+                    .tracks
+                    .iter()
+                    .find(|track| track.audio_source == source)
+                    .unwrap()
+                    .source
+                    .utterance_id
+                    .as_deref(),
+                Some("current")
+            );
+        }
+        for (source, deadline) in deadlines {
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                Some(deadline)
+            );
+            let (sender, mut receiver) = provider_event_channel();
+            sender
+                .send_with_source_order(
+                    identified_final("current", "Synthetic current complete"),
+                    Some(1),
+                )
+                .unwrap();
+            let current = receiver
+                .try_recv_with_revision()
+                .unwrap()
+                .apply_to(&mut controller, source);
+            assert!(current.resolves_translation_timeout);
+            assert!(controller
+                .translation_pending_deadline_from(source)
+                .is_none());
+            let next = ProviderEvent::unsequenced(LiveTranslateServerEvent::TranslationStarted, 0)
+                .apply_to_at(
+                    &mut controller,
+                    source,
+                    now + std::time::Duration::from_secs(1),
+                );
+            sender
+                .send_with_source_order(identified_final("current", "Synthetic duplicate"), Some(1))
+                .unwrap();
+            let duplicate = receiver
+                .try_recv_with_revision()
+                .unwrap()
+                .apply_to(&mut controller, source);
+            assert!(!duplicate.resolves_translation_timeout);
+            assert_eq!(
+                controller.translation_pending_deadline_from(source),
+                next.translation_pending_deadline
+            );
+        }
+        assert_eq!(controller.state.subtitles.history.len(), 4);
+    }
+
+    #[test]
+    fn rejected_stopping_content_cannot_register_rank_ahead_of_an_accepted_final_tail() {
+        use crate::core::audio_input::AudioSource;
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        controller.begin_stopping();
+        let (sender, mut receiver) = provider_event_channel();
+        sender
+            .send_with_source_order(
+                stamped_draft("ignored", UtteranceRole::Source, "Synthetic ignored"),
+                Some(0),
+            )
+            .unwrap();
+        receiver
+            .try_recv_with_revision()
+            .unwrap()
+            .apply_to(&mut controller, AudioSource::System);
+        sender
+            .send_with_source_order(identified_final("tail", "Synthetic accepted tail"), Some(0))
+            .unwrap();
+        receiver
+            .try_recv_with_revision()
+            .unwrap()
+            .apply_to(&mut controller, AudioSource::System);
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        assert_eq!(
+            controller.state.subtitles.history[0].source,
+            "Synthetic accepted tail"
+        );
+    }
+
+    #[test]
+    fn ordered_application_accepts_zero_again_after_reconnect_and_content_clear() {
+        use crate::core::audio_input::AudioSource;
+        let mut controller = crate::core::session::TranslationSessionController::default();
+        let (sender, mut receiver) = provider_event_channel();
+        sender
+            .send_with_source_order(
+                identified_final("previous", "Synthetic previous complete"),
+                Some(99),
+            )
+            .unwrap();
+        receiver
+            .try_recv_with_revision()
+            .unwrap()
+            .apply_to(&mut controller, AudioSource::System);
+        controller.begin_connecting();
+        sender
+            .send_with_source_order(
+                stamped_draft("next", UtteranceRole::Source, "Synthetic reconnected"),
+                Some(0),
+            )
+            .unwrap();
+        receiver
+            .try_recv_with_revision()
+            .unwrap()
+            .apply_to(&mut controller, AudioSource::System);
+        assert_eq!(
+            controller.state.subtitles.source.text,
+            "Synthetic reconnected"
+        );
+        assert_eq!(controller.state.subtitles.history.len(), 1);
+        sender
+            .send_with_source_order(
+                identified_final("stale", "Synthetic pre-clear final"),
+                Some(100),
+            )
+            .unwrap();
+        sender.advance_content_revision();
+        controller.clear_subtitles();
+        sender
+            .send_with_source_order(
+                stamped_draft("fresh", UtteranceRole::Source, "Synthetic after clear"),
+                Some(0),
+            )
+            .unwrap();
+        receiver
+            .try_recv_with_revision()
+            .unwrap()
+            .apply_to(&mut controller, AudioSource::System);
+        assert_eq!(
+            controller.state.subtitles.source.text,
+            "Synthetic after clear"
+        );
+        assert!(controller.state.subtitles.history.is_empty());
+        assert!(receiver.try_recv_with_revision().is_err());
     }
 
     #[test]

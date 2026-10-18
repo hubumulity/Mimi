@@ -476,8 +476,8 @@ impl Session {
                         event = receiver.recv_with_revision() => {
                             let Some(event) = event else { failure = Some("transport_error".into()); break; };
                             if event.is_content() && event.content_revision != client.content_revision() {continue;}
-                            match event.event {
-                                LiveTranslateServerEvent::Error {code,..} => { failure = Some(mimi_runtime::core::recovery::normalize_provider_error_code(&code).into()); break; }
+                            match &event.event {
+                                LiveTranslateServerEvent::Error {code,..} => { failure = Some(mimi_runtime::core::recovery::normalize_provider_error_code(code).into()); break; }
                                 LiveTranslateServerEvent::SessionFinished => {
                                     health.abort();
                                     self.publish(TranslationSessionController::did_stop);
@@ -485,7 +485,7 @@ impl Session {
                                     self.finished.store(true,Ordering::SeqCst);
                                     return;
                                 }
-                                event => self.publish(|controller|controller.handle_from(AudioSource::System,event)),
+                                _ => self.publish(|controller| { event.apply_to(controller, AudioSource::System); }),
                             }
                         }
                         _ = ticks.tick() => {
@@ -569,12 +569,14 @@ impl Session {
                 loop {
                     tokio::select! {
                         _ = &mut finish => break,
-                        event = receiver.recv_with_revision() => {if let Some(event)=event {self.publish(|controller|controller.handle_from(AudioSource::System,event.event));}else{break;}}
+                        event = receiver.recv_with_revision() => {if let Some(event)=event {self.publish(|controller|{event.apply_to(controller,AudioSource::System);});}else{break;}}
                     }
                 }
             }
             while let Ok(event) = receiver.try_recv_with_revision() {
-                self.publish(|controller| controller.handle_from(AudioSource::System, event.event));
+                self.publish(|controller| {
+                    event.apply_to(controller, AudioSource::System);
+                });
             }
             connection.disconnected().await;
         }
