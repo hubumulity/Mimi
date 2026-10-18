@@ -4,34 +4,6 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
-## 2026-10-18：identified 原文 final 与翻译等待共同准入
-
-- 基于 `7501a4e577566a0f480bb4b4d835c3a46f96cde9` 的 dirty debug 工作树，
-  范围见[设计记录](../plans/2026-10-18-identified-translation-start-admission.md)。
-  实际 emit → mailbox → controller 正式回归先红后绿：旧句首个原文 final
-  在 t=5s 到达时，修前将当前截止从 t=6s 改成 t=11s，或重新打开已完成句的
-  pending；字幕和历史未被替换。单独绕过附带 Started 的同输入对照不改变等待。
-- 四个共享生产文件让 final、既有顺序、content revision 与 private activity
-  bool 共用一个 envelope／可靠槽／controller 准入；无新 wire、队列或身份表。
-  已确认、过旧、discarded、空白／超限及 ordinal 耗尽不能误开等待；保留
-  legacy ID-less、其他 provider、original-only 和 source-order 原契约。
-- quick shared 通过 core 106＋4 契约、runtime 821（既有 ignored 1）、Rust
-  JNI 24、updater 4、格式、严格 Clippy、架构与 diff。首轮网络隔离使本地
-  mock socket 无法 bind；原命令允许本地测试网络后通过，未改变阈值。独审
-  纠正一处测试的重复 rank 后，合法新 ID／旧 rank 的 focused、runtime
-  all-target strict Clippy 与格式再次通过；生产逻辑未随此测试修正改变。
-- 新共享合成夹具同时用于真实 decoder／aligner／emit 的 Rust 回归与 maintained
-  Kotlin JNI TLS 用例。旧固定库 `020316e7` 的实际 Java exchange 先失败；
-  新库 `7e2ba7ab` 同样本 1 连接、10 内容事件、23 poll 通过：当前完成及旧句
-  归档后 pending 仍 false，下一句正常 pending，finish 保留三对历史并在硬停前
-  关闭 transport。原 source-order 的正常／finish Java JNI 回放也用该库通过。
-- desktop 新维护用例只验证无 activity metadata 时 adapter 不自行创建／替换
-  deadline；两个正式 helper 回归及另行 private marked-envelope 双源应用经真实
-  源码提取编译通过，不代表完整 native crate 或真实 timer 调度验收。已补的
-  Kotlin／Gradle 测试和完整 native 仍待精确提交 CI；本机缺桌面 GTK 开发库。
-  本分支不跑无参数 canonical，组合验收由 root 接续。无真实 provider、凭据、
-  捕获、设备或 UI 验收；临时证据未升级为可重启的持久样本归档。
-
 ## 2026-10-18：可靠迟到原文保持服务观察顺序
 
 - 基于 `d5664012c7d95d962799df5f2e8b9cfd6adcd038` 的 dirty debug 工作树，
@@ -67,6 +39,39 @@
   Java/JNI为1连接／10内容／20poll，旧draft-barrier为1／8／20，两项全部通过。
   随后变基 main `fdc765f`，shared／desktop／Android源码及测试未变；新增
   前端Select修复已有独立全前端与Android CI，完整native／Kotlin仍待本PR CI。
+
+## 2026-10-18：identified 原文 final 与翻译等待共同准入
+
+- 基于 `7501a4e577566a0f480bb4b4d835c3a46f96cde9` 的 dirty debug 工作树，
+  范围见[设计记录](../plans/2026-10-18-identified-translation-start-admission.md)。
+  实际 emit → mailbox → controller 正式回归先红后绿：旧句首个原文 final
+  在 t=5s 到达时，修前将当前截止从 t=6s 改成 t=11s，或重新打开已完成句的
+  pending；字幕和历史未被替换。单独绕过附带 Started 的同输入对照不改变等待。
+- 四个共享生产文件让 final、既有顺序、content revision 与 private activity
+  bool 共用一个 envelope／可靠槽／controller 准入；无新 wire、队列或身份表。
+  已确认、过旧、discarded、空白／超限及 ordinal 耗尽不能误开等待；保留
+  legacy ID-less、其他 provider、original-only 和 source-order 原契约。
+- quick shared 通过 core 106＋4 契约、runtime 821（既有 ignored 1）、Rust
+  JNI 24、updater 4、格式、严格 Clippy、架构与 diff。首轮网络隔离使本地
+  mock socket 无法 bind；原命令允许本地测试网络后通过，未改变阈值。独审
+  纠正一处测试的重复 rank 后，合法新 ID／旧 rank 的 focused、runtime
+  all-target strict Clippy 与格式再次通过；生产逻辑未随此测试修正改变。
+- 新共享合成夹具同时用于真实 decoder／aligner／emit 的 Rust 回归与 maintained
+  Kotlin JNI TLS 用例。旧固定库 `020316e7` 的实际 Java exchange 先失败；
+  新库 `7e2ba7ab` 同样本 1 连接、10 内容事件、23 poll 通过：当前完成及旧句
+  归档后 pending 仍 false，下一句正常 pending，finish 保留三对历史并在硬停前
+  关闭 transport。原 source-order 的正常／finish Java JNI 回放也用该库通过。
+- desktop 新维护用例只验证无 activity metadata 时 adapter 不自行创建／替换
+  deadline；两个正式 helper 回归及另行 private marked-envelope 双源应用经真实
+  源码提取编译通过，不代表完整 native crate 或真实 timer 调度验收。已补的
+  Kotlin／Gradle 测试和完整 native 仍待精确提交 CI；本机缺桌面 GTK 开发库。
+  本分支不跑无参数 canonical，组合验收由 root 接续。无真实 provider、凭据、
+  捕获、设备或 UI 验收；临时证据未升级为可重启的持久样本归档。
+- 变基 main `0cd2b2d` 后所有shared／desktop／Android源码及测试保持相同；
+  无参数canonical通过core106＋4契约、runtime821＋既有ignored 1、JNI24、
+  updater4和共享严格检查，随后桌面编译止于缺 `glib-2.0.pc`。组合构建库
+  完整SHA256与上述已通过实际Java两项回放的 `7e2ba7ab…74505c2a` 完全一致；
+  最终仅补证据文档，完整native／Kotlin仍待精确head CI。
 
 ## 2026-10-18：字幕滚动与下拉菜单归属
 

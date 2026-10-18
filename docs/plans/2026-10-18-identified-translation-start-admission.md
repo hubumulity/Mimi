@@ -89,3 +89,21 @@ caption's own admission as the commit point.
   No real provider, credentials, audio capture, paid request, device or native
   UI acceptance is claimed. The root will run combined canonical verification;
   this branch ran focused/quick checks only.
+
+## Combined main acceptance
+
+Rebasing onto main `0cd2b2de3d378e051979f417734f08d7f180a063`
+preserved every shared, desktop and Android source/test input. The no-argument
+canonical check on this combined revision passed core 106 plus four contracts,
+runtime 821 with one existing ignored case, JNI 24 and updater four, including
+the shared format, strict Clippy and architecture gates. Desktop compilation
+then stopped at the host's missing `glib-2.0.pc`; exact-head complete native and
+Kotlin/JNI CI still gate merging.
+
+An incremental combined build produced the exact same library SHA-256 as the
+fixed library already used for the passing actual Java replay and source-order
+compatibility cases:
+`7e2ba7abf49b1e7e903ee0e1c18542efba563b59d200459798358cdb74505c2a`.
+No new native source or binary change was introduced by that rebase. Subsequent
+edits only record acceptance and keep this follow-up beside the source-order
+entry in the historical ledger.
