@@ -39,6 +39,36 @@ async function render(value: string) {
 }
 function trigger() { return host.querySelector<HTMLButtonElement>('[role="combobox"]')!; }
 
+it.each([
+  { target: "sibling element", staysOpen: true },
+  { target: "sibling SVG", staysOpen: true },
+  { target: "menu", staysOpen: true },
+  { target: "menu text", staysOpen: true },
+  { target: "trigger ancestor", staysOpen: false },
+  { target: "outside text", staysOpen: false },
+  { target: "document", staysOpen: false },
+  { target: "window", staysOpen: false },
+  { target: "resize", staysOpen: false },
+  { target: "blur", staysOpen: false },
+])("keeps the scroll dismissal policy for $target (open=$staysOpen)", async ({ target, staysOpen }) => {
+  await render("translation");
+  await act(() => trigger().click());
+  const popup = document.querySelector<HTMLElement>('[role="listbox"]')!;
+  let source: EventTarget;
+  if (target === "menu") source = popup;
+  else if (target === "menu text") source = popup.appendChild(document.createTextNode("Synthetic menu content"));
+  else if (target === "trigger ancestor") source = host;
+  else if (target === "document") source = document;
+  else if (["window", "resize", "blur"].includes(target)) source = window;
+  else source = host.appendChild(target === "sibling SVG"
+    ? document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    : target === "outside text" ? document.createTextNode("Synthetic outside content") : document.createElement("div"));
+  await act(() => source.dispatchEvent(new Event(target === "resize" || target === "blur" ? target : "scroll")));
+  expect(document.querySelector('[role="listbox"]')).toBe(staysOpen ? popup : null);
+  expect(trigger().getAttribute("aria-expanded")).toBe(String(staysOpen));
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 const translatorOptions = [
   { value: "default", label: "Alibaba", icon: <svg width="32" height="32"><circle cx="16" cy="16" r="8" /></svg> },
   { value: "deepL", label: "DeepL", icon: <img src="synthetic-deepl.svg" alt="" /> },

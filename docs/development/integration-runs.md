@@ -4,6 +4,29 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：字幕滚动与下拉菜单归属
+
+- 基于 `7bf13f1`，范围见[设计记录](../plans/2026-10-18-select-scroll-ownership.md)。
+  Wayland embedded panel 与真实 Timeline 在同一 document；新 caption 触发
+  timeline 的 scrollTo 时，原 Select 把无关 sibling scroll 当作关闭意图。
+  正式负例和 HTML／SVG sibling、Window target 边界共 4 项修前失败。
+- 只忽略与 trigger 无祖先关系的 Element scroll，保留菜单自身／文本滚动，
+  真祖先、document／window scroll、resize、blur 和原定位／键盘行为。
+  真实 Select＋Timeline 回归保留 popup／focus，再用方向键与 Enter 完成选择。
+- 比例 quick frontend 的类型、选定 test lint、provider-copy、diff 与
+  3 文件／73 项回归通过；生产 Select 独立 lint 通过。
+- JSDOM 仅为实际 scrollTo 补异步非 bubbling 事件，验证事件归属策略；
+  未据此宣称 native Wayland／compositor 已验收。
+- Root 实际 Chromium 使用真实 Select＋Timeline、布局及浏览器 scroll 事件：
+  新 caption 在旧实现关闭菜单，修后保持；菜单自身滚动保持，trigger祖先
+  实际滚动及 viewport resize 关闭。未stub scrollTo／事件，已查看截图并
+  关闭预览。变基到 main `1b3b111` 后前端源码未变；无 cargo、provider、
+  采集或用户配置操作。完整前端检查另记，native compositor 未实测。
+- 完整前端145文件／2,356项、全量lint、带类型检查的production build及
+  17项生产边界检查通过。首次双worker全量中，既有445-draft Gemini一例
+  触及原5秒上限，其余2,355项通过；该例两版本隔离为2.09／1.54秒通过，
+  随后单worker完整全绿，未改断言、超时或产品实现，未跑无关native suite。
+
 ## 2026-10-18：JNI 稳定快照轻量轮询与版本一致性
 
 - 最初基于 `8d60c7613a076c971a17b9f2ee7578ade4cef712`，随后组合并变基到
