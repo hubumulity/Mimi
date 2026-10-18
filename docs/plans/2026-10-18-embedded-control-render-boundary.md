@@ -36,10 +36,45 @@ discovery, island ResizeObserver reports and native listener cleanup. Native
 IPC and DOM geometry are fixtures; these tests establish work counts and
 React behavior, not native Wayland hit testing, production CPU, frame rate or
 end-to-end latency. The separate body-wide popup MutationObserver candidate
-remains unchanged pending geometry evidence and ancestor/portal controls.
+remains unchanged and needs its own design and acceptance.
 
 The affected quick frontend check passes provider-copy verification,
 typecheck, selected lint and diff checks, plus 199 related regressions in
 thirteen files. Independent read-only review found no remaining blockers.
-No browser preview, Vite build, native build or full suite ran in this worktree;
-the integrating revision still needs its own acceptance.
+
+After rebasing onto main `fdc765f`, Chromium exercised the unchanged production
+code at `ef148679e9237cf39c8f86e385929cc314c46afa`. The fixture mounts the real
+OverlayWindow with synthetic native IPC and the embedded flag. Remove the
+motion fixture's placeholder surfaces and its global section-size override
+before measuring; retain product CSS and constrain only the fixture stage.
+Response-only counters retain the real implementations and assert a unique
+insertion point. Each mode receives fifty snapshots: fifty-two parent chrome
+computations including settled-tail updates, zero control renders and zero
+control-model computations. Latest subtitle text, component identities and an
+open portal survive. Visible-DOM predicates verify all eight languages without
+settings replacement, target/pulse settings, paused/stopping signals, disabled
+controls and island/hidden/panel transitions. The final real panel and open
+picker screenshot was inspected; browser errors were empty.
+
+The unchanged observer was measured separately. Fifty short source/translation
+and latency snapshots, each awaiting its actual displayed text, produced one
+hundred menu rectangle reads
+while panel, anchor and portal geometry stayed constant; no bounds IPC was
+added. Eight more drafts with a notification present produced sixteen reads
+of each menu/toast rectangle, also with unchanged geometry and no new IPC.
+Ancestor inline transform, portal resize/add/remove, toast dismissal and
+viewport resize provided geometry-change controls; reported menu/notification
+slots matched the actual rectangles. Locale changed copy while this sample's
+geometry stayed equal, so it correctly added no bounds IPC. This is a bounded
+browser work-count probe, not a caption-only attribution, proposed record
+filter or a claim about font
+loading, every ancestor style change, native input regions or Wayland clicks.
+
+The same frozen frontend then passed the complete single-worker Vitest suite:
+146 files and 2,361 tests. Full-project ESLint and the production build passed,
+including icon verification, TypeScript checking and scanning all seventeen
+emitted files for developer-only code. No test timeout or assertion changed.
+The build retains its existing large-chunk warning; no chunk policy was added.
+Only this evidence record changed afterward. The fixture browser and Vite
+process were closed, and the temporary dependency symlink was removed. There
+was no native build, provider request, audio capture or private session data.

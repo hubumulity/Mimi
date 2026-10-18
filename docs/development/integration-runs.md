@@ -20,10 +20,24 @@
 - quick frontend 的 provider-copy、typecheck、选定 lint 与 diff 检查均通过，
   相关 13 文件／199 项回归通过；包括既有控制窗口帮助／popup 生命周期、
   记录阅读及两种 445 草稿对照。没有将本轮工作量结果归因于旧超时。
-- 本地 jsdom 夹具仅证实 React 更新与计算次数；未启动浏览器、Vite 或
-  native 构建，无真实 provider、捕获、私有字幕或凭据。原生嵌入表面的
-  几何、输入区域及平台交互仍留给后续集成验收；observer 候选也需先证明
-  字幕变化与祖先／portal 几何更新的区别。
+- 变基到 main `fdc765f` 后生产代码与新回归不变，实际 Chromium 在
+  `ef148679e9237cf39c8f86e385929cc314c46afa` 挂载真实 OverlayWindow，
+  仅合成 native bridge／embedded flag。先移除 motion fixture 的占位表面与
+  全局 section 尺寸样式，保留产品 CSS。每模式 50 快照含稳态尾更新各有
+  52 次父计算、0 次控制 render／model；最新字幕、节点、打开的 portal
+  保持。以可见 DOM 等待八语言、设置、阶段和 mode 更新，已查看真实面板
+  与打开菜单截图，浏览器无异常；关闭了本轮 Vite 和 Chromium。
+- observer 仅另行量化、未修改：50 次字幕／延迟快照逐条等待显示，有 100 次 menu
+  rect 读取，panel／anchor／portal 几何不变、无新增 bounds IPC；menu 与
+  toast 共存的 8 次显示更新有各 16 次读取，同样无新增 IPC。祖先 transform、
+  portal 尺寸／增删、toast 清除及 viewport 对照的上报与实际 rect 相符。
+  该候选留待独立设计，不以此推断所有祖先／字体变化或 native hit testing。
+- 随后同一冻结前端单 worker 完整测试 146 文件／2,361 项、全量 lint、
+  带类型检查的 production build 全过，图标验证与 17 个输出文件的生产
+  debugger 边界扫描通过；未改测试阈值或断言，保留既有大 chunk 提示。
+  之后仅补本证据文档，移除临时依赖 symlink，未自行再次变基。
+- 无 native 构建、真实 provider、捕获、私有字幕或凭据；浏览器几何与
+  合成 bridge 不能代替原生 Wayland 输入区域、穿透和 compositor 交互验收。
 
 ## 2026-10-18：可靠迟到原文保持服务观察顺序
 
