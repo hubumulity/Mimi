@@ -23,6 +23,8 @@ export class NameDraft {
   discarded = false;
   ownValues = new Set<string>();
   options: Options | null = null;
+  private submittedName: string | null = null;
+  private pendingSource: string | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
   private snapshot: { draft: string; error: NameError };
@@ -61,15 +63,24 @@ export class NameDraft {
   receive(value: string) {
     if (this.source === value) return;
     this.source = value;
+    const wasClean = this.draft.trim() === this.confirmed;
     const ownAcknowledgement = this.ownValues.delete(value);
+    if (this.inFlight) {
+      if (!ownAcknowledgement) this.pendingSource = value;
+      else if (value === this.submittedName) this.pendingSource = null;
+    }
     if (!this.inFlight && this.draft.trim() === value) {
       this.confirmed = value;
       this.publish(this.draft, null);
-    } else if (!(ownAcknowledgement && this.focused) && !this.inFlight && this.draft.trim() === this.confirmed) {
+    } else if (!(ownAcknowledgement && this.focused) && !this.inFlight) {
       // A late acknowledgement cannot replace newer typing or move the caret.
       // Once clean, accept external changes, including a previously used name.
-      this.confirmed = this.draft = value;
-      this.publish(this.draft, null);
+      if (wasClean && !this.composing && !this.interruptedComposition) {
+        this.confirmed = this.draft = value;
+        this.publish(this.draft, null);
+      } else if (!ownAcknowledgement) {
+        this.confirmed = value;
+      }
     }
     this.release();
   }
@@ -98,7 +109,7 @@ export class NameDraft {
     this.clearTimer();
   }
   canRelease() {
-    return this.views === 0 && !this.inFlight && this.snapshot.error === null
+    return this.views === 0 && !this.inFlight && !this.composing && !this.interruptedComposition && this.snapshot.error === null
       && this.draft.trim() === this.confirmed && this.source === this.confirmed;
   }
   flush = async () => {
@@ -117,19 +128,28 @@ export class NameDraft {
     const revision = this.revision;
     this.inFlight = true;
     this.flushRequested = false;
+    this.submittedName = name;
+    this.pendingSource = null;
     this.ownValues.add(name);
     if (this.ownValues.size > 32) this.ownValues.delete(this.ownValues.values().next().value!);
     try {
       const result = await options.onSave(name);
       if (result === null || result === false) throw new Error("name_save_rejected");
-      this.confirmed = name;
-      if (revision === this.revision) this.publish(this.draft, null);
+      // The reply acknowledges this write; a newer received source owns the
+      // baseline, including when a local ABA edit must still be saved again.
+      this.confirmed = this.pendingSource ?? name;
+      if (revision === this.revision && !this.composing && !this.interruptedComposition) {
+        if (this.pendingSource !== null && this.draft.trim() !== this.pendingSource) this.draft = this.pendingSource;
+        this.publish(this.draft, null);
+      }
     } catch (cause) {
+      if (this.pendingSource !== null) this.confirmed = this.pendingSource;
       this.ownValues.delete(name);
       this.failedRevision = revision;
       if (revision === this.revision) this.publish(this.draft, { message: profileErrorMessage(cause), retry: true });
     } finally {
       this.inFlight = false;
+      this.submittedName = this.pendingSource = null;
       if (this.flushRequested) {
         this.flushRequested = false;
         void this.flush();

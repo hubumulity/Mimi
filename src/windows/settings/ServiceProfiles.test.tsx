@@ -70,6 +70,29 @@ async function clickRowAction(action: "duplicate" | "delete", index = 0) {
   await act(async () => button.click());
 }
 
+it("keeps the profile heading and owned name aligned after newer settings arrive before an old rename reply", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: SettingsSnapshot) => void;
+  actions.updateProfile.mockImplementationOnce(() => new Promise<SettingsSnapshot>(resolve => { finish = resolve; }));
+  const named = (name: string) => withListPeer({ ...settings, profiles: [{ ...profile, name }] });
+  await render(named("Original"));
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  await change(".service-detail__name input", "Saved A");
+  await act(async () => vi.advanceTimersByTimeAsync(350));
+  expect(actions.updateProfile).toHaveBeenCalledExactlyOnceWith(profile.id, "Saved A");
+  await render(named("Saved A"));
+  await render(named("Newer B"));
+  await act(async () => finish(named("Saved A")));
+  expect(host.querySelector(".service-detail h2")?.textContent).toBe("Newer B");
+  expect(host.querySelector<HTMLInputElement>(".service-detail__name input")!.value).toBe("Newer B");
+  await click(I18N.settings.backToServices);
+  await act(async () => host.querySelector<HTMLButtonElement>(".service-row__edit")!.click());
+  expect(host.querySelector<HTMLInputElement>(".service-detail__name input")!.value).toBe("Newer B");
+  await act(async () => vi.advanceTimersByTimeAsync(350));
+  expect(actions.updateProfile).toHaveBeenCalledOnce();
+  expect(actions.saveProfileCredentials).not.toHaveBeenCalled();
+});
+
 it("opens a distinct configuration copy without selecting or revealing credentials", async () => {
   const copy = { ...profile, id: "synthetic-copy", name: "Alibaba (copy)" };
   const snapshot = { ...settings, profiles: [profile, copy] };
