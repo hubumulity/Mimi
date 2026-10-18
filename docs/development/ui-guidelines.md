@@ -72,6 +72,12 @@ These project rules apply to implementation and review.
   themes. Interactive controls, including help and toast dismissal, keep pointer
   cursors; preserve disabled, text-input, slider and resize cursors.
 - Live subtitle geometry needs a stable reading edge as well as unclipped text.
+  Automatic glides must retain ownership across row measurement and streaming
+  revisions; pointer clicks cannot turn their pending scroll events into history
+  intent. Test chunk growth crossing the compact line budget with real browser
+  geometry, and finish pointer interactions even when release occurs outside.
+  Preserve status-light animation identities when pausing invisible tracks;
+  system chrome rules must not override their explicit motion setting.
   In normal Android mode, bottom-align the current measured lanes, matching the
   desktop reading edge. Growing reference text must not push an unchanged
   translation down; preserve complete glyph lines and deliberate history reading.
