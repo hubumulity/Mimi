@@ -11,7 +11,10 @@ use mimi_runtime::{
     core::{
         audio_input::AudioSource,
         configuration::LiveTranslationConfiguration,
-        models::{SessionStatus, SourceLanguage, TargetLanguage, TranslationMode},
+        diagnostics::TranslationRecovery,
+        models::{
+            SessionStatus, SourceLanguage, SubtitleSnapshot, TargetLanguage, TranslationMode,
+        },
         network_proxy::ProxyConfig,
         protocols::{
             live_translate::LiveTranslateServerEvent,
@@ -26,7 +29,7 @@ use mimi_runtime::{
     },
     resource_cleanup::{CleanupOwners, CleanupTicket},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -73,6 +76,37 @@ struct Networks {
     text_proxy: ProxyConfig,
     trust_roots: Vec<String>,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotMetadata {
+    version: u64,
+    finished: bool,
+    error_code: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FullSnapshot {
+    #[serde(flatten)]
+    metadata: SnapshotMetadata,
+    connection_status: &'static str,
+    snapshot: SubtitleSnapshot,
+    atomic_preview: Option<bool>,
+    detected_language: Option<String>,
+    is_translation_pending: bool,
+    is_translation_preview_pending: bool,
+    is_translation_timed_out: bool,
+    translation_recovery: Option<TranslationRecovery>,
+}
+
+#[derive(Serialize)]
+struct UnchangedSnapshot {
+    unchanged: bool,
+    #[serde(flatten)]
+    metadata: SnapshotMetadata,
+}
+
 struct Connection {
     cleanup_id: u64,
     client: TranslationClient,
@@ -153,8 +187,32 @@ struct Session {
     budget: Mutex<MTBudgetContinuity>,
 }
 impl Session {
+    #[cfg(test)]
     fn snapshot(&self) -> Value {
+        serde_json::from_str(&self.snapshot_json(None).unwrap()).unwrap()
+    }
+
+    fn snapshot_json(&self, since_version: Option<u64>) -> Result<String, &'static str> {
         let controller = self.controller.lock().unwrap();
+        // Terminal observations are not part of the controller revision.
+        // Capture them with the view before releasing its guard, including
+        // when a late finish does not require another full snapshot.
+        let finished = self.finished.load(Ordering::SeqCst);
+        let error_code = self.error_code.lock().unwrap().clone();
+        let version = self.version.load(Ordering::SeqCst);
+        let metadata = SnapshotMetadata {
+            version,
+            finished,
+            error_code,
+        };
+        if since_version == Some(version) {
+            drop(controller);
+            return serde_json::to_string(&UnchangedSnapshot {
+                unchanged: true,
+                metadata,
+            })
+            .map_err(|_| "native_runtime_failed");
+        }
         let state = &controller.state;
         let connection_status = match state.status {
             SessionStatus::Idle => "idle",
@@ -163,13 +221,39 @@ impl Session {
             SessionStatus::Stopping => "stopping",
             SessionStatus::Error(_) => "error",
         };
-        json!({"version":self.version.load(Ordering::SeqCst),"connectionStatus":connection_status,"snapshot":state.subtitles,"atomicPreview":state.atomic_preview,"detectedLanguage":state.detected_language.as_ref().map(|language|language.code.as_str()),"isTranslationPending":state.is_translation_pending,"isTranslationPreviewPending":state.is_translation_preview_pending,"isTranslationTimedOut":state.is_translation_timed_out,"translationRecovery":state.translation_recovery,"finished":self.finished.load(Ordering::SeqCst),"errorCode":*self.error_code.lock().unwrap()})
+        let snapshot = FullSnapshot {
+            metadata,
+            connection_status,
+            snapshot: state.subtitles.clone(),
+            atomic_preview: state.atomic_preview,
+            detected_language: state
+                .detected_language
+                .as_ref()
+                .map(|language| language.code.clone()),
+            is_translation_pending: state.is_translation_pending,
+            is_translation_preview_pending: state.is_translation_preview_pending,
+            is_translation_timed_out: state.is_translation_timed_out,
+            translation_recovery: state.translation_recovery,
+        };
+        drop(controller);
+        // Serialize the captured owned view directly, avoiding a second full
+        // JSON tree and keeping serialization outside the controller lock.
+        serde_json::to_string(&snapshot).map_err(|_| "native_runtime_failed")
     }
 
     fn publish(&self, update: impl FnOnce(&mut TranslationSessionController)) {
-        update(&mut self.controller.lock().unwrap());
+        let mut controller = self.controller.lock().unwrap();
+        update(&mut controller);
         self.version.fetch_add(1, Ordering::SeqCst);
     }
+
+    fn tick(&self, now: std::time::Instant) {
+        let mut controller = self.controller.lock().unwrap();
+        if controller.tick(now) {
+            self.version.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     fn connection(&self, generation: u64) -> Result<ProviderEventReceiver, &'static str> {
         let (events, receiver) = provider_event_channel();
         let client = TranslationClient::new_with_stage_networks(
@@ -405,9 +489,7 @@ impl Session {
                             }
                         }
                         _ = ticks.tick() => {
-                            if self.controller.lock().unwrap().tick(std::time::Instant::now()) {
-                                self.version.fetch_add(1,Ordering::SeqCst);
-                            }
+                            self.tick(std::time::Instant::now());
                         }
                         _ = self.signal.notified() => {health.abort();self.finish_connection(&mut receiver).await;return;}
                     }
@@ -810,7 +892,11 @@ pub fn exchange(request: &str) -> Result<String, &'static str> {
                     .as_u64()
                     .ok_or("native_runtime_invalid_request")?,
             )?;
-            native.snapshot()
+            let since_version = value
+                .get("sinceVersion")
+                .map(|version| version.as_u64().ok_or("native_runtime_invalid_request"))
+                .transpose()?;
+            return native.snapshot_json(since_version);
         }
         "finish" => {
             let native = session(
@@ -882,6 +968,207 @@ mod tests {
     }
     fn configuration() -> LiveTranslationConfiguration {
         serde_json::from_value(json!({"provider":"alibabaCloud","qwenMtModel":"lite","credentials":{"kind":"apiKey","apiKey":"synthetic-key"},"textCredentials":null,"sourceLanguage":"en","targetLanguage":"zh","translationMode":"turbo","networkProxy":{"mode":"direct"},"textNetworkProxy":{"mode":"direct"}})).unwrap()
+    }
+
+    struct PollSession {
+        handle: u64,
+        native: Arc<Session>,
+    }
+    impl PollSession {
+        fn new() -> Self {
+            static HANDLE: AtomicU64 = AtomicU64::new(u64::MAX - 100);
+            let handle = HANDLE.fetch_sub(1, Ordering::SeqCst);
+            let native = fixture(configuration());
+            sessions().lock().unwrap().insert(handle, native.clone());
+            Self { handle, native }
+        }
+        fn poll(&self, since: Option<Value>) -> Result<Value, &'static str> {
+            let mut request = json!({"operation":"poll","handle":self.handle});
+            if let Some(since) = since {
+                request["sinceVersion"] = since;
+            }
+            exchange(&request.to_string()).map(|response| serde_json::from_str(&response).unwrap())
+        }
+    }
+    impl Drop for PollSession {
+        fn drop(&mut self) {
+            sessions().lock().unwrap().remove(&self.handle);
+        }
+    }
+
+    // Compatibility oracle for the complete pre-conditional-poll wire shape.
+    fn legacy_full_response(native: &Session) -> Value {
+        let controller = native.controller.lock().unwrap();
+        let state = &controller.state;
+        let connection_status = match state.status {
+            SessionStatus::Idle => "idle",
+            SessionStatus::Connecting => "connecting",
+            SessionStatus::Listening => "listening",
+            SessionStatus::Stopping => "stopping",
+            SessionStatus::Error(_) => "error",
+        };
+        json!({"version":native.version.load(Ordering::SeqCst),"connectionStatus":connection_status,"snapshot":state.subtitles,"atomicPreview":state.atomic_preview,"detectedLanguage":state.detected_language.as_ref().map(|language|language.code.as_str()),"isTranslationPending":state.is_translation_pending,"isTranslationPreviewPending":state.is_translation_preview_pending,"isTranslationTimedOut":state.is_translation_timed_out,"translationRecovery":state.translation_recovery,"finished":native.finished.load(Ordering::SeqCst),"errorCode":*native.error_code.lock().unwrap()})
+    }
+
+    #[test]
+    fn conditional_poll_preserves_legacy_and_first_full_response() {
+        let fixture = PollSession::new();
+        let expected = legacy_full_response(&fixture.native);
+        assert_eq!(fixture.poll(None).unwrap(), expected);
+        assert_eq!(fixture.poll(Some(json!(0))).unwrap(), expected);
+        assert_eq!(fixture.poll(Some(json!(u64::MAX))).unwrap(), expected);
+        assert_eq!(
+            fixture.poll(Some(json!(1))).unwrap(),
+            json!({"unchanged":true,"version":1,"finished":false,"errorCode":null})
+        );
+    }
+
+    #[test]
+    fn conditional_poll_refreshes_terminal_fields_without_a_controller_revision() {
+        let fixture = PollSession::new();
+        let first = fixture.poll(None).unwrap();
+        let version = first["version"].clone();
+        assert_eq!(
+            fixture.poll(Some(version.clone())).unwrap()["finished"],
+            false
+        );
+        *fixture.native.error_code.lock().unwrap() = Some("transport_error".into());
+        let pending = fixture.poll(Some(version.clone())).unwrap();
+        assert_eq!(pending["errorCode"], "transport_error");
+        assert_eq!(pending["finished"], false);
+        fixture.native.finished.store(true, Ordering::SeqCst);
+        assert_eq!(
+            fixture.poll(Some(version.clone())).unwrap(),
+            json!({"unchanged":true,"version":version,"finished":true,"errorCode":"transport_error"})
+        );
+    }
+
+    #[test]
+    fn conditional_poll_returns_complete_current_state_after_a_change() {
+        let fixture = PollSession::new();
+        let first = fixture.poll(None).unwrap();
+        fixture.native.publish(|controller| {
+            controller.did_connect();
+            controller.handle_from(
+                AudioSource::System,
+                LiveTranslateServerEvent::SubtitleConfirmedPair {
+                    source_utterance_id: Some(1),
+                    utterance_id: 1,
+                    source: "Synthetic conditional source".into(),
+                    translation: "Synthetic conditional translation".into(),
+                    language: Some("en".into()),
+                },
+            );
+            controller.state.atomic_preview = Some(true);
+            controller.state.is_translation_pending = true;
+            controller.state.is_translation_preview_pending = true;
+            controller.state.is_translation_timed_out = true;
+            controller.state.translation_recovery = Some(TranslationRecovery {
+                reason: mimi_runtime::core::diagnostics::TranslationRecoveryReason::RateLimited,
+                retry_after_ms: 4000,
+                retry_scheduled: true,
+            });
+        });
+        let changed = fixture.poll(Some(first["version"].clone())).unwrap();
+        assert_eq!(changed, legacy_full_response(&fixture.native));
+        assert!(changed.get("unchanged").is_none());
+        assert_eq!(changed["snapshot"]["history"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            fixture.poll(Some(changed["version"].clone())).unwrap()["unchanged"],
+            true
+        );
+    }
+
+    #[test]
+    fn conditional_poll_observes_tick_changes_without_republishing_unchanged_ticks() {
+        let fixture = PollSession::new();
+        fixture.native.publish(|controller| {
+            controller.handle_from(
+                AudioSource::System,
+                LiveTranslateServerEvent::TranslationStarted,
+            );
+        });
+        let before = fixture.poll(None).unwrap();
+        assert_eq!(before["isTranslationPending"], true);
+        let now = std::time::Instant::now();
+        fixture.native.tick(now + Duration::from_secs(7));
+        let expired = fixture.poll(Some(before["version"].clone())).unwrap();
+        assert_eq!(expired["isTranslationPending"], false);
+        assert_eq!(expired["isTranslationTimedOut"], true);
+        assert_eq!(
+            expired["version"].as_u64().unwrap(),
+            before["version"].as_u64().unwrap() + 1
+        );
+        fixture.native.tick(now + Duration::from_secs(8));
+        assert_eq!(
+            fixture.poll(Some(expired["version"].clone())).unwrap()["unchanged"],
+            true
+        );
+    }
+
+    #[test]
+    fn conditional_poll_rejects_invalid_versions_and_stale_handles() {
+        let fixture = PollSession::new();
+        for since in [json!(-1), Value::Null, json!(true), json!("1"), json!(1.5)] {
+            assert_eq!(
+                fixture.poll(Some(since)),
+                Err("native_runtime_invalid_request")
+            );
+        }
+        sessions().lock().unwrap().remove(&fixture.handle);
+        assert_eq!(
+            fixture.poll(Some(json!(1))),
+            Err("native_runtime_stale_handle")
+        );
+    }
+
+    #[test]
+    fn published_controller_state_and_version_stay_together_under_contention() {
+        let native = fixture(configuration());
+        native
+            .controller
+            .lock()
+            .unwrap()
+            .state
+            .subtitles
+            .source
+            .text = "1".into();
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let writers: Vec<_> = (0..2)
+            .map(|_| {
+                let native = native.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..10_000 {
+                        native.publish(|controller| {
+                            let next = native.version.load(Ordering::SeqCst) + 1;
+                            controller.state.subtitles.source.text = next.to_string();
+                            std::thread::yield_now();
+                        });
+                    }
+                })
+            })
+            .collect();
+        barrier.wait();
+        for _ in 0..2_000 {
+            let snapshot = native.snapshot();
+            assert_eq!(
+                snapshot["snapshot"]["source"]["text"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap(),
+                snapshot["version"].as_u64().unwrap(),
+                "a snapshot must carry the revision of its controller state"
+            );
+        }
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let final_snapshot = native.snapshot();
+        assert_eq!(final_snapshot["snapshot"]["source"]["text"], "20001");
+        assert_eq!(final_snapshot["version"], 20_001);
     }
 
     #[tokio::test]

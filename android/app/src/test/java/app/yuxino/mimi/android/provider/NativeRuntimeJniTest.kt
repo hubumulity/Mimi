@@ -55,6 +55,12 @@ class NativeRuntimeJniTest {
                         assertEquals(id, 0, failed.getJSONObject("snapshot").getJSONArray("history").length())
                         assertFalse(id, failed.getJSONObject("snapshot").getBoolean("displayPairFinal"))
                         assertFalse(id, failed.toString().contains("synthetic-apiKey"))
+                        val terminal = awaitState { it.getBoolean("finished") }
+                        val light = NativeRuntimeConfiguration.poll(handle, terminal.getLong("version"))
+                        assertTrue(id, light.getBoolean("unchanged"))
+                        assertTrue(id, light.getBoolean("finished"))
+                        assertEquals(id, "provider_error", light.getString("errorCode"))
+                        assertFalse(id, light.has("snapshot"))
                     } else {
                         val confirmed = awaitState { it.getJSONObject("snapshot").getJSONArray("history").length() == 1 }
                         assertTrue(id, confirmed.isNull("errorCode"))
@@ -101,6 +107,40 @@ class NativeRuntimeJniTest {
 
     private fun create(configuration: JSONObject): Long = NativeRuntimeConfiguration.exchange(
         JSONObject().put("operation", "create").put("configuration", configuration).put("network", network)).getLong("handle")
+
+    @Test fun incrementalPollKeepsLegacySnapshotsAndRejectsInvalidVersionsAcrossActualJni() {
+        val handle = create(configuration())
+        try {
+            val first = NativeRuntimeConfiguration.poll(handle)
+            val version = first.getLong("version")
+            assertTrue(first.has("snapshot"))
+            assertFalse(first.optBoolean("unchanged"))
+            val mismatched = NativeRuntimeConfiguration.poll(handle, version + 1)
+            assertTrue(mismatched.has("snapshot"))
+            assertFalse(mismatched.optBoolean("unchanged"))
+
+            val light = NativeRuntimeConfiguration.poll(handle, version)
+            assertTrue(light.getBoolean("unchanged"))
+            assertEquals(version, light.getLong("version"))
+            assertFalse(light.has("snapshot"))
+            assertFalse(light.getBoolean("finished"))
+            assertTrue(light.isNull("errorCode"))
+            val legacy = NativeRuntimeConfiguration.command("poll", handle)
+            assertTrue(legacy.has("snapshot"))
+            assertEquals(first.getJSONObject("snapshot").toString(), legacy.getJSONObject("snapshot").toString())
+
+            for (invalid in listOf(-1L, "2", true, 1.5)) {
+                assertEquals("native_runtime_invalid_request", assertThrows(IllegalArgumentException::class.java) {
+                    NativeRuntimeConfiguration.exchange(JSONObject().put("operation", "poll").put("handle", handle)
+                        .put("sinceVersion", invalid))
+                }.message)
+            }
+            NativeRuntimeConfiguration.command("stop", handle)
+            assertEquals("native_runtime_stale_handle", assertThrows(IllegalArgumentException::class.java) {
+                NativeRuntimeConfiguration.poll(handle, version)
+            }.message)
+        } finally { NativeRuntimeConfiguration.command("stop", handle) }
+    }
 
     @Test fun allSavedProviderCredentialShapesCrossTheActualNativeBoundaryWithoutConnecting() {
         for (provider in ServiceProvider.entries) {
@@ -535,6 +575,11 @@ class NativeRuntimeJniTest {
                 assertEquals("Synthetic finish tail.", history.getJSONObject(0).getString("source"))
                 assertEquals("合成收尾字幕。", history.getJSONObject(0).getString("translation"))
                 assertEquals("system", history.getJSONObject(0).getString("audioSource"))
+                val light = NativeRuntimeConfiguration.poll(handle, finished.getLong("version"))
+                assertTrue(light.getBoolean("unchanged"))
+                assertTrue(light.getBoolean("finished"))
+                assertTrue(light.isNull("errorCode"))
+                assertFalse(light.has("snapshot"))
                 assertTrue("Graceful finish left its transport open", fixture.transportClosed.await(3, TimeUnit.SECONDS))
                 fixture.checkFailure()
             } finally { NativeRuntimeConfiguration.command("stop", handle) }
