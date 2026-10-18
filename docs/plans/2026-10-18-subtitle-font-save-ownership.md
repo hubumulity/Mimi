@@ -52,5 +52,14 @@ Focused coverage is 31 passing tests. Quick frontend checks pass typecheck,
 selected lint and 120 related tests in 10 files. Existing resume tests print
 React act warnings but pass; assertions and timeouts were not changed. No real
 provider, credential, audio or user-setting mutation was performed. Browser and
-signed native interaction acceptance remain separate; no complete acceptance
-suite, production build or packaging run was part of this focused iteration.
+signed native interaction acceptance remain separate.
+
+Root acceptance combined the unchanged font implementation with the bounded
+resize dispatcher and rebased onto `90fa8cb` without changing the tested tree.
+Complete frontend validation passed 2,333 tests in 144 files, lint, the
+typechecked production build and all 17 output checks. A real Chromium
+SettingsView preview navigated away and back during A/B/C saves: both successful
+and failed first A wrote only A,C; leaving without a newer C retained A,B. The
+actual control/store/navigation use synthetic native font and persistence
+boundaries. Formal store listeners cover old echoes and external ABA separately;
+no installed-device font, packaging or signed native acceptance is claimed.

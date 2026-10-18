@@ -38,9 +38,15 @@
   store 后，留页和卸载两种路径都补发最新 A。quick frontend 类型、selected
   lint、10 文件／120 项通过；既有 resume 测试
   有 React act 警告但未失败，未调整其断言或时限。
-- 本轮未跑完整验收、production build 或浏览器／签名原生交互；仍需在实际
-  字体枚举与快速切页中确认视觉预览和焦点。单 WebView owner 不跨窗口共享，
-  不更改普通保存交易次序，也不凭同值快照推断原生 mutation 来源。
+- root 验收把源码不变的字体修复与缩放 dispatcher 一起重放到 `90fa8cb`；
+  完整前端 144 文件／2,333 项、lint、typechecked production build 和输出
+  边界 17 项通过。真实 Chromium 设置页面完成 A 在途、旧 B 排队、离页返回
+  选择 C 的成功／首写失败两种路径，均只写 A、C；没有新 C 时仍写 A、B。
+  三组真实导航／控件／store 配合合成字体枚举及持久化，已查看实际截图。
+- 原生旧回显／external ABA 由正式 store 监听回归覆盖，浏览器 fixture
+  不替代该事件边界；真实已安装字体、signed macOS／Windows 交互仍未验收。
+  单 WebView owner 不跨窗口共享，不更改普通交易次序，也不凭同值快照推断
+  原生 mutation 来源。
 
 ## 2026-10-18：缩放收尾、滑块预览与应用刷新
 
