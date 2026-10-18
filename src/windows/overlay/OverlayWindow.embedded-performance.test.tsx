@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useSyncExternalStore } from "react";
+import { act, useEffect, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { effectiveUiLanguage, I18N, setStoredUiLanguage, subscribeUiLanguage } from "../../lib/i18n";
@@ -12,6 +12,7 @@ import { overlayControlPanelModel } from "../overlay-control/overlayControlModel
 import { capsuleLabels } from "../overlay-control/capsuleLabels";
 import { overlaySessionChromeLayout } from "./overlayChromeLayout";
 import { OverlayWindow } from "./OverlayWindow";
+import { useSettingsToast } from "../settings/useSettingsToast";
 
 const native = vi.hoisted(() => ({
   mode: "hidden" as OverlayControlMode,
@@ -49,12 +50,19 @@ const scrollDescriptors = ["scrollTo", "scrollIntoView"].map(key => [key, Object
 let host: HTMLDivElement, root: Root;
 const resizeObservers = new Map<Element, Set<() => void>>();
 let islandWidth: number;
+let notify: (message: string) => void;
+
+function ToastHarness() {
+  const { beginToast } = useSettingsToast();
+  useEffect(() => { notify = message => beginToast()(message, true); }, [beginToast]);
+  return null;
+}
 
 // App subscribes to language changes above the actual overlay. Keep that
 // inherited render too, so a memo boundary cannot silently freeze its locale.
 function OverlayRoot() {
   useSyncExternalStore(subscribeUiLanguage, effectiveUiLanguage, effectiveUiLanguage);
-  return <OverlayWindow />;
+  return <><OverlayWindow /><ToastHarness /></>;
 }
 function publishMode(mode: OverlayControlMode) {
   native.mode = mode;
@@ -63,6 +71,9 @@ function publishMode(mode: OverlayControlMode) {
 async function mount(mode: OverlayControlMode) {
   native.mode = mode;
   await act(async () => root.render(<OverlayRoot />));
+}
+async function flushPopupFrame() {
+  await act(async () => { await vi.advanceTimersByTimeAsync(32); });
 }
 function picker(label: string) {
   return host.querySelector<HTMLButtonElement>(`[role="combobox"][aria-label="${label}"]`)!;
@@ -166,6 +177,123 @@ it.each(["hidden", "island", "panel"] as const)("does not rebuild embedded contr
   expect(host.querySelector(".overlay-control-island")).toBe(island);
   expect(host.querySelector(".overlay-control-panel")).toBe(panel);
   if (display) expect(picker(I18N.settings.subtitleDisplay)).toBe(display);
+});
+
+it.each((["none", "menu", "toast", "both"] as const).flatMap(layers =>
+  (["caption", "latency"] as const).map(channel => ({ layers, channel })),
+))("does not schedule popup measurement for displayed $channel changes with $layers layers", async ({ layers, channel }) => {
+  await mount("panel");
+  await flushPopupFrame();
+  if (layers === "menu" || layers === "both") await act(async () => picker(I18N.settings.subtitleDisplay).click());
+  if (layers === "toast" || layers === "both") await act(async () => notify("Synthetic notification"));
+  await flushPopupFrame();
+  const menu = document.querySelector(".mimi-select__menu");
+  const toast = host.querySelector(".settings-toast");
+  expect(menu !== null).toBe(layers === "menu" || layers === "both");
+  expect(toast !== null).toBe(layers === "toast" || layers === "both");
+  const lookups = vi.spyOn(document, "querySelector");
+  const geometry = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  lookups.mockClear(); geometry.mockClear(); native.bounds.mockClear();
+  vi.mocked(overlayControlPanelModel).mockClear();
+  for (let index = 0; index < 3; index++) {
+    await act(async () => useStore.setState(state => ({ session: { ...state.session,
+      ...(channel === "caption" ? { subtitles: { ...state.session.subtitles,
+        source: { ...state.session.subtitles.source, text: `Synthetic displayed caption ${index}` },
+      } } : { apiLatencyMs: 100 + index }),
+    } })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    await flushPopupFrame();
+    if (channel === "caption") expect(host.querySelector('[data-utterance-id="live-utterance-synthetic-live"]')?.textContent).toContain(`Synthetic displayed caption ${index}`);
+    else expect(host.querySelector(".overlay-latency")?.textContent).toContain(`${100 + index} ms`);
+  }
+  // The lookup occurs at the start of every real popup measurement, including
+  // the no-layer case where there are no rectangles to read.
+  expect(lookups.mock.calls.filter(([selector]) => selector === ".mimi-select__menu")).toHaveLength(0);
+  expect(geometry.mock.contexts.filter(element => element instanceof Element
+    && (element.classList.contains("mimi-select__menu") || element.classList.contains("settings-toast")))).toHaveLength(0);
+  expect(native.bounds).not.toHaveBeenCalled();
+  expect(overlayControlPanelModel).not.toHaveBeenCalled();
+  expect(document.querySelector(".mimi-select__menu")).toBe(menu);
+  expect(host.querySelector(".settings-toast")).toBe(toast);
+});
+
+it("retains popup measurement for stylesheet, ancestor, unknown sibling and mixed mutations", async () => {
+  await mount("panel");
+  await flushPopupFrame();
+  await act(async () => picker(I18N.settings.subtitleDisplay).click());
+  const surface = host.querySelector<HTMLElement>(".overlay-control-embedded")!;
+  const subtitleRoot = surface.parentElement!.firstElementChild!;
+  expect(subtitleRoot.contains(host.querySelector(".overlay-timeline"))).toBe(true);
+  const local = document.createElement("span"); local.textContent = "Synthetic local text";
+  const outside = document.createElement("span"); outside.textContent = "Synthetic outside text";
+  const stylesheet = document.createElement("div");
+  stylesheet.innerHTML = "<style>.synthetic-audit { color: red; }</style>";
+  const link = document.createElement("link"); link.rel = "stylesheet";
+  await act(async () => { subtitleRoot.append(local); surface.parentElement!.append(outside); });
+  await flushPopupFrame();
+  const lookups = vi.spyOn(document, "querySelector");
+  const controls: [string, () => void][] = [
+    ["ancestor style", () => { surface.parentElement!.style.transform = "translateX(20px)"; }],
+    ["unknown sibling text", () => { outside.firstChild!.textContent = "Changed outside text"; }],
+    ["stylesheet subtree addition", () => { subtitleRoot.append(stylesheet); }],
+    ["stylesheet text replacement", () => { stylesheet.firstElementChild!.textContent = ".synthetic-audit { color: blue; }"; }],
+    ["stylesheet Text mutation", () => { stylesheet.firstElementChild!.firstChild!.textContent = ".synthetic-audit { color: green; }"; }],
+    ["stylesheet subtree removal", () => { stylesheet.remove(); }],
+    ["link addition", () => { subtitleRoot.append(link); }],
+    ["link removal", () => { link.remove(); }],
+    ["mixed batch", () => { local.firstChild!.textContent = "Local change"; outside.firstChild!.textContent = "Outside change"; }],
+  ];
+  for (const [name, change] of controls) {
+    lookups.mockClear();
+    await act(async () => change());
+    await flushPopupFrame();
+    expect(lookups.mock.calls.filter(([selector]) => selector === ".mimi-select__menu"), name).toHaveLength(1);
+  }
+  await act(async () => { outside.remove(); local.remove(); });
+});
+
+it("keeps menu and real notification slots current through changes, removals, resize and pending-frame teardown", async () => {
+  let menuRect = { x: 18, y: 16, width: 180, height: 24 };
+  let toastRect = { x: 260, y: 400, width: 360, height: 62 };
+  vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+    const rect = this.classList.contains("settings-toast") ? toastRect : menuRect;
+    return { ...rect, top: rect.y, left: rect.x, right: rect.x + rect.width, bottom: rect.y + rect.height } as DOMRect;
+  });
+  await mount("panel");
+  await flushPopupFrame();
+  await act(async () => { picker(I18N.settings.subtitleDisplay).click(); notify("Short notice"); });
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(menuRect, toastRect);
+  const menu = document.querySelector<HTMLElement>(".mimi-select__menu")!;
+  menuRect = { ...menuRect, x: 41, width: 310 };
+  await act(async () => { menu.style.left = "41px"; menu.style.width = "310px"; });
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(menuRect, toastRect);
+  toastRect = { ...toastRect, width: 380, height: 86 };
+  await act(async () => notify("A longer synthetic notification replaces the actual toast content"));
+  await flushPopupFrame();
+  expect(host.querySelector(".settings-toast")?.textContent).toContain("A longer synthetic notification");
+  expect(document.querySelector(".mimi-select__menu")).toBe(menu);
+  expect(native.bounds).toHaveBeenLastCalledWith(menuRect, toastRect);
+  await act(async () => host.querySelector<HTMLButtonElement>(".settings-toast button")!.click());
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(menuRect, null);
+  await act(async () => picker(I18N.settings.subtitleDisplay).click());
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(null, null);
+  await act(async () => picker(I18N.settings.subtitleDisplay).click());
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(menuRect, null);
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenLastCalledWith(null, null);
+  await act(async () => picker(I18N.settings.subtitleDisplay).click());
+  await flushPopupFrame();
+  native.bounds.mockClear();
+  await act(async () => { document.querySelector<HTMLElement>(".mimi-select__menu")!.style.width = "320px"; });
+  await act(async () => publishMode("hidden"));
+  await flushPopupFrame();
+  expect(native.bounds).toHaveBeenCalledExactlyOnceWith(null);
 });
 
 it("keeps locale, settings, lifecycle, native mode and resize subscriptions live behind the parent render boundary", async () => {
