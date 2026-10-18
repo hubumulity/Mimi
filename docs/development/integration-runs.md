@@ -67,15 +67,21 @@
   后确认历史仍为空；未改该用例、阈值或 xAI 实现，两个线程下单独复跑通过。
   最终两个线程的 quick shared 全过：core 95＋4 契约、runtime 810（既有
   ignored 1）、Rust JNI adapter 14、updater 4，以及格式、严格 Clippy、
-  架构和 diff 检查；独立源码审查无阻断。未跑完整 canonical 或 native UI。
+  架构和 diff 检查；独立源码审查无阻断。未做 native UI 验收。
 - 同一冻结源码构建的 debug JNI 库经实际 Java exchange → 本地 CONNECT／
   TLS／WebSocket 三阶段验证通过：B 当前草稿、A 单次历史、旧 A draft／final
   不回退、B 译文 preview 与正常 finish 均保持，且 transport 在硬停前已关闭。
   单连接、8 个合成内容事件、20 次 poll；证据只含计数、结果和受测库 hash。
 - 随后只将本轮改动重放到 `8d60c76`，三个共享生产文件与 `4a479e8` 逐字
   相同；保留 main 五个硬停／正常收尾／PCM 回归并合并新的 loopback 模式。
-  上述实际 Java 库仍对应 `4a479e8` 的 JNI adapter；组合后的 adapter／Kotlin
-  验收另由 root 的精确提交检查负责，未把旧库当作组合构建证据。
+  上述实际 Java 库仍对应 `4a479e8` 的 JNI adapter，不把旧库当作组合证据。
+- root 随后基于合并 main `47c5a35` 验收 `aa01686`，整树与组合 `d631a17`
+  相同。无参数 canonical 通过 core 95＋4 契约、runtime 810（既有 ignored 1）、
+  Rust JNI 18、updater 4 及格式／严格 Clippy／架构；随后因缺 `glib-2.0.pc`
+  停在桌面 native 编译。组合 JNI debug 库再构建并固定 hash `06fc0bcd`，
+  实际 Java/JNI 三阶段复跑通过：同样 1 连接／8 内容事件／20 poll，草稿、
+  单次历史、旧重放、合法译文 preview 与正常收尾均保持。原生和 Kotlin
+  完整构建仍以精确提交平台 CI 为门槛。
 - Android 新增 maintained JNI loopback 用例。公开 poll 只读快照，不能暂停
   native 消费者；该用例验证正常分阶段
   协议映射与 Kotlin 发布，确定性 backlog 由 Rust 门闩覆盖，不把它描述成

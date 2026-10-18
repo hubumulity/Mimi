@@ -69,4 +69,14 @@ on `a71680c`. Replaying this change on `8d60c76` preserves all three shared
 production files byte for byte, while retaining that base's PCM recovery and
 merging its Kotlin fixture modes. The earlier JNI library does not validate
 the combined adapter build; that exact revision needs its own integration
-checks. See the run ledger for completed checks and remaining CI boundaries.
+checks.
+
+Root completed that combined verification at `aa01686` on merged main
+`47c5a35`, with the same tree as `d631a17`: canonical passed core 95 plus four
+contract tests, runtime 810 (one existing ignored), Rust JNI 18, updater four,
+formatting, strict Clippy and architecture checks. Desktop compilation stopped
+at the host's missing `glib-2.0.pc`. The combined JNI debug library (hash
+`06fc0bcd`) passed the same actual Java/JNI three-phase loopback test: one
+connection, eight content events, twenty polls and all preview/history/replay/
+graceful-tail assertions. Deterministic backlog remains the maintained Rust
+regression's role; full native and Kotlin/JNI CI are still merge gates.
