@@ -1,6 +1,7 @@
 import { isSystemAudioPermissionDenied } from "../../lib/systemAudioPermissions";
 import { useLanguageNormalizationToast } from "../settings/useLanguageNormalizationToast";
-import { useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { effectiveUiLanguage, subscribeUiLanguage } from "../../lib/i18n";
 import { targetLanguagesForSettings } from "../../lib/providerCapabilities";
 import { useOverlayControlMode } from "../../lib/useOverlayControlMode";
 import { sessionErrorSettingsTarget } from "../../lib/connectionDiagnostics";
@@ -30,7 +31,8 @@ import { overlayControlPanelModel } from "./overlayControlModel";
 import "./overlay-control.css";
 
 /** Child window that morphs between a compact status island and its panel. */
-export function OverlayControlWindow({ embedded = false }: { embedded?: boolean }) {
+export const OverlayControlWindow = memo(function OverlayControlWindow({ embedded = false }: { embedded?: boolean }) {
+  useSyncExternalStore(subscribeUiLanguage, effectiveUiLanguage, effectiveUiLanguage);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const sessionStatusKind = useStore(selectSessionStatusKind);
   const sessionErrorMessage = useStore(selectSessionErrorMessage);
@@ -224,7 +226,7 @@ export function OverlayControlWindow({ embedded = false }: { embedded?: boolean 
       </div>
     </div>
   );
-}
+});
 
 function initialPreviewMode(): OverlayControlMode {
   if (isTauri) return "hidden";

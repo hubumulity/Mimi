@@ -4,6 +4,27 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-18：嵌入控制窗口的字幕更新边界
+
+- 基于 `1b3b111`，范围见[设计记录](../plans/2026-10-18-embedded-control-render-boundary.md)。
+  真实 OverlayWindow → ControlWindow → Panel／Capsule／Timeline 合成原生
+  IPC 用例在 hidden／island／panel 各发送 50 次字幕与延迟快照；父模型均
+  运行 50 次，旧控制模型每模式至少 50 次，新实现新增 0 次。三个正式
+  工作量负例先失败；修后五项通过，字幕稳态仍发布最新草稿，节点与
+  打开的 picker portal 身份保持。计数不推算 CPU、帧率或原测试超时原因。
+- 独立对照覆盖八语言、无设置替换的语言事件、System 读取当前 navigator
+  语言、关闭面板后的静态文案、目标语言／pulse 样式、暂停／停止阶段、
+  原生 mode、迟到快捷键信息、尺寸 observer 及卸载监听清理；独立源码
+  复审无阻断。仅增加控制窗口 memo 与现有 locale 订阅，不改整个 overlay、
+  字幕稳定器或 popup observer；没有新增系统语言通知。
+- quick frontend 的 provider-copy、typecheck、选定 lint 与 diff 检查均通过，
+  相关 13 文件／199 项回归通过；包括既有控制窗口帮助／popup 生命周期、
+  记录阅读及两种 445 草稿对照。没有将本轮工作量结果归因于旧超时。
+- 本地 jsdom 夹具仅证实 React 更新与计算次数；未启动浏览器、Vite 或
+  native 构建，无真实 provider、捕获、私有字幕或凭据。原生嵌入表面的
+  几何、输入区域及平台交互仍留给后续集成验收；observer 候选也需先证明
+  字幕变化与祖先／portal 几何更新的区别。
+
 ## 2026-10-18：可靠迟到原文保持服务观察顺序
 
 - 基于 `d5664012c7d95d962799df5f2e8b9cfd6adcd038` 的 dirty debug 工作树，
