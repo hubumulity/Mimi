@@ -63,3 +63,10 @@ final screen coordinates match and the old end response precedes the new start.
 Eight existing release/capture-loss/unmount/disabled browser and native-stub
 checks pass. This validates browser/component behavior at a synthetic IPC
 boundary; it does not replace Windows/macOS native interaction acceptance.
+
+Complete frontend validation passed 2,317 tests in 142 files, lint, the
+typechecked production build and all 17 production-output boundary checks.
+Rebasing onto `ba87a50` preserved the tested source tree. Compared with the
+existing `f949d61` build in the same environment, total JavaScript grew by
+755 bytes, or 295 bytes when summing Node gzip level 6 output per file; this
+is the dispatcher cost, not an installer-size or end-to-end performance claim.
