@@ -24,6 +24,30 @@
   重启仍需实机验收。WebView reload、其他原生 owner 和传输内部重复交付
   仍需 native gesture identity 才能完整隔离，未据本轮宣称已覆盖。
 
+## 2026-10-18：跨页字体保存归属
+
+- 基于 `f949d610`（与合并后的 `ba87a502` 同树），范围见[设计记录](../plans/2026-10-18-subtitle-font-save-ownership.md)。
+  实际字体组件、store、保存 coordinator 与 settings-changed 监听保持生产路径，
+  仅原生保存／枚举边界使用合成数据，没有真实配置、凭据、provider 或采集。
+- A 保存挂起、旧页选择 B、离页返回选择 C：旧组件在首写成功和失败两项
+  正式负控中均写入 A、C、B；窗口级有界 owner 改为 A、C，新 UI 与原生
+  设置均保持 C。没有新 C 时仍完成 B，不以卸载时丢弃合法选择规避问题。
+- 原有 15 项和新增 16 项通过，覆盖共享单待发槽、多实例、ABA、失败重试／
+  回滚与当前通知、旧 native 回显／外部值、闲置外部变化与 StrictMode。
+  另两项旧组件负控复现外部 D 使旧 A 返回过期后再选 A 丢失；强制读取 live
+  store 后，留页和卸载两种路径都补发最新 A。quick frontend 类型、selected
+  lint、10 文件／120 项通过；既有 resume 测试
+  有 React act 警告但未失败，未调整其断言或时限。
+- root 验收把源码不变的字体修复与缩放 dispatcher 一起重放到 `90fa8cb`；
+  完整前端 144 文件／2,333 项、lint、typechecked production build 和输出
+  边界 17 项通过。真实 Chromium 设置页面完成 A 在途、旧 B 排队、离页返回
+  选择 C 的成功／首写失败两种路径，均只写 A、C；没有新 C 时仍写 A、B。
+  三组真实导航／控件／store 配合合成字体枚举及持久化，已查看实际截图。
+- 原生旧回显／external ABA 由正式 store 监听回归覆盖，浏览器 fixture
+  不替代该事件边界；真实已安装字体、signed macOS／Windows 交互仍未验收。
+  单 WebView owner 不跨窗口共享，不更改普通交易次序，也不凭同值快照推断
+  原生 mutation 来源。
+
 ## 2026-10-18：缩放收尾、滑块预览与应用刷新
 
 - 基于 `5e1c3eb` 的 UI 生命周期修复，范围见[缩放记录](../plans/2026-10-18-resize-drag-finalization.md)
