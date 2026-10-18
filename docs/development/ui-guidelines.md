@@ -113,6 +113,14 @@ These project rules apply to implementation and review.
   Memoized children that read localized copy must subscribe to the locale or
   receive it as a prop. Check paused/static content too; do not remount subtitle
   history to refresh labels and lose the reader's scroll position.
+- Bound presentation work to its owner: closed pickers need no option rows,
+  unrelated element scrolls need no tooltip measurements, and unchanged subtitle
+  text needs no repeat formatting. Preserve keyboard intent when skipping an
+  equal cursor index. Pause presentation polling on document visibility changes,
+  not ordinary focus loss; keep explicit playback lifetime independent.
+  Current transcript results need a session/retention identity beyond item count.
+  Diagnostics reentry must request a fresh snapshot after any serialized in-flight
+  operation, and old visits must not replace the new view's report.
 - All interface text, native controls, tooltips and portaled menus use
   `--mimi-ui-font`. Order CJK fallbacks for the interface language and include
   Windows non-UI family names; do not add a separate stack to a shared tooltip.

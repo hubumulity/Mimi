@@ -11,10 +11,10 @@ const ipc = vi.hoisted(() => ({
   sessionTranscriptPage: vi.fn(), sessionHistoryList: vi.fn(), sessionHistoryPage: vi.fn(),
   sessionHistoryAudio: vi.fn(), sessionHistoryDelete: vi.fn(),
 }));
+const store = vi.hoisted(() => ({ session: { isActive: false }, settings: { retainSessionHistory: true, recordSessionAudio: false }, saveSettings: vi.fn() }));
 vi.mock("../../lib/ipc", () => ({ isTauri: true, setOverlayPointerCursor: vi.fn(), ...ipc }));
 vi.mock("../../lib/store", () => {
-  const state = { session: { isActive: false }, settings: { retainSessionHistory: true, recordSessionAudio: false }, saveSettings: vi.fn() };
-  return { useStore: Object.assign((select: (state: unknown) => unknown) => select(state), { getState: () => state }) };
+  return { useStore: Object.assign((select: (state: unknown) => unknown) => select(store), { getState: () => store }) };
 });
 let host: HTMLDivElement;
 let root: Root;
@@ -45,6 +45,9 @@ async function search(value: string) {
 }
 beforeEach(async () => {
   vi.useFakeTimers(); vi.clearAllMocks();
+  store.session.isActive = false;
+  store.settings.retainSessionHistory = true;
+  store.settings.recordSessionAudio = false;
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   ipc.sessionArchiveState.mockResolvedValue({ transcriptCount: 61, audioBytes: 0 });
   ipc.sessionHistoryList.mockResolvedValue(["A", "B"].map((id, n) => ({ id, count: 61, hasAudio: false, startedAtMs: 1_700_000_000_000 + n * 3600000 })));
@@ -55,7 +58,65 @@ beforeEach(async () => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it("refreshes the current transcript across a new session even when the count stays unchanged", async () => {
+  expect(host.textContent).toContain("Synthetic current");
+  const reads = ipc.sessionTranscriptPage.mock.calls.length;
+  ipc.sessionTranscriptPage.mockResolvedValue(page("new-session"));
+  store.session.isActive = true;
+  await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
+  expect(ipc.sessionTranscriptPage).toHaveBeenCalledTimes(reads + 1);
+  expect(host.textContent).toContain("Synthetic new-session");
+  expect(host.textContent).not.toContain("Synthetic current");
+});
+
+it("rejects a transcript request from before the session changed", async () => {
+  const old = deferred();
+  ipc.sessionTranscriptPage.mockReturnValueOnce(old.promise);
+  await click(button(I18N.settings.transcriptNext));
+  ipc.sessionTranscriptPage.mockResolvedValue(page("new-session", 1));
+  store.session.isActive = true;
+  await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
+  await act(async () => old.resolve(page("old-session", 1)));
+  expect(host.textContent).toContain("Synthetic new-session");
+  expect(host.textContent).not.toContain("Synthetic old-session");
+});
+
+it("clears the current transcript when retention is disabled and reloads a reenabled archive with the same count", async () => {
+  store.settings.retainSessionHistory = false;
+  await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
+  expect(host.textContent).not.toContain("Synthetic current");
+  ipc.sessionTranscriptPage.mockResolvedValue(page("reenabled"));
+  store.settings.retainSessionHistory = true;
+  await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
+  expect(host.textContent).toContain("Synthetic reenabled");
+});
+
+it("preserves a selected historical transcript across current-session lifecycle and retention changes", async () => {
+  await select(1);
+  const reads = ipc.sessionHistoryPage.mock.calls.length;
+  store.session.isActive = true;
+  store.settings.retainSessionHistory = false;
+  await act(async () => root.render(<><SessionExport visible /><SettingsToastRegion /></>)); await flush();
+  expect(host.textContent).toContain("Synthetic A");
+  expect(ipc.sessionHistoryPage).toHaveBeenCalledTimes(reads);
+});
+
+it("pauses document-hidden archive polling without treating an unfocused window as hidden", async () => {
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  const beforeBlur = ipc.sessionArchiveState.mock.calls.length;
+  await flush(2000);
+  expect(ipc.sessionArchiveState).toHaveBeenCalledTimes(beforeBlur + 2);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  const reads = ipc.sessionArchiveState.mock.calls.length;
+  await flush(5000);
+  expect(ipc.sessionArchiveState).toHaveBeenCalledTimes(reads);
+  hidden.mockReturnValue(false);
+  await act(async () => document.dispatchEvent(new Event("visibilitychange"))); await flush();
+  expect(ipc.sessionArchiveState).toHaveBeenCalledTimes(reads + 1);
+});
 
 it("pauses archive polling while its page is hidden and refreshes immediately on return", async () => {
   await act(async () => root.render(<><SessionExport visible={false} /><SettingsToastRegion /></>));

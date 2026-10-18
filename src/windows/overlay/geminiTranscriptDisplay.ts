@@ -9,12 +9,16 @@ export function formatGeminiTranscriptForDisplay(text: string, minimumLineCharac
     const character = characters[index];
     rendered += character;
     lineLength = character === "\n" ? 0 : lineLength + 1;
-    let afterClosers = index + 1;
-    while (/^[”’"'」』）)】》]$/u.test(characters[afterClosers] ?? "")) afterClosers++;
-    const asciiPeriod = character === "." &&
-      /\s/u.test(characters[afterClosers] ?? "") &&
-      !/\b(?:Mr|Mrs|Ms|Dr|Prof|vs|etc|[A-Z])\.$/iu.test(rendered) &&
-      characters[index - 1] !== ".";
+    let asciiPeriod = false;
+    if (character === ".") {
+      // Only a period needs lookahead. Re-scanning closing quotes at every
+      // character makes a repeated-punctuation draft quadratic.
+      let afterClosers = index + 1;
+      while (/^[”’"'」』）)】》]$/u.test(characters[afterClosers] ?? "")) afterClosers++;
+      asciiPeriod = /\s/u.test(characters[afterClosers] ?? "") &&
+        !/\b(?:Mr|Mrs|Ms|Dr|Prof|vs|etc|[A-Z])\.$/iu.test(rendered) &&
+        characters[index - 1] !== ".";
+    }
     if (!/[。！？!?]/u.test(character) && !asciiPeriod) continue;
     while (/^[。！？!?]$/u.test(characters[index + 1] ?? "")) {
       rendered += characters[++index];
