@@ -24,6 +24,24 @@
   重启仍需实机验收。WebView reload、其他原生 owner 和传输内部重复交付
   仍需 native gesture identity 才能完整隔离，未据本轮宣称已覆盖。
 
+## 2026-10-18：跨页字体保存归属
+
+- 基于 `f949d610`（与合并后的 `ba87a502` 同树），范围见[设计记录](../plans/2026-10-18-subtitle-font-save-ownership.md)。
+  实际字体组件、store、保存 coordinator 与 settings-changed 监听保持生产路径，
+  仅原生保存／枚举边界使用合成数据，没有真实配置、凭据、provider 或采集。
+- A 保存挂起、旧页选择 B、离页返回选择 C：旧组件在首写成功和失败两项
+  正式负控中均写入 A、C、B；窗口级有界 owner 改为 A、C，新 UI 与原生
+  设置均保持 C。没有新 C 时仍完成 B，不以卸载时丢弃合法选择规避问题。
+- 原有 15 项和新增 16 项通过，覆盖共享单待发槽、多实例、ABA、失败重试／
+  回滚与当前通知、旧 native 回显／外部值、闲置外部变化与 StrictMode。
+  另两项旧组件负控复现外部 D 使旧 A 返回过期后再选 A 丢失；强制读取 live
+  store 后，留页和卸载两种路径都补发最新 A。quick frontend 类型、selected
+  lint、10 文件／120 项通过；既有 resume 测试
+  有 React act 警告但未失败，未调整其断言或时限。
+- 本轮未跑完整验收、production build 或浏览器／签名原生交互；仍需在实际
+  字体枚举与快速切页中确认视觉预览和焦点。单 WebView owner 不跨窗口共享，
+  不更改普通保存交易次序，也不凭同值快照推断原生 mutation 来源。
+
 ## 2026-10-18：缩放收尾、滑块预览与应用刷新
 
 - 基于 `5e1c3eb` 的 UI 生命周期修复，范围见[缩放记录](../plans/2026-10-18-resize-drag-finalization.md)

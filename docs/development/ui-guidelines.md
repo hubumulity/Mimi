@@ -169,6 +169,12 @@ These project rules apply to implementation and review.
   cannot replay an old configuration name. Keep compact labels single-line;
   expanded editing is explicit.
 
+- A preference with a coalesced save queue must keep that queue in the settings
+  window's lifetime when its page can unmount. Recreated or simultaneous controls
+  share the latest unsent choice; an older page must not submit it after a newer
+  choice. Preserve a legitimate queued choice when leaving without a replacement,
+  and keep previews/notifications owned by the currently mounted view.
+
 - Proxy system/direct choices save immediately. A custom address saves on blur,
   Enter or explicit paste; typing stays local and saving does not run a probe.
   Preserve failed mode/address drafts for retry and deduplicate Enter followed
