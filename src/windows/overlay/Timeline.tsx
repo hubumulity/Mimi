@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { hexToRgba } from "../../lib/types";
 import { effectiveUiLanguage, I18N, subscribeUiLanguage } from "../../lib/i18n";
 import { subtitleFontFamily } from "../../lib/subtitleFont";
@@ -105,6 +105,16 @@ export const Timeline = memo(function Timeline({
       ? previous : { active, request: followTailRequest });
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [laneMeasurements, setLaneMeasurements] = useState({ blockId: "", source: 0, translation: 0 });
+  const lastBlockId = blocks.at(-1)?.id ?? "";
+  const measureLane = useCallback((kind: "source" | "translation", height: number) => {
+    setLaneMeasurements(previous => {
+      const current = previous.blockId === lastBlockId ? previous : { blockId: lastBlockId, source: 0, translation: 0 };
+      return current[kind] === height ? previous : { ...current, [kind]: height };
+    });
+  }, [lastBlockId]);
+  const measureSource = useCallback((height: number) => measureLane("source", height), [measureLane]);
+  const measureTranslation = useCallback((height: number) => measureLane("translation", height), [measureLane]);
+  const resolvedFontFamily = useMemo(() => subtitleFontFamily(fontFamily), [fontFamily]);
   const touchStartYRef = useRef<number | null>(null);
   const tight = viewportHeight !== null && viewportHeight < 80;
   const laneGap = tight ? 1 : LANE_GAP;
@@ -288,13 +298,6 @@ export const Timeline = memo(function Timeline({
         const budgetMode = displayMode === "bilingual" && block.source === null ? "translation" : displayMode;
         const budget = subtitleLaneBudget(budgetMode, block.translation !== null, availableLaneHeight, fontSize,
           isLast && laneMeasurements.blockId === block.id ? laneMeasurements : null, sourceScale);
-        const measureLane = (kind: "source" | "translation", height: number) => {
-          if (!isLast) return;
-          setLaneMeasurements(previous => {
-            const current = previous.blockId === block.id ? previous : { blockId: block.id, source: 0, translation: 0 };
-            return current[kind] === height ? previous : { ...current, [kind]: height };
-          });
-        };
         // A new sentence must not collapse the previous phrase to its last
         // word. Every following row keeps the viewport's bounded lane budget;
         // the timeline's outer scroll chooses which rows remain in view.
@@ -340,7 +343,7 @@ export const Timeline = memo(function Timeline({
                   text={block.source}
                   kind="source"
                   lines={compact && budget.source > 0 ? budget.source : null}
-                  fontFamily={subtitleFontFamily(fontFamily)}
+                  fontFamily={resolvedFontFamily}
                   fontSize={fontSize}
                   alignment={alignment}
                   displayMode={displayMode}
@@ -352,7 +355,7 @@ export const Timeline = memo(function Timeline({
                   keepTextOpaque={keepTextOpaque}
                   preserveLineBreaks={preserveLiveLineBreaks && block.presentation === "live"}
                   sourceScale={sourceScale}
-                  onMeasure={height => measureLane("source", height)}
+                  onMeasure={isLast ? measureSource : undefined}
                 />
               ) : null}
               {block.translation !== null && displayMode !== "original" ? (
@@ -360,7 +363,7 @@ export const Timeline = memo(function Timeline({
                   text={block.translation}
                   kind="translation"
                   lines={compact && budget.translation > 0 ? budget.translation : null}
-                  fontFamily={subtitleFontFamily(fontFamily)}
+                  fontFamily={resolvedFontFamily}
                   fontSize={fontSize}
                   alignment={alignment}
                   displayMode={displayMode}
@@ -371,7 +374,7 @@ export const Timeline = memo(function Timeline({
                   entering={entering}
                   keepTextOpaque={keepTextOpaque}
                   preserveLineBreaks={preserveLiveLineBreaks && block.presentation === "live"}
-                  onMeasure={height => measureLane("translation", height)}
+                  onMeasure={isLast ? measureTranslation : undefined}
                 />
               ) : null}
             </div>
@@ -419,7 +422,7 @@ interface LaneProps {
   preserveLineBreaks?: boolean;
 }
 
-function Lane({
+const Lane = memo(function Lane({
   text,
   kind,
   lines,
@@ -483,7 +486,7 @@ function Lane({
       onMeasure={onMeasure}
     />
   );
-}
+});
 
 interface CompactLaneProps {
   text: string;
