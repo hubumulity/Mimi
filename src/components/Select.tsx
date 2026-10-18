@@ -162,17 +162,22 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
     };
     const dismiss = () => setPopup(null);
     const scroll = (event: Event) => {
-      if (!menu.current?.contains(event.target as Node)) dismiss();
+      const target = event.target;
+      if (target instanceof Node && menu.current?.contains(target)) return;
+      // Embedded controls share a document with the live caption timeline.
+      // Only a scrolling ancestor can move this trigger away from its menu.
+      if (target instanceof Element && !target.contains(trigger.current)) return;
+      dismiss();
     };
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("focusin", outside);
-    document.addEventListener("scroll", scroll, true);
+    window.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", dismiss);
     window.addEventListener("blur", dismiss);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("focusin", outside);
-      document.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", dismiss);
       window.removeEventListener("blur", dismiss);
     };
