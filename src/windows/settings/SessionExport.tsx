@@ -261,6 +261,15 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const canExportAudio = selected ? selected.hasAudio : hasAudio;
   const showCurrent = active || hasTranscript || hasAudio;
   const showContent = selected || showCurrent;
+  // Reuse each format only within this render. Later polls still observe
+  // language/default-time-zone changes, and empty lists need no formatter.
+  const language = effectiveUiLanguage();
+  let sessionTimeFormatter: Intl.DateTimeFormat | undefined;
+  let transcriptTimeFormatter: Intl.DateTimeFormat | undefined;
+  const formatSessionTime = (timestamp: number) =>
+    (sessionTimeFormatter ??= new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit" })).format(timestamp);
+  const formatTranscriptTime = (timestamp: number) =>
+    (transcriptTimeFormatter ??= new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", second: "2-digit" })).format(timestamp);
 
   return (
     <SettingsSection
@@ -332,12 +341,12 @@ export function SessionExport({ visible }: { visible: boolean }) {
             <span>{I18N.settings.historyCurrent}</span>
             {(hasTranscript || hasAudio) && <small>{hasTranscript ? I18N.settings.transcriptCount(archive?.transcriptCount ?? 0) : ""}{hasTranscript && hasAudio ? " · " : ""}{hasAudio ? I18N.settings.historyAudio : ""}</small>}
           </button>}
-          {groupHistory(history).map((group) => (
+          {groupHistory(history, language).map((group) => (
             <div className="session-history__group" key={group.day}>
               <h4>{group.label}</h4>
               {group.items.map((item) => (
                 <button type="button" key={item.id} className={`session-history__item${selectedId === item.id ? " is-selected" : ""}`} onClick={() => selectHistory(item.id)}>
-                  <span>{new Intl.DateTimeFormat(effectiveUiLanguage(), { hour: "2-digit", minute: "2-digit" }).format(item.startedAtMs)}</span>
+                  <span>{formatSessionTime(item.startedAtMs)}</span>
                   <small>{item.count > 0 ? I18N.settings.transcriptCount(item.count) : ""}{item.count > 0 && item.hasAudio ? " · " : ""}{item.hasAudio ? I18N.settings.historyAudio : ""}</small>
                 </button>
               ))}
@@ -399,7 +408,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
                 <div className="session-transcript__meta">
                   <span>#{entry.index}</span>
                   <time dateTime={new Date(entry.createdAtMs).toISOString()}>
-                    {new Intl.DateTimeFormat(effectiveUiLanguage(), { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(entry.createdAtMs)}
+                    {formatTranscriptTime(entry.createdAtMs)}
                   </time>
                 </div>
                 <div>
@@ -492,7 +501,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
   );
 }
 
-function groupHistory(items: SessionHistoryItem[]) {
+function groupHistory(items: SessionHistoryItem[], language: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
@@ -500,13 +509,16 @@ function groupHistory(items: SessionHistoryItem[]) {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const groups = new Map<string, { day: string; label: string; items: SessionHistoryItem[] }>();
+  let dateFormatter: Intl.DateTimeFormat | undefined;
   for (const item of items) {
     const date = new Date(item.startedAtMs);
     const day = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-    const label = date >= today && date < tomorrow ? I18N.settings.historyToday
-      : date >= yesterday && date < today ? I18N.settings.historyYesterday
-      : new Intl.DateTimeFormat(effectiveUiLanguage(), { year: "numeric", month: "long", day: "numeric" }).format(date);
-    if (!groups.has(day)) groups.set(day, { day, label, items: [] });
+    if (!groups.has(day)) {
+      const label = date >= today && date < tomorrow ? I18N.settings.historyToday
+        : date >= yesterday && date < today ? I18N.settings.historyYesterday
+        : (dateFormatter ??= new Intl.DateTimeFormat(language, { year: "numeric", month: "long", day: "numeric" })).format(date);
+      groups.set(day, { day, label, items: [] });
+    }
     groups.get(day)!.items.push(item);
   }
   return [...groups.values()];
