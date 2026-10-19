@@ -1308,6 +1308,79 @@ mod tests {
         }
     }
     #[test]
+    fn blank_legacy_slot_does_not_hide_a_later_valid_credential() {
+        let directory = tempfile::tempdir().unwrap();
+        let legacy = Legacy::default();
+        for (service, value) in [
+            (LEGACY_KEYCHAIN_SERVICE_V3, "   "),
+            (LEGACY_KEYCHAIN_SERVICE_V2, "synthetic-legacy-key"),
+        ] {
+            legacy.0.lock().unwrap().values.insert(
+                (service.into(), LEGACY_KEYCHAIN_ACCOUNT.into()),
+                value.into(),
+            );
+        }
+        let store = FileCredentialStore::new(
+            directory.path(),
+            "test.service",
+            vec![Slot {
+                legacy_alibaba: true,
+                ..slot("key")
+            }],
+            Box::new(legacy.clone()),
+        );
+
+        store.migrate_legacy().unwrap();
+
+        assert_eq!(
+            store.load("test.service", "key").unwrap().as_deref(),
+            Some("synthetic-legacy-key")
+        );
+        assert_eq!(reads(&legacy), 4);
+        assert_eq!(store.pending_imports().unwrap(), 0);
+    }
+    #[test]
+    fn missing_local_profile_credential_never_reads_native_migration_items() {
+        let directory = tempfile::tempdir().unwrap();
+        let legacy = Legacy::default();
+        let profile = ProfileCatalog::legacy_alibaba().profiles.remove(0);
+        for (service, account) in [
+            (
+                super::super::PROFILE_KEYCHAIN_SERVICE,
+                credential_account(&profile),
+            ),
+            (
+                super::super::PROFILE_KEYCHAIN_SERVICE,
+                LEGACY_MIGRATION_TOMBSTONE_ACCOUNT.into(),
+            ),
+            (LEGACY_KEYCHAIN_SERVICE_V3, LEGACY_KEYCHAIN_ACCOUNT.into()),
+            (LEGACY_KEYCHAIN_SERVICE_V2, LEGACY_KEYCHAIN_ACCOUNT.into()),
+            (LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_ACCOUNT.into()),
+        ] {
+            legacy
+                .0
+                .lock()
+                .unwrap()
+                .values
+                .insert((service.into(), account), "synthetic-native-value".into());
+        }
+        let file = FileCredentialStore::new(
+            directory.path(),
+            super::super::PROFILE_KEYCHAIN_SERVICE,
+            vec![],
+            Box::new(legacy.clone()),
+        );
+        let store = SettingsStore::at_path(directory.path().into(), Box::new(file));
+
+        assert_eq!(store.load_api_key().unwrap(), None);
+        assert_eq!(
+            store.credential_state_for_snapshot(&profile),
+            super::super::CredentialState::Missing
+        );
+        assert_eq!(reads(&legacy), 0);
+        assert_eq!(legacy.0.lock().unwrap().deletes, 0);
+    }
+    #[test]
     fn real_settings_snapshot_uses_file_metadata_and_import_clears_stale_errors() {
         let directory = tempfile::tempdir().unwrap();
         let legacy = Legacy::default();
@@ -1571,7 +1644,6 @@ mod tests {
             false,
             Box::new(legacy.clone()),
             service,
-            false,
         );
         let profile = bootstrap
             .create_profile(provider, "Synthetic import repair")
@@ -1638,7 +1710,6 @@ mod tests {
                 false,
                 Box::new(local),
                 super::super::PROFILE_KEYCHAIN_SERVICE,
-                false,
             );
             let metadata = store.profile_catalog().unwrap();
             for request in [
@@ -1690,7 +1761,6 @@ mod tests {
                 false,
                 Box::new(restarted),
                 super::super::PROFILE_KEYCHAIN_SERVICE,
-                false,
             );
             assert!(
                 matches!(store.credentials_for_profile(&profile).unwrap(), Some(ProviderCredentials::CustomSpeech { api_key, .. }) if api_key == "synthetic-new-key")
@@ -1713,7 +1783,6 @@ mod tests {
             false,
             Box::new(local),
             super::super::PROFILE_KEYCHAIN_SERVICE,
-            false,
         );
         assert!(store
             .save_credentials(&profile.id, &complete_speech_request("synthetic-new-key"))
@@ -1756,7 +1825,6 @@ mod tests {
             false,
             Box::new(local),
             super::super::PROFILE_KEYCHAIN_SERVICE,
-            false,
         );
         assert!(store
             .save_credentials(&profile.id, &complete_speech_request(&"k".repeat(8192)))
@@ -1789,7 +1857,6 @@ mod tests {
             false,
             Box::new(local),
             super::super::PROFILE_KEYCHAIN_SERVICE,
-            false,
         );
         fs::write(&path, b"synthetic damaged document").unwrap();
         assert!(store
@@ -1817,7 +1884,6 @@ mod tests {
             false,
             Box::new(legacy.clone()),
             service,
-            false,
         );
         let profile = bootstrap
             .create_profile(ProviderKind::CustomOpenAIASR, "Synthetic text import")
@@ -1881,7 +1947,6 @@ mod tests {
             false,
             Box::new(local),
             service,
-            false,
         );
         let metadata = store.profile_catalog().unwrap();
         let request = ProviderCredentials::AlibabaTranslation {

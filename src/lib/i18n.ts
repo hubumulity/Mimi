@@ -97,11 +97,6 @@ export function effectiveUiLanguage(): ResolvedUiLanguage {
   return isUiLanguage(base) ? base : "en";
 }
 
-/** True when the effective UI language is Chinese (zh-*). */
-export function isChineseSystem(): boolean {
-  return ["zh", "zh-TW"].includes(effectiveUiLanguage());
-}
-
 const TRAY_ZH = {
   blendBackground: "沉浸模式",
   settings: "设置…",

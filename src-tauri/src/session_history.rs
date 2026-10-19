@@ -2,7 +2,7 @@
 use crate::core::audio_input::AudioSource;
 use crate::core::models::SubtitlePair;
 use crate::core::session_archive::{SavedTranscript, TranscriptPage, AUDIO_BYTE_LIMIT};
-use serde::Serialize;
+use serde::{de, Deserialize, Serialize};
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
@@ -27,6 +27,74 @@ pub struct HistoryItem {
     pub count: usize,
     pub limited: bool,
     pub has_audio: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryMetadata {
+    version: u32,
+    id: String,
+    started_at_ms: u64,
+    ended_at_ms: u64,
+    limited: bool,
+    #[serde(deserialize_with = "count_history_entries")]
+    entries: usize,
+}
+
+// Validate the same persisted fields as SubtitlePair without retaining or
+// allocating its source/translation strings while reading a list summary.
+#[derive(Deserialize)]
+struct HistoryPairMetadata {
+    #[serde(default, rename = "audioSource")]
+    _audio_source: AudioSource,
+    #[serde(rename = "source")]
+    _source: HistoryText,
+    #[serde(rename = "translation")]
+    _translation: HistoryText,
+    #[serde(rename = "createdAt")]
+    created_at_ms: u64,
+}
+
+struct HistoryText;
+
+impl<'de> Deserialize<'de> for HistoryText {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TextVisitor;
+        impl de::Visitor<'_> for TextVisitor {
+            type Value = HistoryText;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_str<E: de::Error>(self, _value: &str) -> Result<Self::Value, E> {
+                Ok(HistoryText)
+            }
+        }
+        deserializer.deserialize_str(TextVisitor)
+    }
+}
+
+fn count_history_entries<'de, D: de::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<usize, D::Error> {
+    struct EntriesVisitor;
+    impl<'de> de::Visitor<'de> for EntriesVisitor {
+        type Value = usize;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an array of subtitle pairs")
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut entries: A) -> Result<Self::Value, A::Error> {
+            let mut count = 0;
+            while entries.next_element::<HistoryPairMetadata>()?.is_some() {
+                count += 1;
+            }
+            Ok(count)
+        }
+    }
+    deserializer.deserialize_seq(EntriesVisitor)
 }
 
 impl SessionHistory {
@@ -78,11 +146,10 @@ impl SessionHistory {
         Ok(sources)
     }
 
-    fn read(&self, id: &str) -> io::Result<SavedTranscript> {
+    fn open_transcript(&self, id: &str) -> io::Result<fs::File> {
         if self.disabled {
             return Err(io::Error::new(io::ErrorKind::NotFound, "history disabled"));
         }
-        let _io = self.io.lock().unwrap();
         let final_path = self.path(id, "json")?;
         let path = if final_path.is_file() {
             final_path
@@ -96,6 +163,12 @@ impl SessionHistory {
                 "history file too large",
             ));
         }
+        Ok(file)
+    }
+
+    fn read(&self, id: &str) -> io::Result<SavedTranscript> {
+        let _io = self.io.lock().unwrap();
+        let file = self.open_transcript(id)?;
         let mut lines = io::BufReader::new(file).lines();
         let first = lines
             .next()
@@ -123,6 +196,41 @@ impl SessionHistory {
             ));
         }
         Ok(saved)
+    }
+
+    fn read_metadata(&self, id: &str) -> io::Result<HistoryMetadata> {
+        let _io = self.io.lock().unwrap();
+        let mut reader = io::BufReader::new(self.open_transcript(id)?);
+        // Reuse one bounded line buffer. Finalized JSON stores the whole
+        // transcript on its first line, but its entries never become an owned
+        // transcript or a second copy of all subtitle text just to list it.
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "empty history"));
+        }
+        let mut metadata: HistoryMetadata = serde_json::from_str(&line)?;
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            let Ok(pair) = serde_json::from_str::<HistoryPairMetadata>(&line) else {
+                continue;
+            };
+            if metadata.entries >= crate::core::session_archive::TRANSCRIPT_COUNT_LIMIT {
+                break;
+            }
+            metadata.ended_at_ms = metadata.ended_at_ms.max(pair.created_at_ms);
+            metadata.entries += 1;
+        }
+        if metadata.version != 1 || metadata.id != id {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid history file",
+            ));
+        }
+        Ok(metadata)
     }
 
     pub fn begin(&self, id: &str, started_at_ms: u64) -> io::Result<()> {
@@ -369,18 +477,18 @@ impl SessionHistory {
             if !ids.insert(id.clone()) {
                 continue;
             }
-            let Ok(saved) = self.read(&id) else {
+            let Ok(saved) = self.read_metadata(&id) else {
                 continue;
             };
             let audio_sources = self.audio_sources(&id)?;
             let has_audio = !audio_sources.is_empty();
-            if saved.entries.is_empty() && !has_audio {
+            if saved.entries == 0 && !has_audio {
                 continue;
             }
             items.push(HistoryItem {
                 audio_sources,
                 has_audio,
-                count: saved.entries.len(),
+                count: saved.entries,
                 id,
                 started_at_ms: saved.started_at_ms,
                 ended_at_ms: saved.ended_at_ms,
@@ -600,6 +708,166 @@ fn wav_header(rate: u32, length: u32) -> [u8; 44] {
 mod tests {
     use super::*;
     use crate::core::models::SubtitlePair;
+
+    fn assert_metadata_matches_transcript(history: &SessionHistory, id: &str) {
+        let saved = history.read(id).unwrap();
+        let metadata = history.read_metadata(id).unwrap();
+        assert_eq!(metadata.id, saved.id);
+        assert_eq!(metadata.started_at_ms, saved.started_at_ms);
+        assert_eq!(metadata.ended_at_ms, saved.ended_at_ms);
+        assert_eq!(metadata.limited, saved.limited);
+        assert_eq!(metadata.entries, saved.entries.len());
+    }
+
+    #[test]
+    fn list_metadata_preserves_saved_and_interrupted_journal_semantics() {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().join("history"), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        for at in [150, 125, 180] {
+            let mut pair =
+                SubtitlePair::new("Synthetic \\\"\n日本語".into(), "译文\t😀".into(), at);
+            pair.audio_source = AudioSource::Microphone;
+            history.append_pair(&id, &pair).unwrap();
+        }
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(history.path(&id, "jsonl").unwrap())
+            .unwrap();
+        file.write_all(b"\n{invalid json}\n{\"source\":5}\n")
+            .unwrap();
+        history
+            .append_pair(
+                &id,
+                &SubtitlePair::new("Synthetic tail".into(), "译文".into(), 200),
+            )
+            .unwrap();
+        assert_metadata_matches_transcript(&history, &id);
+        assert_eq!(history.list().unwrap()[0].ended_at_ms, 200);
+
+        // Invalid UTF-8 stops recovery at this line, even if valid JSON follows.
+        file.write_all(&[b'{', 0xff, b'\n']).unwrap();
+        history
+            .append_pair(
+                &id,
+                &SubtitlePair::new("Synthetic ignored".into(), "译文".into(), 300),
+            )
+            .unwrap();
+        assert_metadata_matches_transcript(&history, &id);
+        assert_eq!(history.list().unwrap()[0].count, 4);
+        assert!(history.finalize(&id, 250, true).unwrap());
+        assert_metadata_matches_transcript(&history, &id);
+        let listed = history.list().unwrap();
+        assert_eq!(
+            (listed[0].count, listed[0].ended_at_ms, listed[0].limited),
+            (4, 250, true)
+        );
+    }
+
+    #[test]
+    fn list_metadata_preserves_header_and_appended_entry_count_limits() {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().join("history"), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        let count = crate::core::session_archive::TRANSCRIPT_COUNT_LIMIT;
+        let pair = SubtitlePair::new("Synthetic".into(), "译文".into(), 200);
+        let saved = SavedTranscript {
+            version: 1,
+            id: id.clone(),
+            started_at_ms: 100,
+            ended_at_ms: 150,
+            limited: true,
+            entries: vec![pair.clone(); count + 1],
+        };
+        let path = history.path(&id, "jsonl").unwrap();
+        let mut file = io::BufWriter::new(fs::File::create(&path).unwrap());
+        serde_json::to_writer(&mut file, &saved).unwrap();
+        file.write_all(b"\n").unwrap();
+        serde_json::to_writer(&mut file, &pair).unwrap();
+        file.flush().unwrap();
+        assert_metadata_matches_transcript(&history, &id);
+        let metadata = history.read_metadata(&id).unwrap();
+        assert_eq!((metadata.entries, metadata.ended_at_ms), (count + 1, 150));
+
+        let mut file = io::BufWriter::new(fs::File::create(path).unwrap());
+        serde_json::to_writer(
+            &mut file,
+            &SavedTranscript {
+                entries: Vec::new(),
+                ..saved
+            },
+        )
+        .unwrap();
+        for index in 0..=count {
+            file.write_all(b"\n").unwrap();
+            let pair = SubtitlePair::new("Synthetic".into(), "译文".into(), index as u64 + 200);
+            serde_json::to_writer(&mut file, &pair).unwrap();
+        }
+        file.flush().unwrap();
+        assert_metadata_matches_transcript(&history, &id);
+        let metadata = history.read_metadata(&id).unwrap();
+        assert_eq!(
+            (metadata.entries, metadata.ended_at_ms),
+            (count, count as u64 + 199)
+        );
+    }
+
+    #[test]
+    fn list_metadata_rejects_the_same_invalid_saved_fields_as_full_reads() {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().join("history"), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        let baseline = serde_json::json!({
+            "version": 1, "id": id, "startedAtMs": 100, "endedAtMs": 200, "limited": false,
+            "entries": [{"source": "Synthetic", "translation": "译文", "createdAt": 150}]
+        });
+        let mut invalid = Vec::new();
+        for (field, replacement) in [
+            ("source", serde_json::json!(5)),
+            ("translation", serde_json::Value::Null),
+            ("createdAt", serde_json::json!(-1)),
+            ("audioSource", serde_json::json!("invalid")),
+        ] {
+            let mut value = baseline.clone();
+            value["entries"][0][field] = replacement;
+            invalid.push(value);
+        }
+        for field in ["source", "translation", "createdAt"] {
+            let mut value = baseline.clone();
+            value["entries"][0].as_object_mut().unwrap().remove(field);
+            invalid.push(value);
+        }
+        for (field, replacement) in [
+            ("version", serde_json::json!(2)),
+            ("id", serde_json::json!("other")),
+            ("entries", serde_json::json!({})),
+        ] {
+            let mut value = baseline.clone();
+            value[field] = replacement;
+            invalid.push(value);
+        }
+        let path = history.path(&id, "json").unwrap();
+        for value in invalid {
+            fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+            assert!(history.read(&id).is_err());
+            assert!(history.read_metadata(&id).is_err());
+            assert!(history.list().unwrap().is_empty());
+        }
+        fs::write(&path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+        assert_metadata_matches_transcript(&history, &id);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(MAX_TRANSCRIPT_FILE_BYTES + 1)
+            .unwrap();
+        assert!(history.read(&id).is_err());
+        assert!(history.read_metadata(&id).is_err());
+        assert!(history.list().unwrap().is_empty());
+    }
 
     #[test]
     fn saves_lists_reads_and_deletes_one_session_without_path_escape() {
