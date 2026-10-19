@@ -1,4 +1,4 @@
-import { profileLanguagePresetLabel } from "../../lib/profileLanguagePreset";
+import { profileSelectionState } from "../../lib/profileSelection";
 import { SettingsToastRegion } from "../settings/SettingsToast";
 import { activeServiceProfile } from "../../lib/providerCapabilities";
 import { speechLanguageGuidance, targetLanguageOptionLabel } from "../../lib/speechLanguageGuidance";
@@ -257,10 +257,12 @@ export function OverlayControlPanel({
           <span className="overlay-control-picker__profile-label"><span>{I18N.settings.currentProfile}</span><SettingsHelp text={I18N.settings.profileSwitchHelp} label={I18N.settings.helpLabel} /></span>
           <Select label={I18N.settings.currentProfile} value={settings.activeProfileId ?? ""}
             valueLabel={I18N.settings.noActiveProfile}
-            options={settings.profiles.map((profile) => ({ value: profile.id, label: profile.name, description: profileLanguagePresetLabel(profile),
+            options={settings.profiles.map((profile) => ({ value: profile.id, label: profile.name, ...profileSelectionState(profile, settings.targetLanguage),
               icon: <ProviderIcon provider={profile.provider === "deepLX" ? "alibabaCloud" : profile.provider} size={32} /> }))}
             disabled={!canChangeSessionSettings}
             onChange={(profileId) => {
+              const profile = settings.profiles.find(profile => profile.id === profileId);
+              if (!canChangeSessionSettings || !profile || profileSelectionState(profile, settings.targetLanguage).disabled) return;
               if (profileId !== settings.activeProfileId) {
                 performAction("profile", () => onSelectProfile(profileId), false);
               }
