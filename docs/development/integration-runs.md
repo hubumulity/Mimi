@@ -33,8 +33,13 @@
   runtime 826＋既有 ignored 1、Rust JNI 24、updater 4、macOS desktop
   632＋既有 ignored 1、前端 146 文件／2,423 项，以及严格静态检查、
   生产构建和 debugger 边界。完整检查低优先级、Rust 并发 2。
-  跨平台 CI 在合并前补验；原生交互、实际服务、实体设备和长时间内存
-  压力未验收。
+- [PR #301](https://github.com/yuxino/Mimi/pull/301) 的 `1a3d7587` 通过
+  [跨平台 CI](https://github.com/yuxino/Mimi/actions/runs/39276508994) 和
+  [Android CI](https://github.com/yuxino/Mimi/actions/runs/39276508573)，包含
+  macOS、Windows x64／ARM64、Linux、实际 JVM/JNI 和两个 APK 的校验。
+  合入 main `da6ea3a9` 后确认完整文件树与受测提交一致，工作分支已清理。
+- 原生交互、实际服务、实体设备和长时间内存压力未验收。临时合成基准、
+  本轮前端构建输出和一次性日志已清理，保留现用项目缓存。
 
 ## 2026-10-19：继续深挖——异步历史列表与 Android 测试实现隔离
 
