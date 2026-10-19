@@ -25,7 +25,16 @@
 - 冻结源码的无参数 `./scripts/check.sh` 全通过：core 106＋4 契约、
   runtime 831＋既有 ignored 1、Rust JNI 24、updater 4、desktop
   632＋既有 ignored 1、前端 146 文件／2,423 项，含严格静态检查和生产构建。
-  使用低优先级、Rust 并发 2；本机未另跑 JVM，实际 JNI 与跨平台 CI 待验。
+  使用低优先级、Rust 并发 2；本机未另跑 JVM。
+- 后续 CI 对 PR head `b8d43dcb1ef831b3418e52cdb519d14afb989634`
+  全部适用检查通过：[跨平台检查](https://github.com/yuxino/Mimi/actions/runs/39281715027)
+  覆盖 macOS、Windows、Linux、Windows ARM64、MSRV 和前端；
+  [Android 检查](https://github.com/yuxino/Mimi/actions/runs/39281715004)
+  通过宿主 JNI 构建、debug／release JVM 单测和四 ABI 构建。打包与发布
+  作业按本次 PR 的 scope／非 tag 条件跳过；不代表完成设备或发布验收。
+- [PR #302](https://github.com/yuxino/Mimi/pull/302) 于北京时间
+  2026-10-20 合并到 main `1d5738e96b2ebd68a689914c12add9b034993a00`；
+  已核对合并树与上述已验证 PR head 完全一致，本地 main 安全快进同步。
 - 用户对主动静音提示的复杂度提出顾虑；评估后本轮不增加界面或状态系统。
   静音不能单独证明故障，已知采音错误继续沿用现有可见错误与恢复入口。
   实际本地 worker 超过现有收尾期限、真实尾词完整度与设备交互仍未验收。
