@@ -26,7 +26,6 @@ async function finish(index: number, broadcast = true) {
   persisted = { ...persisted, ...requests[index].draft };
   if (broadcast) emitSettings(persisted);
   requests[index].resolve(persisted);
-  await operations[index];
   await flush();
 }
 
@@ -47,8 +46,8 @@ afterEach(async () => {
   for (let index = 0; index < operations.length; index++) {
     await flush();
     if (requests[index]) requests[index].resolve({ ...persisted, ...requests[index].draft });
-    await Promise.allSettled([operations[index]]);
   }
+  await Promise.allSettled(operations);
   disposeStoreSnapshotStreams(); useStore.setState(initial, true);
 });
 
@@ -62,12 +61,14 @@ it.each([
   await flush();
   expect(requests).toHaveLength(1);
   expect(useStore.getState().settings[field]).toBe(values.at(-1));
-  for (let index = 0; index < values.length; index++) {
+  for (let index = 0; index < 2; index++) {
     persisted = { ...persisted, ...requests[index].draft };
     emitSettings(persisted);
     expect(useStore.getState().settings[field]).toBe(values.at(-1));
-    requests[index].resolve(persisted); await operations[index]; await flush();
+    requests[index].resolve(persisted); await flush();
   }
+  await Promise.all(operations);
+  expect(requests.map(request => request.draft)).toEqual([{ [field]: values[0] }, { [field]: values.at(-1) }]);
   expect(useStore.getState().settings[field]).toBe(values.at(-1));
 });
 
@@ -77,8 +78,82 @@ it("merges native changes to other fields while both slider previews are pending
   persisted = { ...persisted, fontSize: 19, subtitleColor: "pink", showSubtitleTimestamps: true };
   emitSettings(persisted);
   expect(useStore.getState().settings).toMatchObject({ fontSize: 20, subtitleBackgroundOpacity: 50, subtitleColor: "pink", showSubtitleTimestamps: true });
-  await finish(0); await finish(1); await finish(2);
+  await finish(0); await finish(1); await Promise.all(operations);
+  expect(requests.map(request => request.draft)).toEqual([{ fontSize: 19 }, { fontSize: 20, subtitleBackgroundOpacity: 50 }]);
   expect(useStore.getState().settings).toMatchObject({ fontSize: 20, subtitleBackgroundOpacity: 50, subtitleColor: "pink", showSubtitleTimestamps: true });
+});
+
+it("coalesces interleaved slider changes and completes every caller after the shared native write", async () => {
+  save({ fontSize: 19 }); await flush();
+  const settled = vi.fn();
+  const pending = [
+    save({ fontSize: 20 }), save({ subtitleBackgroundOpacity: 60 }),
+    save({ fontSize: 16 }), save({ subtitleBackgroundOpacity: 50 }),
+  ];
+  pending.forEach(operation => { void operation.then(settled); });
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 16, subtitleBackgroundOpacity: 50 });
+  await finish(0);
+  expect(settled).not.toHaveBeenCalled();
+  expect(requests.map(request => request.draft)).toEqual([
+    { fontSize: 19 }, { fontSize: 16, subtitleBackgroundOpacity: 50 },
+  ]);
+  await finish(1); await Promise.all(pending);
+  expect(settled).toHaveBeenCalledTimes(4);
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 16, subtitleBackgroundOpacity: 50 });
+});
+
+it("keeps ordinary and mixed drafts as ordered barriers between coalesced slider writes", async () => {
+  save({ fontSize: 19 }); await flush();
+  save({ fontSize: 20 }); save({ fontSize: 14 });
+  save({ retainSessionHistory: false });
+  save({ fontSize: 16 }); save({ fontSize: 17 }); save({ subtitleBackgroundOpacity: 60 });
+  save({ fontSize: 18, recordSessionAudio: false });
+  save({ subtitleBackgroundOpacity: 40 }); save({ subtitleBackgroundOpacity: 30 });
+  const expected: SettingsDraft[] = [
+    { fontSize: 19 }, { fontSize: 14 }, { retainSessionHistory: false },
+    { fontSize: 17, subtitleBackgroundOpacity: 60 }, { fontSize: 18, recordSessionAudio: false },
+    { subtitleBackgroundOpacity: 30 },
+  ];
+  for (let index = 0; index < expected.length; index++) {
+    expect(requests[index].draft).toEqual(expected[index]);
+    await finish(index);
+  }
+  await Promise.all(operations);
+  expect(requests).toHaveLength(expected.length);
+  expect(useStore.getState().settings).toMatchObject({
+    fontSize: 18, subtitleBackgroundOpacity: 30, retainSessionHistory: false, recordSessionAudio: false,
+  });
+});
+
+it("rejects every coalesced caller, rolls back both sliders and continues the queue after a failed write", async () => {
+  save({ fontSize: 19 }); await flush();
+  const pending = [save({ fontSize: 20 }), save({ subtitleBackgroundOpacity: 50 }), save({ fontSize: 16 })];
+  const results = Promise.allSettled(pending);
+  const next = save({ subtitleColor: "pink" });
+  await finish(0);
+  const failure = new Error("synthetic coalesced write failure");
+  requests[1].reject(failure);
+  expect(await results).toEqual(pending.map(() => ({ status: "rejected", reason: failure })));
+  await flush();
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 19, subtitleBackgroundOpacity: 80 });
+  expect(requests[2].draft).toEqual({ subtitleColor: "pink" });
+  await finish(2); await next;
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 19, subtitleBackgroundOpacity: 80, subtitleColor: "pink" });
+});
+
+it("rolls back only the still-owned field of a failed coalesced write after an external slider edit", async () => {
+  save({ fontSize: 19 }); await flush();
+  const pending = [save({ fontSize: 20 }), save({ subtitleBackgroundOpacity: 50 })];
+  const results = Promise.allSettled(pending);
+  await finish(0);
+  persisted = { ...persisted, fontSize: 17, subtitleColor: "pink" };
+  emitSettings(persisted);
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 17, subtitleBackgroundOpacity: 50, subtitleColor: "pink" });
+  requests[1].reject(new Error("synthetic merged write failure"));
+  expect((await results).every(result => result.status === "rejected")).toBe(true);
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 17, subtitleBackgroundOpacity: 80, subtitleColor: "pink" });
+  const retry = save({ subtitleBackgroundOpacity: 50 }); await flush(); await finish(2); await retry;
+  expect(useStore.getState().settings).toMatchObject({ fontSize: 17, subtitleBackgroundOpacity: 50, subtitleColor: "pink" });
 });
 
 it.each(["success", "failure"] as const)("lets a genuinely changed native slider value supersede a pending preview and its late %s", async outcome => {

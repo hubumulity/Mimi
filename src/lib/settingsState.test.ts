@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SettingsSnapshot } from "./types";
+import type { SettingsDraft, SettingsSnapshot } from "./types";
 import {
   SnapshotStreamBootstrap,
   mergeSettingsSnapshot,
@@ -137,6 +137,61 @@ describe("mergeSettingsSnapshot", () => {
 });
 
 describe("SettingsSaveCoordinator", () => {
+  it.each(["fontSize", "subtitleBackgroundOpacity"] as const)(
+    "coalesces a blocked %s drag before saving a later history opt-out",
+    async (field) => {
+      const coordinator = new SettingsSaveCoordinator();
+      let current: SettingsSnapshot = { ...SETTINGS, retainSessionHistory: true };
+      let persisted = current;
+      const requests: SettingsDraft[] = [];
+      let finishFirst!: () => void;
+      const persist = (draft: SettingsDraft) => {
+        requests.push(draft);
+        const commit = () => {
+          persisted = mergeSettingsSnapshot(persisted, draft);
+          current = coordinator.receiveSnapshot(persisted);
+          return persisted;
+        };
+        if (requests.length === 1) {
+          return new Promise<SettingsSnapshot>((resolve) => {
+            finishFirst = () => resolve(commit());
+          });
+        }
+        return Promise.resolve(commit());
+      };
+      const save = (draft: SettingsDraft) =>
+        coordinator.save(current, draft, persist, snapshot => { current = snapshot; });
+      const firstDraft = { [field]: field === "fontSize" ? 19 : 79 };
+      const operations = [save(firstDraft)];
+      // The first native write is already running when the drag continues.
+      await Promise.resolve();
+      let latest = 0;
+      for (let index = 0; index < 100; index += 1) {
+        latest = field === "fontSize" ? 14 + index % 7 : index;
+        operations.push(save({ [field]: latest }));
+      }
+      operations.push(save({ retainSessionHistory: false }));
+      expect(current[field]).toBe(latest);
+      expect(current.retainSessionHistory).toBe(false);
+      expect(requests).toEqual([firstDraft]);
+
+      finishFirst();
+      await Promise.all(operations);
+
+      // Intermediate slider positions must not each delay the explicit opt-out
+      // with another durable write and settings broadcast.
+      expect(requests).toEqual([
+        firstDraft,
+        { [field]: latest },
+        { retainSessionHistory: false },
+      ]);
+      expect(persisted[field]).toBe(latest);
+      expect(persisted.retainSessionHistory).toBe(false);
+      expect(current[field]).toBe(latest);
+      expect(current.retainSessionHistory).toBe(false);
+    },
+  );
+
   it("previews a font choice immediately, preserves it across another edit and rolls back a failed reset", async () => {
     const coordinator = new SettingsSaveCoordinator();
     const original = { ...SETTINGS, subtitleFontFamily: "Original Font" };

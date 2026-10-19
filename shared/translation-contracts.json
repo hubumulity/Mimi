@@ -1,5 +1,104 @@
 {
   "schemaVersion": 1,
+  "asrFinishBarrier": [
+    {
+      "id": "latest-unidentified-draft",
+      "events": [
+        { "kind": "sourceDraft", "text": "Synthetic partial" },
+        { "kind": "sourceDraft", "text": "Synthetic partial with the final tail." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceDraft", "text": "Synthetic partial with the final tail." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "latest-identified-draft",
+      "events": [
+        { "kind": "sourceDraft", "utteranceId": 1, "text": "Synthetic partial" },
+        { "kind": "sourceDraft", "utteranceId": 1, "text": "Synthetic partial with the final tail." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceDraft", "utteranceId": 1, "text": "Synthetic partial with the final tail." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "authoritative-unidentified-final",
+      "events": [
+        { "kind": "sourceDraft", "text": "Synthetic partial" },
+        { "kind": "sourceDraft", "text": "Synthetic partial with the final tail." },
+        { "kind": "sourceFinal", "text": "Synthetic authoritative final." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceFinal", "text": "Synthetic authoritative final." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "authoritative-identified-final",
+      "events": [
+        { "kind": "sourceDraft", "utteranceId": 1, "text": "Synthetic partial" },
+        { "kind": "sourceFinal", "utteranceId": 1, "text": "Synthetic authoritative final." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceFinal", "utteranceId": 1, "text": "Synthetic authoritative final." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "newer-identified-draft-after-older-final",
+      "events": [
+        { "kind": "sourceDraft", "utteranceId": 2, "text": "Synthetic newer tail." },
+        { "kind": "sourceFinal", "utteranceId": 1, "text": "Synthetic older final." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceFinal", "utteranceId": 1, "text": "Synthetic older final." },
+        { "kind": "sourceDraft", "utteranceId": 2, "text": "Synthetic newer tail." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "cleared-draft-is-not-a-finish-tail",
+      "events": [
+        { "kind": "sourceDraft", "text": "Synthetic cleared draft." },
+        { "kind": "clear" },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "current-draft-after-clear-is-finish-tail",
+      "events": [
+        { "kind": "sourceDraft", "text": "Synthetic cleared draft." },
+        { "kind": "clear" },
+        { "kind": "sourceDraft", "text": "Synthetic current tail." },
+        { "kind": "sessionFinished" }
+      ],
+      "expected": [
+        { "kind": "sourceDraft", "text": "Synthetic current tail." },
+        { "kind": "sessionFinished" }
+      ]
+    },
+    {
+      "id": "later-draft-does-not-move-before-finish",
+      "events": [
+        { "kind": "sessionFinished" },
+        { "kind": "sourceDraft", "text": "Synthetic later draft." }
+      ],
+      "expected": [
+        { "kind": "sessionFinished" },
+        { "kind": "sourceDraft", "text": "Synthetic later draft." }
+      ]
+    }
+  ],
   "qwenCompletionResponses": [
     {
       "id": "sse-done",

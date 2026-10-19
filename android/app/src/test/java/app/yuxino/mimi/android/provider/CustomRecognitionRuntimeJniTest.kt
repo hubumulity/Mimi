@@ -113,6 +113,59 @@ class CustomRecognitionRuntimeJniTest {
         }
     }
 
+    @Test fun sharedFinishBarrierPreservesLatestTailAndAuthoritativeFinalAcrossActualJni() {
+        val contract = JSONObject(requireNotNull(javaClass.getResourceAsStream("/translation-contracts.json"))
+            .bufferedReader().use { it.readText() }).getJSONArray("asrFinishBarrier")
+        val ids = setOf("latest-unidentified-draft", "authoritative-unidentified-final")
+        val selected = (0 until contract.length()).map(contract::getJSONObject)
+            .filter { it.getString("id") in ids }
+        assertEquals(ids, selected.map { it.getString("id") }.toSet())
+        for (case in selected) {
+            Loopback().use { fixture ->
+                val handle = create(fixture)
+                try {
+                    NativeRuntimeConfiguration.command("start", handle)
+                    awaitState(fixture, handle) { it.getString("connectionStatus") == "listening" }
+                    sendTurn(fixture, handle, 1)
+                    var previousDraft = ""
+                    val events = case.getJSONArray("events")
+                    for (index in 0 until events.length()) {
+                        val event = events.getJSONObject(index)
+                        when (event.getString("kind")) {
+                            "sourceDraft" -> {
+                                val text = event.getString("text")
+                                assertTrue("${case.getString("id")}: cumulative draft", text.startsWith(previousDraft))
+                                fixture.delta("turn-1", text.removePrefix(previousDraft))
+                                previousDraft = text
+                                // Rust queue tests deterministically hold drafts behind the
+                                // finish barrier. This JNI case verifies the actual adapter's
+                                // latest-tail fallback without depending on thread scheduling.
+                                awaitState(fixture, handle) {
+                                    it.getJSONObject("snapshot").getJSONObject("source").getString("text") == text
+                                }
+                            }
+                            "sourceFinal" -> {
+                                val text = event.getString("text")
+                                fixture.complete("turn-1", text)
+                                awaitState(fixture, handle) { confirmedSources(it) == listOf(text) }
+                            }
+                            "sessionFinished" -> NativeRuntimeConfiguration.command("finish", handle)
+                            else -> error("Unsupported loopback finish barrier event")
+                        }
+                    }
+                    val finished = awaitState(fixture, handle) { it.getBoolean("finished") }
+                    val expected = case.getJSONArray("expected")
+                    val retained = (0 until expected.length()).map(expected::getJSONObject)
+                        .filter { it.getString("kind") in setOf("sourceDraft", "sourceFinal") }
+                        .map { it.getString("text") }
+                    assertEquals(case.getString("id"), retained, confirmedSources(finished))
+                    assertTrue(case.getString("id"), finished.getJSONObject("snapshot").getBoolean("displayPairFinal"))
+                    fixture.checkFailure()
+                } finally { NativeRuntimeConfiguration.command("stop", handle) }
+            }
+        }
+    }
+
     private class Loopback : AutoCloseable {
         private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val endpoint = "ws://127.0.0.1:${server.localPort}/v1/realtime"

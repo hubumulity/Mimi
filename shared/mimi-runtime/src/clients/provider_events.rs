@@ -150,6 +150,8 @@ pub struct ProviderEventReceiver {
     translation_open: bool,
     overflow_open: bool,
     overflow_delivered: bool,
+    recognition_finish_drain: bool,
+    pending_finish: Option<SequencedEvent>,
     source_pending: Option<SequencedEvent>,
     translation_pending: Option<SequencedEvent>,
     last_delivered_sequence: u64,
@@ -198,6 +200,8 @@ fn provider_event_channel_with_capacity(
             translation_open: true,
             overflow_open: true,
             overflow_delivered: false,
+            recognition_finish_drain: false,
+            pending_finish: None,
             source_pending: None,
             translation_pending: None,
             last_delivered_sequence: 0,
@@ -528,6 +532,13 @@ impl ProviderEventSender {
 }
 
 impl ProviderEventReceiver {
+    /// Recognition bridges need the latest unfinished source before their
+    /// finish acknowledgement so the bounded session-finish fallback can use
+    /// it. Ordinary subtitle consumers retain their terminal-barrier behavior.
+    pub(crate) fn enable_recognition_finish_drain(&mut self) {
+        self.recognition_finish_drain = true;
+    }
+
     #[cfg(test)]
     pub fn try_recv(&mut self) -> Result<LiveTranslateServerEvent, mpsc::error::TryRecvError> {
         self.try_recv_with_revision().map(|event| event.event)
@@ -547,10 +558,13 @@ impl ProviderEventReceiver {
             self.overflow_delivered = true;
             return Ok(self.control_event(overflow_event()));
         }
+        if let Some(event) = self.pending_finish.take() {
+            return Ok(self.take_reliable_event(event));
+        }
         if self.reliable_open {
             match self.reliable.try_recv() {
                 Ok(event) => {
-                    return Ok(self.take_reliable_event(event));
+                    return Ok(self.take_reliable_event_or_recognition_tail(event));
                 }
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     self.reliable_open = false;
@@ -602,10 +616,13 @@ impl ProviderEventReceiver {
                 self.overflow_delivered = true;
                 return Some(self.control_event(overflow_event()));
             }
+            if let Some(event) = self.pending_finish.take() {
+                return Some(self.take_reliable_event(event));
+            }
             if self.reliable_open {
                 match self.reliable.try_recv() {
                     Ok(event) => {
-                        return Some(self.take_reliable_event(event));
+                        return Some(self.take_reliable_event_or_recognition_tail(event));
                     }
                     Err(mpsc::error::TryRecvError::Disconnected) => {
                         self.reliable_open = false;
@@ -641,7 +658,7 @@ impl ProviderEventReceiver {
                 event = self.reliable.recv(), if self.reliable_open => {
                     match event {
                         Some(event) => {
-                            return Some(self.take_reliable_event(event));
+                            return Some(self.take_reliable_event_or_recognition_tail(event));
                         }
                         None => self.reliable_open = false,
                     }
@@ -677,6 +694,36 @@ impl ProviderEventReceiver {
             &mut self.translation_open,
             &mut self.translation_pending,
         );
+    }
+
+    fn take_reliable_event_or_recognition_tail(&mut self, event: SequencedEvent) -> ProviderEvent {
+        if self.recognition_finish_drain
+            && matches!(event.event, LiveTranslateServerEvent::SessionFinished)
+        {
+            refresh_pending(
+                &mut self.source_draft,
+                &mut self.source_open,
+                &mut self.source_pending,
+            );
+            let has_tail = self.source_pending.as_ref().is_some_and(|draft| {
+                draft.sequence < event.sequence
+                    && draft.content_revision == self.content_revision.load(Ordering::SeqCst)
+                    && matches!(
+                        draft.event,
+                        LiveTranslateServerEvent::SourceDraft { .. }
+                            | LiveTranslateServerEvent::SourceUtteranceDraft { .. }
+                    )
+                    && !self.source_draft_is_obsolete(draft)
+            });
+            if has_tail {
+                let draft = self.source_pending.take().unwrap();
+                // At most one already-received terminal is retained. Deliver
+                // it before consulting normal lanes; overflow stays urgent.
+                self.pending_finish = Some(event);
+                return self.take_draft_event(draft);
+            }
+        }
+        self.take_reliable_event(event)
     }
 
     fn take_reliable_event(&mut self, event: SequencedEvent) -> ProviderEvent {
@@ -769,16 +816,20 @@ impl ProviderEventReceiver {
         } else {
             self.translation_pending.take().unwrap()
         };
+        Some(self.take_draft_event(event))
+    }
+
+    fn take_draft_event(&mut self, event: SequencedEvent) -> ProviderEvent {
         self.note_delivered_source(&event);
         self.last_delivered_sequence = self.last_delivered_sequence.max(event.sequence);
-        Some(ProviderEvent {
+        ProviderEvent {
             #[cfg(any(test, feature = "development-debugger"))]
             transport_sequence: Some(event.sequence),
             content_revision: event.content_revision,
             source_ordinal: event.source_ordinal,
             starts_translation: event.starts_translation,
             event: event.event,
-        })
+        }
     }
 
     fn source_draft_is_obsolete(&self, event: &SequencedEvent) -> bool {
@@ -932,6 +983,193 @@ fn overflow_event() -> LiveTranslateServerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn finish_contract_event(value: &serde_json::Value) -> LiveTranslateServerEvent {
+        use LiveTranslateServerEvent::*;
+        let text = || value["text"].as_str().unwrap().to_owned();
+        let id = value["utteranceId"].as_u64();
+        match value["kind"].as_str().unwrap() {
+            "sourceDraft" => match id {
+                Some(utterance_id) => SourceUtteranceDraft {
+                    utterance_id,
+                    text: text(),
+                    language: None,
+                },
+                None => SourceDraft {
+                    text: text(),
+                    language: None,
+                },
+            },
+            "sourceFinal" => match id {
+                Some(utterance_id) => SourceUtteranceFinal {
+                    utterance_id,
+                    text: text(),
+                    language: None,
+                },
+                None => SourceFinal {
+                    text: text(),
+                    language: None,
+                },
+            },
+            "sessionFinished" => SessionFinished,
+            _ => panic!("invalid synthetic ASR finish event"),
+        }
+    }
+
+    #[tokio::test]
+    async fn recognition_finish_contracts_match_for_async_and_try_receive() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../translation-contracts.json"
+        )))
+        .unwrap();
+        let cases = fixtures["asrFinishBarrier"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            for asynchronous in [false, true] {
+                let (sender, mut receiver) = provider_event_channel();
+                receiver.enable_recognition_finish_drain();
+                for event in case["events"].as_array().unwrap() {
+                    if event["kind"] == "clear" {
+                        sender.advance_content_revision();
+                    } else {
+                        sender.send(finish_contract_event(event)).unwrap();
+                    }
+                }
+                for expected in case["expected"].as_array().unwrap() {
+                    let actual = if asynchronous {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(1),
+                            receiver.recv_with_revision(),
+                        )
+                        .await
+                        .unwrap()
+                        .unwrap()
+                    } else {
+                        receiver.try_recv_with_revision().unwrap()
+                    };
+                    assert_eq!(
+                        actual.event,
+                        finish_contract_event(expected),
+                        "{} asynchronous={asynchronous}",
+                        case["id"]
+                    );
+                }
+                assert!(receiver.try_recv_with_revision().is_err(), "{}", case["id"]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn recognition_finish_drain_handles_waiting_receive_and_prioritizes_its_saved_finish() {
+        let (sender, mut receiver) = provider_event_channel();
+        receiver.enable_recognition_finish_drain();
+        let draft = LiveTranslateServerEvent::SourceDraft {
+            text: "Synthetic final tail.".into(),
+            language: None,
+        };
+        let mut waiting = Box::pin(receiver.recv_with_revision());
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        sender.send(draft.clone()).unwrap();
+        sender
+            .send(LiveTranslateServerEvent::SessionFinished)
+            .unwrap();
+        assert_eq!(waiting.await.unwrap().event, draft);
+
+        // New reliable work cannot overtake the one terminal already removed
+        // from the queue while its source tail was delivered.
+        sender
+            .send(LiveTranslateServerEvent::SessionUpdated)
+            .unwrap();
+        assert_eq!(
+            receiver.recv_with_revision().await.unwrap().event,
+            LiveTranslateServerEvent::SessionFinished
+        );
+        assert_eq!(
+            receiver.try_recv_with_revision().unwrap().event,
+            LiveTranslateServerEvent::SessionUpdated
+        );
+        assert!(receiver.try_recv_with_revision().is_err());
+    }
+
+    #[test]
+    fn recognition_finish_drain_keeps_other_draft_lanes_and_normal_receivers_unchanged() {
+        for (drain, draft) in [
+            (
+                false,
+                LiveTranslateServerEvent::SourceDraft {
+                    text: "Synthetic source draft.".into(),
+                    language: None,
+                },
+            ),
+            (
+                true,
+                LiveTranslateServerEvent::TranslationDraft("Synthetic translation.".into()),
+            ),
+            (
+                true,
+                LiveTranslateServerEvent::UtteranceText {
+                    utterance_id: "synthetic".into(),
+                    role: UtteranceRole::Source,
+                    text: "Synthetic stamped draft.".into(),
+                    is_final: false,
+                    language: None,
+                },
+            ),
+        ] {
+            let (sender, mut receiver) = provider_event_channel();
+            if drain {
+                receiver.enable_recognition_finish_drain();
+            }
+            sender.send(draft).unwrap();
+            sender
+                .send(LiveTranslateServerEvent::SessionFinished)
+                .unwrap();
+            assert_eq!(
+                receiver.try_recv_with_revision().unwrap().event,
+                LiveTranslateServerEvent::SessionFinished
+            );
+            assert!(receiver.try_recv_with_revision().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn recognition_finish_drain_keeps_overflow_ahead_of_its_saved_finish() {
+        for asynchronous in [false, true] {
+            let (sender, mut receiver) = provider_event_channel_with_capacity(1);
+            receiver.enable_recognition_finish_drain();
+            sender
+                .send(LiveTranslateServerEvent::SourceDraft {
+                    text: "Synthetic final tail.".into(),
+                    language: None,
+                })
+                .unwrap();
+            sender
+                .send(LiveTranslateServerEvent::SessionFinished)
+                .unwrap();
+            assert!(matches!(
+                receiver.try_recv_with_revision().unwrap().event,
+                LiveTranslateServerEvent::SourceDraft { .. }
+            ));
+            sender
+                .send(LiveTranslateServerEvent::SessionUpdated)
+                .unwrap();
+            assert_eq!(
+                sender.send(LiveTranslateServerEvent::SessionUpdated),
+                Err(ProviderEventSendError::Backpressure)
+            );
+            let event = if asynchronous {
+                receiver.recv_with_revision().await.unwrap()
+            } else {
+                receiver.try_recv_with_revision().unwrap()
+            };
+            assert_eq!(event.event, overflow_event());
+            assert_eq!(
+                receiver.try_recv_with_revision().unwrap().event,
+                LiveTranslateServerEvent::SessionFinished
+            );
+        }
+    }
 
     #[test]
     fn withdrawal_discards_only_its_queued_source_draft_before_delivery() {

@@ -2432,6 +2432,7 @@ impl HighQualityTranslationClient {
     }
 
     async fn install_asr_bridge(&self, mut receiver: ProviderEventReceiver) {
+        receiver.enable_recognition_finish_drain();
         let (finish_tx, finish_rx) = oneshot::channel();
         let self_arc = self.clone();
         let task = tokio::spawn(async move {
@@ -7571,6 +7572,49 @@ mod tests {
         );
         assert!(events.try_recv().is_err());
         client.cancel_final_translations().await;
+    }
+
+    #[tokio::test]
+    async fn finish_fallback_preserves_latest_queued_asr_draft_before_finish_ack() {
+        let (client, mut events) = test_client(TargetLanguage::Original, 20);
+        client
+            .handle_asr_event(LiveTranslateServerEvent::SourceDraft {
+                text: "Synthetic partial".into(),
+                language: Some("ja".into()),
+            })
+            .await;
+        while events.try_recv().is_ok() {}
+
+        // The recognizer can publish its last cumulative draft and terminal
+        // acknowledgement before the bridge receives another scheduling turn.
+        let (asr_events, asr_receiver) = provider_event_channel();
+        asr_events
+            .send(LiveTranslateServerEvent::SourceDraft {
+                text: "Synthetic partial with the final tail.".into(),
+                language: Some("ja".into()),
+            })
+            .unwrap();
+        asr_events
+            .send(LiveTranslateServerEvent::SessionFinished)
+            .unwrap();
+        client.install_asr_bridge(asr_receiver).await;
+        assert!(
+            client
+                .wait_for_asr_bridge_finish(Duration::from_secs(1))
+                .await
+        );
+
+        // Exercise the same fallback that finish invokes after this ack. No
+        // provider or audio capture is started, and Original never invokes MT.
+        client.flush_pending_draft().await;
+        client.disconnect_asr_bridge().await;
+        let confirmed: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+            .filter_map(|event| match event {
+                LiveTranslateServerEvent::SubtitleConfirmedPair { source, .. } => Some(source),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(confirmed, ["Synthetic partial with the final tail."]);
     }
 
     #[tokio::test]
