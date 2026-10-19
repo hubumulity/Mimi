@@ -32,8 +32,21 @@
 - 浏览器抢焦后出现 AX 有内容但截图空白；按 common-regressions 从原生
   应用菜单进入设置后恢复绘制，未改代码、清缓存或重置权限。
 - 无真实 provider、凭据复制、捕获、录音或录制退出落盘实测；无 Windows／
-  Linux／Android 实体设备和长时间运行验收。正式应用保持原样。下一步为
-  按已确认的原 main 界面准备新版本，并验证所有公开包、更新元数据与签名。
+  Linux／Android 实体设备和长时间运行验收。正式应用保持原样。
+- v1.6.4 从 `6b65473be931b7f0936e7a2c8a969af19d7e066e` 正式发布并成为
+  Latest。[main CI](https://github.com/yuxino/Mimi/actions/runs/39201323680)、
+  [Android CI](https://github.com/yuxino/Mimi/actions/runs/39201323686)、
+  [标签打包 CI](https://github.com/yuxino/Mimi/actions/runs/39201734268) 和
+  [标签 Android CI](https://github.com/yuxino/Mimi/actions/runs/39201734279)
+  全通过；包括 Windows ARM64 编译／启动、Windows portable 和 Linux 包安装／启动。
+- 草稿全部 17 资产通过 16 条 SHA256SUMS、远端 digest 与 5 份 updater 签名
+  校验；公开后匿名完整下载 17 资产均匹配。标签、Latest 与应用实际使用的
+  小写仓库更新地址返回完全相同的清单；Release／updater 双语说明一致，
+  GitHub 原生 Contributors 的本次贡献者头像已显示。
+- 下载回来的 macOS 双架构归档、DMG、固定身份、signed source／version 均
+  通过验证。ARM 实际 release 可执行文件以 UI-test 内嵌前端启动，首设原布局
+  与添加／取消确认通过，正常退出；安装身份与现有正式应用连续，没有替换
+  正式安装。Intel 仅构建、签名与包验证，不声称 Intel 硬件或实际安装更新验收。
 
 ## 2026-10-18：自动名称草稿与较新原生状态的确认边界
 
