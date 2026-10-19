@@ -20,7 +20,8 @@
   APK 检查覆盖各 DEX 中的旧实现、文件 facade 和内部类；独立复核发现
   初版未覆盖单独的辅助类型，补入负例并修正后，27 个旧顶层类型全部匹配，
   生产适配器及 probe 类型不误拦。结构 25 项、native packaging 12 项、
-  CI scope 7 项通过；实际 Kotlin/JNI 和 APK 编译待 CI 确认。
+  CI scope 7 项通过；后续 Android CI 已确认实际 Kotlin/JNI 及两个 APK
+  构建与隔离校验通过。
 - 本轮还审查了共享 MT／HTTP／连接取消、Gemini 代次清理、前端 late
   reply／隐藏窗口／监听器，以及 desktop 双声源与保存选项边界；没有
   确证的新问题就保持原实现。CoreAudio 停止尾帧疑点未形成安全最小修复，
@@ -28,7 +29,12 @@
 - 组合源码的无参数 `./scripts/check.sh` 全通过：core 106＋4 契约、
   runtime 826＋既有 ignored 1、Rust JNI 24、updater 4、macOS desktop
   630＋既有 ignored 1、前端 146 文件／2,410 项，严格静态检查和生产构建
-  通过。低优先级、Rust 并发 2；跨平台和 Android CI 在合并前补验。
+  通过。低优先级、Rust 并发 2。
+- [PR #300](https://github.com/yuxino/Mimi/pull/300) 的 `d4039be4` 在合并前
+  通过[跨平台 CI](https://github.com/yuxino/Mimi/actions/runs/39269321320) 与
+  [Android CI](https://github.com/yuxino/Mimi/actions/runs/39269321232)，包含
+  macOS、Windows x64／ARM64、Linux、实际 JVM/JNI、debug／release APK。
+  合入 main `68940e93` 后核对完整树与受测分支一致；工作分支已清理。
 - 本轮没有真实服务、实体设备、长期内存压力或原生阅读体验验收。
 
 ## 2026-10-19：后台优化——历史摘要、双声源投影与旧凭据分支
