@@ -115,6 +115,10 @@ the strict package contract. Confirm the
 native Contributors credit on the public release. A draft build does not
 establish a working public update. Before approval, use authenticated draft
 asset downloads for acceptance; anonymous users and the updater cannot see them.
+Wait for the download command to exit successfully before computing checksums:
+all expected filenames can exist while their bytes are still being written.
+An early mismatch is not an accepted package result; finish the transfer and
+rerun the same checksum comparison before investigating or replacing assets.
 
 ## Installation and migration
 

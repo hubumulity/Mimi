@@ -65,6 +65,11 @@ Rules:
   signature after verifying the app. The
   code-signing private key stays in that Mac's Keychain; CI verifies the
   prepared draft assets. See [release signing](macos-release-signing.md).
+- When preparing a release while the maintainer is using the Mac, run
+  `CI=true TAURI_BUNDLER_DMG_IGNORE_CI=false ./scripts/prepare-macos-release.sh`.
+  Tauri's DMG bundler then skips its Finder layout AppleScript. This changes
+  cosmetic DMG layout only; preserve signing and all package verification.
+  Do not launch or replace the running formal app as part of this background work.
 - Before replacing a formal app, run
   `./scripts/verify-macos-install-identity.sh NEW_APP /Applications/mimi.app`.
   A mismatch fails closed. `MIMI_ALLOW_IDENTITY_CHANGE=1` is reserved for a
