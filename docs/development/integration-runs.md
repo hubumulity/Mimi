@@ -28,7 +28,10 @@
 - 组合冻结树的无参数 `./scripts/check.sh` 全通过：core 106＋4 契约、
   runtime 826＋既有 ignored 1、Rust JNI 24、updater 4、macOS desktop
   629＋既有 ignored 1、前端 146 文件／2,410 项，严格格式／静态检查和
-  生产构建均通过。低优先级运行、Rust 并发 2；本轮跨平台 CI 待补。
+  生产构建均通过。低优先级运行、Rust 并发 2。源码提交 `558e80ec` 的
+  [跨平台 CI](https://github.com/yuxino/Mimi/actions/runs/39265652162) 和
+  [Android CI](https://github.com/yuxino/Mimi/actions/runs/39265652196) 均通过，
+  包含 macOS、Windows x64／ARM64、Linux 与实际 JVM/JNI 检查。
 - 未做原生交互、真实服务、长期运行内存压力或实体设备验收；下一步应在
   允许非打扰实测的时段对比双声源持续字幕和大量历史记录下的实际操作耗时。
 
