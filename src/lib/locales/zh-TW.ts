@@ -185,6 +185,10 @@ export const SETTINGS = {
   subtitleDividers: "分句線",
   subtitleDividersHelp: "在句子之間顯示淡細線；沉浸模式不顯示。",
   subtitleTimestamps: "顯示時間",
+  visibleSubtitleCount: "顯示條數",
+  visibleSubtitleCountAll: "全部",
+  visibleSubtitleCountRecent: (count: number) => `最近 ${count} 條`,
+  visibleSubtitleCountHelp: "僅限制即時跟隨時顯示的已確認字幕。向上捲動仍可查看現有歷史，不影響儲存和匯出。",
   subtitleTimestampsHelp: "在已確認字幕旁顯示本機時間（HH:mm:ss），適用於系統聲音和麥克風。時間以字幕確認為準，並非精確的說話起點；沉浸模式也跟隨此開關。",
 
   sessionAudioTiming: "WAV 會省略暫停和重新連線間隙，音訊與字幕時間戳記不直接對齊。",

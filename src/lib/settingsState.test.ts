@@ -90,6 +90,21 @@ describe("mergeSettingsSnapshot", () => {
     expect(enabled.translationMode).toBe(SETTINGS.translationMode);
   });
 
+  it("defaults the custom subtitle count off and preserves the choice across unrelated saves", () => {
+    expect(mergeSettingsSnapshot(SETTINGS, {}).customSubtitleCountEnabled).toBe(false);
+    expect(mergeSettingsSnapshot(SETTINGS, {}).visibleSubtitleCount).toBe(3);
+    const enabled = mergeSettingsSnapshot(SETTINGS, { customSubtitleCountEnabled: true, visibleSubtitleCount: 7 });
+    expect(mergeSettingsSnapshot(enabled, { fontSize: 20 })).toMatchObject({
+      customSubtitleCountEnabled: true, visibleSubtitleCount: 7,
+    });
+    const disabled = mergeSettingsSnapshot(enabled, { customSubtitleCountEnabled: false });
+    expect(mergeSettingsSnapshot(disabled, { fontSize: 20 }).customSubtitleCountEnabled).toBe(false);
+    // The stored count survives toggling and is clamped into 1..10.
+    expect(disabled.visibleSubtitleCount).toBe(7);
+    expect(mergeSettingsSnapshot(SETTINGS, { visibleSubtitleCount: 0 }).visibleSubtitleCount).toBe(1);
+    expect(mergeSettingsSnapshot(SETTINGS, { visibleSubtitleCount: 42 }).visibleSubtitleCount).toBe(10);
+  });
+
   it("changes pulse style without changing explicit motion or unrelated choices", () => {
     const previous = { ...SETTINGS, pulseAnimation: false, subtitleAnimation: true, fontSize: 19 };
     const changed = mergeSettingsSnapshot(previous, { pulseStyle: "ribbon" });
