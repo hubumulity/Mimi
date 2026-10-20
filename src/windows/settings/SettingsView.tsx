@@ -6,7 +6,7 @@ import { UI_LANGUAGE_OPTIONS, I18N, setStoredUiLanguage, type UiLanguage } from 
 import { announceSettingsNavigationReady, isTauri, listenSettingsNavigation, type SettingsNavigationTarget } from "../../lib/ipc";
 import { selectSessionStatusKind, useStore } from "../../lib/store";
 import type { SettingsDraft, SubtitleAlignment } from "../../lib/types";
-import { SUBTITLE_DISPLAY_OPTIONS, subtitleDisplayShortcut } from "../../lib/subtitleDisplay";
+import { SUBTITLE_DISPLAY_OPTIONS, VISIBLE_SUBTITLE_COUNT_OPTIONS, clampVisibleSubtitleCount, subtitleDisplayShortcut } from "../../lib/subtitleDisplay";
 import { subtitleBackgroundColor, subtitleColorHex } from "../../lib/subtitleColor";
 import type { SubtitleDisplayMode } from "../../lib/types";
 import { subtitleFontFamily } from "../../lib/subtitleFont";
@@ -340,6 +340,22 @@ export function SettingsView() {
                           checked={settings.showSubtitleTimestamps ?? false}
                           aria-label={I18N.settings.subtitleTimestamps}
                           onChange={(showSubtitleTimestamps) => void savePreference({ showSubtitleTimestamps }, I18N.settings.subtitleTimestamps)}
+                        />
+                      </SettingsRow>
+                      <SettingsRow label={I18N.settings.customSubtitleCount} description={I18N.settings.customSubtitleCountHelp}>
+                        <Switch
+                          checked={settings.customSubtitleCountEnabled ?? false}
+                          aria-label={I18N.settings.customSubtitleCount}
+                          onChange={(customSubtitleCountEnabled) => void savePreference({ customSubtitleCountEnabled }, I18N.settings.customSubtitleCount)}
+                        />
+                      </SettingsRow>
+                      <SettingsRow label={I18N.settings.visibleSubtitleCount}>
+                        <SettingsSelect
+                          label={I18N.settings.visibleSubtitleCount}
+                          value={String(clampVisibleSubtitleCount(settings.visibleSubtitleCount))}
+                          disabled={!(settings.customSubtitleCountEnabled ?? false)}
+                          options={VISIBLE_SUBTITLE_COUNT_OPTIONS}
+                          onChange={(value) => void savePreference({ visibleSubtitleCount: clampVisibleSubtitleCount(Number(value)) }, I18N.settings.visibleSubtitleCount)}
                         />
                       </SettingsRow>
                       <SettingsRow

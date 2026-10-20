@@ -430,6 +430,9 @@ const SETTINGS_ZH = {
   subtitleDividersHelp: "在句子之间显示淡细线；沉浸模式不显示。",
   subtitleTimestamps: "显示时间",
   subtitleTimestampsHelp: "在已确认字幕旁显示本机时间（HH:mm:ss），适用于系统声音和麦克风。时间以字幕确认为准，并非精确的说话起点；沉浸模式也跟随此开关。",
+  customSubtitleCount: "自定义字幕条数",
+  customSubtitleCountHelp: "开启后，悬浮字幕只展示最近的若干条已确认字幕；关闭时展示全部。只影响显示，不影响保存和导出。",
+  visibleSubtitleCount: "展示条数",
 
   sessionAudioTiming: "WAV 会省略暂停和重连间隙，音频与字幕时间戳不直接对齐。",
   sessionTranscriptTiming: "TXT 时间戳表示字幕确认时距会话开始的时间，并非媒体播放位置。",
@@ -995,6 +998,9 @@ const SETTINGS_EN = {
   subtitleDividersHelp: "Faint lines between sentences, hidden in Immersive Mode.",
   subtitleTimestamps: "Show time",
   subtitleTimestampsHelp: "Show local time (HH:mm:ss) beside confirmed subtitles for system audio and microphone input. This is confirmation time, not the exact start of speech. This setting also applies in Immersive Mode.",
+  customSubtitleCount: "Custom subtitle count",
+  customSubtitleCountHelp: "When on, the overlay shows only the most recent confirmed subtitles. When off, it shows all of them. Display only; saving and export are unaffected.",
+  visibleSubtitleCount: "Subtitles shown",
 
   sessionAudioTiming: "WAV omits pauses and reconnect gaps. Its timeline does not directly align with subtitle timestamps.",
   sessionTranscriptTiming: "TXT timestamps mark final confirmation time since session start, not media playback positions.",
@@ -1558,6 +1564,9 @@ const SETTINGS_JA = {
   subtitleDividersHelp: "文の間に薄い細線を表示します。イマーシブモードでは非表示です。",
   subtitleTimestamps: "時刻を表示",
   subtitleTimestampsHelp: "システム音声とマイクの確定した字幕の横にローカル時刻（HH:mm:ss）を表示します。字幕の確定時刻であり、正確な発話開始時刻ではありません。イマーシブモードでもこの設定に従います。",
+  customSubtitleCount: "字幕の表示数を指定",
+  customSubtitleCountHelp: "オンにすると、フローティング字幕には直近の確定字幕のみを表示します。オフではすべて表示します。表示のみに影響し、保存や書き出しは変わりません。",
+  visibleSubtitleCount: "表示数",
 
   sessionAudioTiming: "WAV は一時停止や再接続中の空白を省くため、字幕のタイムスタンプとは一致しません。",
   sessionTranscriptTiming: "TXT の時刻はセッション開始から字幕確定までの経過時間で、メディアの再生位置ではありません。",

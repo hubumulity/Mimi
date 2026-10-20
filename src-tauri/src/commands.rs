@@ -232,6 +232,9 @@ pub struct SettingsSnapshotPayload {
     pub show_intermediate_subtitles: bool,
     pub show_subtitle_dividers: bool,
     pub show_subtitle_timestamps: bool,
+    pub custom_subtitle_count_enabled: bool,
+    /// 1..=10; applies only while the custom count is enabled.
+    pub visible_subtitle_count: u8,
     /// `None` follows the operating system's reduce-motion setting.
     pub pulse_animation: Option<bool>,
     pub pulse_style: PulseStyle,
@@ -1008,6 +1011,29 @@ mod tests {
     }
 
     #[test]
+    fn subtitle_count_preferences_are_allowed_during_an_active_session() {
+        for enabled in [false, true] {
+            let draft: SettingsDraft = serde_json::from_value(
+                serde_json::json!({"customSubtitleCountEnabled": enabled}),
+            )
+            .unwrap();
+            assert_eq!(draft.custom_subtitle_count_enabled, Some(enabled));
+            assert!(ensure_settings_draft_allowed(&draft, true).is_ok());
+            assert!(ensure_settings_draft_window_allowed("settings", &draft).is_ok());
+        }
+        for count in [1_u8, 10] {
+            let draft: SettingsDraft =
+                serde_json::from_value(serde_json::json!({"visibleSubtitleCount": count}))
+                    .unwrap();
+            assert_eq!(draft.visible_subtitle_count, Some(count));
+            assert!(ensure_settings_draft_allowed(&draft, true).is_ok());
+            assert!(ensure_settings_draft_window_allowed("settings", &draft).is_ok());
+        }
+        assert!(SettingsDraft::default().custom_subtitle_count_enabled.is_none());
+        assert!(SettingsDraft::default().visible_subtitle_count.is_none());
+    }
+
+    #[test]
     fn subtitle_font_choice_is_optional_and_allowed_during_an_active_session() {
         assert!(SettingsDraft::default().subtitle_font_family.is_none());
         for family in ["", "Noto Sans CJK SC", "思源黑体"] {
@@ -1081,6 +1107,8 @@ mod tests {
             show_intermediate_subtitles: true,
             show_subtitle_dividers: false,
             show_subtitle_timestamps: false,
+            custom_subtitle_count_enabled: false,
+            visible_subtitle_count: 3,
             pulse_animation: None,
             pulse_style: PulseStyle::Ribbon,
             subtitle_animation: None,
@@ -1118,6 +1146,8 @@ mod tests {
         assert_eq!(json["showIntermediateSubtitles"], true);
         assert_eq!(json["showSubtitleDividers"], false);
         assert_eq!(json["showSubtitleTimestamps"], false);
+        assert_eq!(json["customSubtitleCountEnabled"], false);
+        assert_eq!(json["visibleSubtitleCount"], 3);
         assert_eq!(json["microphoneSubtitleColor"], "yellow");
         assert_eq!(json["subtitleBlendsWithBackground"], false);
         assert!(json.get("apiKey").is_none());
@@ -1403,6 +1433,8 @@ impl SettingsSnapshotPayload {
             show_intermediate_subtitles: prefs.show_intermediate_subtitles,
             show_subtitle_dividers: prefs.show_subtitle_dividers,
             show_subtitle_timestamps: prefs.show_subtitle_timestamps,
+            custom_subtitle_count_enabled: prefs.custom_subtitle_count_enabled,
+            visible_subtitle_count: prefs.visible_subtitle_count,
 
             pulse_animation: prefs.pulse_animation,
             pulse_style: prefs.pulse_style,
@@ -1439,6 +1471,8 @@ pub struct SettingsDraft {
     pub show_intermediate_subtitles: Option<bool>,
     pub show_subtitle_dividers: Option<bool>,
     pub show_subtitle_timestamps: Option<bool>,
+    pub custom_subtitle_count_enabled: Option<bool>,
+    pub visible_subtitle_count: Option<u8>,
     pub pulse_animation: Option<bool>,
     pub pulse_style: Option<PulseStyle>,
     pub subtitle_animation: Option<bool>,
@@ -1876,6 +1910,8 @@ fn apply_settings_draft_guarded(
         || draft.show_intermediate_subtitles.is_some()
         || draft.show_subtitle_dividers.is_some()
         || draft.show_subtitle_timestamps.is_some()
+        || draft.custom_subtitle_count_enabled.is_some()
+        || draft.visible_subtitle_count.is_some()
         || draft.pulse_animation.is_some()
         || draft.pulse_style.is_some()
         || draft.subtitle_animation.is_some()
@@ -1960,6 +1996,12 @@ fn apply_settings_draft_guarded(
             }
             if let Some(enabled) = draft.show_subtitle_timestamps {
                 prefs.show_subtitle_timestamps = enabled;
+            }
+            if let Some(enabled) = draft.custom_subtitle_count_enabled {
+                prefs.custom_subtitle_count_enabled = enabled;
+            }
+            if let Some(count) = draft.visible_subtitle_count {
+                prefs.visible_subtitle_count = count;
             }
             if let Some(style) = draft.pulse_style {
                 prefs.pulse_style = style;

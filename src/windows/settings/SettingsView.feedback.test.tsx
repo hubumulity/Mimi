@@ -117,6 +117,31 @@ it("keeps the interim preference unchanged on failure and saves a quiet retry wh
   expect(host.querySelector(".settings-toast")).toBeNull();
 });
 
+it("keeps the custom subtitle count off by default and saves the switch and count while running", async () => {
+  useStore.setState({ session: { ...initial.session, isActive: true, status: { kind: "listening" } } });
+  await render();
+  const countSwitch = () => host.querySelector<HTMLButtonElement>(`[aria-label="${I18N.settings.customSubtitleCount}"][role="switch"]`)!;
+  const countSelect = () => host.querySelector<HTMLButtonElement>(`[aria-label="${I18N.settings.visibleSubtitleCount}"][role="combobox"]`)!;
+  expect(countSwitch().getAttribute("aria-checked")).toBe("false");
+  expect(countSelect().disabled).toBe(true);
+  expect(countSelect().textContent).toContain("3");
+  await act(async () => countSwitch().click());
+  expect(save).toHaveBeenLastCalledWith({ customSubtitleCountEnabled: true });
+  expect(countSwitch().getAttribute("aria-checked")).toBe("true");
+  expect(countSelect().disabled).toBe(false);
+  await act(async () => countSelect().click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options.map(option => option.querySelector(".mimi-select__label")?.textContent))
+    .toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  await act(async () => options.find(option => option.querySelector(".mimi-select__label")?.textContent === "7")!.click());
+  expect(save).toHaveBeenLastCalledWith({ visibleSubtitleCount: 7 });
+  expect(useStore.getState().settings.visibleSubtitleCount).toBe(7);
+  expect(useStore.getState().session.isActive).toBe(true);
+  await act(async () => countSwitch().click());
+  expect(save).toHaveBeenLastCalledWith({ customSubtitleCountEnabled: false });
+  expect(countSelect().disabled).toBe(true);
+});
+
 it("keeps time display off by default and saves a quiet retry while subtitles are running", async () => {
   useStore.setState({ session: { ...initial.session, isActive: true, status: { kind: "listening" } } });
   save.mockRejectedValueOnce(new Error("synthetic-private-time-error"));
