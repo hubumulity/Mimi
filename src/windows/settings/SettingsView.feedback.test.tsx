@@ -117,6 +117,51 @@ it("keeps the interim preference unchanged on failure and saves a quiet retry wh
   expect(host.querySelector(".settings-toast")).toBeNull();
 });
 
+it("offers one subtitle count choice and saves both fields together while running", async () => {
+  useStore.setState({ session: { ...initial.session, isActive: true, status: { kind: "listening" } } });
+  await render();
+  const countSelect = () => host.querySelector<HTMLButtonElement>(`[aria-label="${I18N.settings.visibleSubtitleCount}"][role="combobox"]`)!;
+  expect(host.querySelector(`[aria-label="${I18N.settings.visibleSubtitleCount}"][role="switch"]`)).toBeNull();
+  expect(countSelect().disabled).toBe(false);
+  expect(countSelect().textContent).toContain(I18N.settings.visibleSubtitleCountAll);
+  await act(async () => countSelect().click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options.map(option => option.querySelector(".mimi-select__label")?.textContent))
+    .toEqual([I18N.settings.visibleSubtitleCountAll, ...Array.from({ length: 10 }, (_, index) => I18N.settings.visibleSubtitleCountRecent(index + 1))]);
+  await act(async () => options.find(option => option.querySelector(".mimi-select__label")?.textContent === I18N.settings.visibleSubtitleCountRecent(7))!.click());
+  expect(save).toHaveBeenCalledExactlyOnceWith({ customSubtitleCountEnabled: true, visibleSubtitleCount: 7 });
+  expect(countSelect().textContent).toContain(I18N.settings.visibleSubtitleCountRecent(7));
+  expect(useStore.getState().settings.visibleSubtitleCount).toBe(7);
+  expect(useStore.getState().session.isActive).toBe(true);
+  await act(async () => countSelect().click());
+  await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.querySelector(".mimi-select__label")?.textContent === I18N.settings.visibleSubtitleCountAll)!.click());
+  expect(save).toHaveBeenLastCalledWith({ customSubtitleCountEnabled: false });
+  expect(countSelect().textContent).toContain(I18N.settings.visibleSubtitleCountAll);
+  expect(useStore.getState().settings.visibleSubtitleCount).toBe(7);
+});
+
+it("keeps the confirmed subtitle count on save failure and allows a quiet retry", async () => {
+  useStore.setState({
+    settings: { ...initial.settings, customSubtitleCountEnabled: true, visibleSubtitleCount: 7 },
+    session: { ...initial.session, isActive: true, status: { kind: "listening" } },
+  });
+  save.mockRejectedValueOnce(new Error("synthetic-private-count-error"));
+  await render();
+  const countSelect = () => host.querySelector<HTMLButtonElement>(`[aria-label="${I18N.settings.visibleSubtitleCount}"][role="combobox"]`)!;
+  const chooseAll = async () => {
+    await act(async () => countSelect().click());
+    await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.querySelector(".mimi-select__label")?.textContent === I18N.settings.visibleSubtitleCountAll)!.click());
+  };
+  await chooseAll();
+  expect(countSelect().textContent).toContain(I18N.settings.visibleSubtitleCountRecent(7));
+  expect(host.querySelector('.settings-toast[role="alert"]')?.textContent).toBe(I18N.settings.settingSaveFailed(I18N.settings.visibleSubtitleCount));
+  expect(host.textContent).not.toContain("synthetic-private-count-error");
+  await chooseAll();
+  expect(countSelect().textContent).toContain(I18N.settings.visibleSubtitleCountAll);
+  expect(useStore.getState().session.isActive).toBe(true);
+  expect(host.querySelector(".settings-toast")).toBeNull();
+});
+
 it("keeps time display off by default and saves a quiet retry while subtitles are running", async () => {
   useStore.setState({ session: { ...initial.session, isActive: true, status: { kind: "listening" } } });
   save.mockRejectedValueOnce(new Error("synthetic-private-time-error"));

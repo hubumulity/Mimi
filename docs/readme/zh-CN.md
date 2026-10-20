@@ -27,7 +27,7 @@
 
 - **悬浮字幕**：为电影、直播、网课实时显示字幕，支持双语、仅译文或仅原文。
 - **选择音源**：采集电脑声音、麦克风，或同时采集两路。macOS / Windows 11 支持指定应用，Linux 支持选择单独的播放流。
-- **调整显示**：自由调整字幕位置、字号和颜色；沉浸模式只显示文字，点击穿透可让你继续操作下方应用。
+- **调整显示**：桌面端可调整位置、14–48 px 字号和颜色，显示全部或最近 1–10 条字幕，上翻查看已有历史；沉浸模式只显示文字，点击穿透可让你继续操作下方应用。
 - **保存字幕和录音**：桌面端可将字幕导出为 TXT 或 Markdown，也可将所选音源录制为 WAV。两项保存功能均需手动开启。
 
 ## 开始使用
@@ -56,9 +56,11 @@ Mimi 本身免费，云服务可能收费。使用云端识别或翻译时，音
 
 也感谢 [@Chtholly000](https://github.com/Chtholly000) 改进 [Gemini 连续字幕和连接轮换](https://github.com/yuxino/Mimi/pull/176)。
 
-感谢 [@EmmetZ](https://github.com/EmmetZ) 修复 [Wayland 浮窗与控制组件不同步的问题](https://github.com/yuxino/Mimi/pull/242)，并新增 [Linux 单独播放流采集](https://github.com/yuxino/Mimi/pull/275)。
+感谢 [@EmmetZ](https://github.com/EmmetZ) 修复 [Wayland 浮窗与控制组件不同步的问题](https://github.com/yuxino/Mimi/pull/242)，并新增 [Linux 单独播放流采集](https://github.com/yuxino/Mimi/pull/275)和[播放流应用图标](https://github.com/yuxino/Mimi/pull/304)。
 
 感谢 [@wangmian0](https://github.com/wangmian0) 为 [DeepSeek 实时字幕翻译关闭思考模式](https://github.com/yuxino/Mimi/pull/270)。
+
+感谢 [@hubumulity](https://github.com/hubumulity) 贡献[字幕显示条数设置](https://github.com/yuxino/Mimi/pull/303)。
 
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
@@ -68,6 +70,7 @@ Mimi 本身免费，云服务可能收费。使用云端识别或翻译时，音
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
   <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
 </p>
 
 [查看所有贡献者](https://github.com/yuxino/mimi/graphs/contributors)

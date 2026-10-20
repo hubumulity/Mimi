@@ -115,8 +115,10 @@ export const Timeline = memo(function Timeline({
   const paddingTop = tight ? 0 : blendsWithBackground ? IMMERSIVE_BLOCK_GAP : BLOCK_PADDING_Y;
   const paddingBottom = tight ? 1 : LAST_BLOCK_PADDING_Y;
 
-  useEffect(() => { onReadingHistoryChange?.(readingHistory); }, [onReadingHistoryChange, readingHistory]);
-  useEffect(() => () => onReadingHistoryChange?.(false), [onReadingHistoryChange]);
+  // The owner may expand/trim its history projection. Notify before paint so
+  // that replacement shares this reading intent and its existing row anchor.
+  useLayoutEffect(() => { onReadingHistoryChange?.(readingHistory); }, [onReadingHistoryChange, readingHistory]);
+  useLayoutEffect(() => () => onReadingHistoryChange?.(false), [onReadingHistoryChange]);
 
   useEffect(() => {
     // Pointer release can happen outside the subtitle viewport after a click

@@ -2,6 +2,7 @@ import { isSystemAudioPermissionDenied } from "../../lib/systemAudioPermissions"
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subtitleBackgroundColor } from "../../lib/subtitleColor";
 import { effectiveUiLanguage, I18N } from "../../lib/i18n";
+import { limitRecentSubtitles } from "../../lib/subtitleDisplay";
 import { AudioInputIndicator } from "../../components/AudioInputIndicator";
 import { RecordingIndicator } from "../../components/RecordingIndicator";
 import { recordingStatusLabel } from "../../lib/recordingStatus";
@@ -171,14 +172,23 @@ export function OverlayWindow() {
   const running = OVERLAY_ACTIVITY_PHASES[phase].animationSpeed > 0;
   const primaryTail = useSubtitleTail(primarySubtitles, settings, dual ? systemTrack ?? EMPTY_SYSTEM : session, running, atomicProvider, "primary", streamingProvider);
   const microphoneTail = useSubtitleTail(microphoneSubtitles, settings, microphoneSubtitles, running, atomicProvider, "microphone", streamingProvider);
+  // Limit only live following. Deliberate reading keeps the bounded session
+  // history so a new confirmation cannot evict the sentence being read.
+  const displayHistory = useMemo(() => readingHistory
+    ? session.subtitles.history
+    : limitRecentSubtitles(session.subtitles.history, {
+      customSubtitleCountEnabled: settings.customSubtitleCountEnabled,
+      visibleSubtitleCount: settings.visibleSubtitleCount,
+    }),
+  [readingHistory, session.subtitles.history, settings.customSubtitleCountEnabled, settings.visibleSubtitleCount]);
   const blocks = useMemo(() => dual
-    ? buildMultiSourceSubtitleBlocks(session.subtitles.history, settings.subtitleDisplayMode, [
+    ? buildMultiSourceSubtitleBlocks(displayHistory, settings.subtitleDisplayMode, [
       { audioSource: "system", history: primarySubtitles.history, tail: primaryTail },
       { audioSource: "microphone", history: microphoneSubtitles.history, tail: microphoneTail },
     ])
-    : buildSubtitleBlocks(session.subtitles.history, settings.subtitleDisplayMode, primaryTail)
+    : buildSubtitleBlocks(displayHistory, settings.subtitleDisplayMode, primaryTail)
       .map(block => ({ ...block, audioSource: block.audioSource ?? primaryAudioSource })),
-  [dual, session.subtitles.history, settings.subtitleDisplayMode, primarySubtitles.history, primaryTail, primaryAudioSource, microphoneSubtitles.history, microphoneTail]);
+  [dual, displayHistory, settings.subtitleDisplayMode, primarySubtitles.history, primaryTail, primaryAudioSource, microphoneSubtitles.history, microphoneTail]);
   const hasContent = hasSubtitleContent(session.subtitles);
   const phaseLabel = session.status.kind === "stopping" ? I18N.overlay.stopping : OVERLAY_ACTIVITY_PHASES[phase].accessibilityLabel;
   const pauseLabel = session.isPaused

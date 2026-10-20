@@ -151,7 +151,7 @@ export const SUPPLEMENTAL = {
     title: "진단", copy: "진단 정보 복사", issue: "GitHub 피드백",
     refresh: "진단 정보 새로고침", refreshing: "진단 정보 준비 중…", refreshed: "진단 정보가 새로고침되었습니다.",
     status: "세션 상태", lastError: "최근 오류", recent: "최근 이벤트", sinceStart: "앱 시작 이후", noEvents: "아직 이벤트 없음",
-    failures: { unknown: "미분류 오류", configuration: "지원되지 않는 구성", authentication: "인증 실패", credential_storage: "인증 정보 저장소 사용 불가", device_unavailable: "오디오 출력 사용 불가", timeout: "서비스 시간 초과", request_rejected: "요청 거부됨", service_error: "서비스 사용 불가", rate_limit: "서비스 요청 제한됨", backlog: "처리 지연", transport: "연결 끊김", stopped: "오디오 캡처 중지됨", processing: "오디오 처리 실패", size_limit: "자막 응답 크기 초과" },
+    failures: { recognition: "음성 인식 실패", unknown: "미분류 오류", configuration: "지원되지 않는 구성", authentication: "인증 실패", credential_storage: "인증 정보 저장소 사용 불가", device_unavailable: "오디오 출력 사용 불가", timeout: "서비스 시간 초과", request_rejected: "요청 거부됨", service_error: "서비스 사용 불가", rate_limit: "서비스 요청 제한됨", backlog: "처리 지연", transport: "연결 끊김", stopped: "오디오 캡처 중지됨", processing: "오디오 처리 실패", size_limit: "자막 응답 크기 초과" },
     lifecycle: { start_requested: "시작 요청됨", start_busy: "시작 중", start_already_active: "이미 실행 중", start_superseded: "시작 취소됨", stop_requested: "중지 요청됨", pause_requested: "일시 정지 요청됨", resume_requested: "재개 요청됨" },
     recovery: { retrying: "다시 연결 중", recovered: "연결 복구됨", retries_exhausted: "자동 재시도 횟수 소진", user_stopped: "사용자가 중지함" },
     copied: "복사되었습니다", failed: "복사할 수 없습니다. 다시 시도하거나 아래 보고서를 직접 복사하세요.",

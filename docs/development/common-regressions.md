@@ -470,6 +470,13 @@ validate the regenerated file again. An empty fixture or a failed player does
 not establish a Mimi capture or recognition defect. Keep the sample
 non-sensitive; do not change permissions or reset TCC to repair the fixture.
 
+Prepare synthetic PCM files before starting native capture tests. CPU-heavy
+sample generation and file writes on a current-thread Tokio runtime prevent its
+bounded audio sender from draining; a fixture can exhaust the same queue it is
+trying to test. Reuse prepared files while preserving playback timing, queue
+limits and frequency assertions. Tone waits must also observe capture failures
+so a typed failure is not hidden behind a generic timeout.
+
 See [the integration learning loop](integration-learning-loop.md) for comparable
 samples and [the run ledger](integration-runs.md) for this check's exact scope.
 

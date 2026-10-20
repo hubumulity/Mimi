@@ -88,6 +88,8 @@ struct Inner {
     cleared: Notify,
     progress: Notify,
     events: std::sync::Mutex<Option<ProviderEventSender>>,
+    #[cfg(test)]
+    before_final_publication: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 #[derive(Clone)]
@@ -143,6 +145,8 @@ impl CustomSpeechClient {
                 cleared: Notify::new(),
                 progress: Notify::new(),
                 events: Default::default(),
+                #[cfg(test)]
+                before_final_publication: Default::default(),
             }),
         })
     }
@@ -540,10 +544,10 @@ impl CustomSpeechClient {
                         let _ = setup.send(SetupState::Rejected);
                         return;
                     }
-                    let output = {
+                    {
                         let mut content = self.inner.content.lock().unwrap();
                         let revision = content.revision;
-                        match event {
+                        let output = match event {
                             ServerEvent::Committed { item_id } => {
                                 content.turns.acknowledge(item_id).map(|()| Vec::new())
                             }
@@ -563,15 +567,28 @@ impl CustomSpeechClient {
                         }
                         .inspect(|_| {
                             trim_pending_started(&mut content);
-                        })
-                    };
-                    let Ok(output) = output else {
-                        self.fail(CustomSpeechClientError::InvalidProtocol, generation);
-                        return;
-                    };
-                    for output in output {
-                        if self.emit_transcript(output, &events, generation).is_err() {
+                        });
+                        let Ok(output) = output else {
+                            drop(content);
+                            self.fail(CustomSpeechClientError::InvalidProtocol, generation);
                             return;
+                        };
+                        // Retiring a turn and publishing its authoritative
+                        // result are one synchronous operation. Otherwise
+                        // finish can observe an empty turn queue and invalidate
+                        // this receiver before its final reaches the event lane.
+                        for output in output {
+                            #[cfg(test)]
+                            if output.is_final {
+                                if let Some(pause) =
+                                    self.inner.before_final_publication.lock().unwrap().take()
+                                {
+                                    pause();
+                                }
+                            }
+                            if self.emit_transcript(output, &events, generation).is_err() {
+                                return;
+                            }
                         }
                     }
                     self.inner.progress.notify_waiters();
@@ -1013,6 +1030,73 @@ mod tests {
             Some(LiveTranslateServerEvent::SessionFinished)
         );
         server.await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn stop_cannot_overtake_a_retired_completion_before_publication() {
+        for text in ["", " \t ", "Synthetic accepted final."] {
+            let (client, mut receiver, listener) = fixture().await;
+            let (complete_tx, complete_rx) = tokio::sync::oneshot::channel();
+            let (publication_tx, publication_rx) = tokio::sync::oneshot::channel();
+            let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(1);
+            *client.inner.before_final_publication.lock().unwrap() = Some(Box::new(move || {
+                // Hold the exact interval after turn retirement and before
+                // publication while another worker starts session finish.
+                publication_tx.send(()).unwrap();
+                resume_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            }));
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = accept_async(stream).await.unwrap();
+                setup(&mut socket).await;
+                committed(&mut socket, "tail").await;
+                complete_rx.await.unwrap();
+                completed(&mut socket, "tail", text).await;
+                assert!(matches!(
+                    socket.next().await,
+                    Some(Ok(Message::Close(_))) | None
+                ));
+            });
+            client.connect("synthetic-publication-race").await.unwrap();
+            assert_eq!(
+                receiver.recv().await,
+                Some(LiveTranslateServerEvent::SessionCreated)
+            );
+            client.send_audio(&voice_then_silence()).await.unwrap();
+            complete_tx.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), publication_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            let (finish_started_tx, finish_started_rx) = tokio::sync::oneshot::channel();
+            let finishing = tokio::spawn(async move {
+                finish_started_tx.send(()).unwrap();
+                client.finish(Duration::from_secs(1)).await;
+            });
+            finish_started_rx.await.unwrap();
+            let premature = tokio::time::timeout(Duration::from_millis(100), receiver.recv())
+                .await
+                .ok()
+                .flatten();
+            // Release before asserting so a failing regression cannot strand
+            // the receiver or leave a loopback connection alive.
+            resume_tx.send(()).unwrap();
+            finishing.await.unwrap();
+            server.await.unwrap();
+            assert_eq!(premature, None, "finish overtook completion {text:?}");
+            assert_eq!(
+                receiver.recv().await,
+                Some(LiveTranslateServerEvent::SourceUtteranceFinal {
+                    utterance_id: 1,
+                    text: text.into(),
+                    language: Some("en".into()),
+                })
+            );
+            assert_eq!(
+                receiver.recv().await,
+                Some(LiveTranslateServerEvent::SessionFinished)
+            );
+        }
     }
 
     #[tokio::test]

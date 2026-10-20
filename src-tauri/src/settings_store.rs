@@ -201,6 +201,17 @@ impl TextTranslationDestination {
 
 pub const MAXIMUM_PROFILE_COUNT: usize = 20;
 pub use crate::core::overlay_layout::DEFAULT_FONT_SIZE;
+/// Visible-subtitle-count preference bounds and its stored default. The
+/// count applies only while a recent-count option is selected.
+pub const VISIBLE_SUBTITLE_COUNT_RANGE: std::ops::RangeInclusive<u8> = 1..=10;
+pub const DEFAULT_VISIBLE_SUBTITLE_COUNT: u8 = 3;
+
+pub fn clamp_visible_subtitle_count(count: u8) -> u8 {
+    count.clamp(
+        *VISIBLE_SUBTITLE_COUNT_RANGE.start(),
+        *VISIBLE_SUBTITLE_COUNT_RANGE.end(),
+    )
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -246,6 +257,11 @@ pub struct Preferences {
     pub show_intermediate_subtitles: bool,
     pub show_subtitle_dividers: bool,
     pub show_subtitle_timestamps: bool,
+    /// Limit the overlay to the most recent confirmed subtitles. Off by
+    /// default; `visible_subtitle_count` is only the stored choice.
+    pub custom_subtitle_count_enabled: bool,
+    /// 1..=10; ignored while `custom_subtitle_count_enabled` is false.
+    pub visible_subtitle_count: u8,
     /// Animation switches: `None` follows the system reduce-motion setting.
     pub pulse_animation: Option<bool>,
     pub pulse_style: PulseStyle,
@@ -285,6 +301,8 @@ impl Default for Preferences {
             show_intermediate_subtitles: true,
             show_subtitle_dividers: false,
             show_subtitle_timestamps: false,
+            custom_subtitle_count_enabled: false,
+            visible_subtitle_count: DEFAULT_VISIBLE_SUBTITLE_COUNT,
             pulse_animation: None,
             pulse_style: PulseStyle::Ribbon,
             subtitle_animation: None,
@@ -906,6 +924,7 @@ impl SettingsStore {
                 .unwrap_or_default()
                 .to_owned(),
             subtitle_background_opacity: prefs.subtitle_background_opacity.min(100),
+            visible_subtitle_count: clamp_visible_subtitle_count(prefs.visible_subtitle_count),
             ..prefs
         };
 
@@ -1048,6 +1067,7 @@ impl SettingsStore {
                 .unwrap_or_default()
                 .to_owned(),
             subtitle_background_opacity: prefs.subtitle_background_opacity.min(100),
+            visible_subtitle_count: clamp_visible_subtitle_count(prefs.visible_subtitle_count),
             ..prefs
         };
         Ok(store)
@@ -1100,6 +1120,7 @@ impl SettingsStore {
         next.translation_mode = TranslationMode::Turbo;
         next.font_size = normalize_font_size(next.font_size);
         next.subtitle_background_opacity = next.subtitle_background_opacity.min(100);
+        next.visible_subtitle_count = clamp_visible_subtitle_count(next.visible_subtitle_count);
         next.subtitle_font_family = normalize_family_name(&next.subtitle_font_family)?.to_owned();
         next.network_proxy = next
             .network_proxy
@@ -11193,6 +11214,81 @@ mod tests {
                     .show_subtitle_timestamps,
                 enabled
             );
+        }
+    }
+
+    #[test]
+    fn visible_subtitle_count_defaults_off_and_persists_clamped() {
+        // Legacy preferences without the new fields keep the switch off.
+        let legacy: Preferences = serde_json::from_str(r#"{"ui_language":"ja"}"#).unwrap();
+        assert!(!legacy.custom_subtitle_count_enabled);
+        assert_eq!(
+            legacy.visible_subtitle_count,
+            DEFAULT_VISIBLE_SUBTITLE_COUNT
+        );
+
+        let directory = tempfile::tempdir().unwrap();
+        let fake = FakeSecretStore::default();
+        let store = SettingsStore::at_path(directory.path().into(), Box::new(fake.clone()));
+        store
+            .save_preferences_for_active_profile(|prefs| {
+                prefs.custom_subtitle_count_enabled = true;
+                prefs.visible_subtitle_count = 7;
+            })
+            .unwrap();
+        let reloaded = SettingsStore::at_path(directory.path().into(), Box::new(fake.clone()));
+        assert!(reloaded.preferences().custom_subtitle_count_enabled);
+        assert_eq!(reloaded.preferences().visible_subtitle_count, 7);
+        let payload = crate::commands::SettingsSnapshotPayload::try_from_store(&reloaded).unwrap();
+        assert!(payload.custom_subtitle_count_enabled);
+        assert_eq!(payload.visible_subtitle_count, 7);
+
+        store
+            .save_preferences_for_active_profile(|prefs| {
+                prefs.custom_subtitle_count_enabled = false;
+            })
+            .unwrap();
+        let all = SettingsStore::at_path(directory.path().into(), Box::new(fake.clone()));
+        assert!(!all.preferences().custom_subtitle_count_enabled);
+        assert_eq!(all.preferences().visible_subtitle_count, 7);
+
+        // Out-of-range stored choices are clamped into 1..=10 on save.
+        for (stored, expected) in [(0, 1), (11, 10), (255, 10)] {
+            store
+                .save_preferences_for_active_profile(|prefs| {
+                    prefs.visible_subtitle_count = stored;
+                })
+                .unwrap();
+            assert_eq!(store.preferences().visible_subtitle_count, expected);
+        }
+        assert_eq!(clamp_visible_subtitle_count(0), 1);
+        assert_eq!(clamp_visible_subtitle_count(10), 10);
+    }
+
+    #[test]
+    fn visible_subtitle_count_clamps_loaded_preferences_without_resetting_other_choices() {
+        let directory = tempfile::tempdir().unwrap();
+        for (stored, expected) in [(0, 1), (11, 10), (255, 10)] {
+            let prefs = serde_json::json!({
+                "custom_subtitle_count_enabled": true,
+                "visible_subtitle_count": stored,
+                "ui_language": "ja",
+                "show_subtitle_timestamps": true
+            });
+            std::fs::write(
+                directory.path().join("preferences.json"),
+                serde_json::to_vec(&prefs).unwrap(),
+            )
+            .unwrap();
+            let store = SettingsStore::at_path(
+                directory.path().into(),
+                Box::new(FakeSecretStore::default()),
+            );
+            let loaded = store.preferences();
+            assert!(loaded.custom_subtitle_count_enabled);
+            assert_eq!(loaded.visible_subtitle_count, expected);
+            assert_eq!(loaded.ui_language.as_deref(), Some("ja"));
+            assert!(loaded.show_subtitle_timestamps);
         }
     }
 

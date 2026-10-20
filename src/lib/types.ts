@@ -140,6 +140,11 @@ export interface SettingsSnapshot {
   showSubtitleDividers: boolean;
   /** Missing legacy settings keep confirmation times hidden. */
   showSubtitleTimestamps?: boolean;
+  /** Missing legacy settings keep the custom visible-count limit off. */
+  customSubtitleCountEnabled?: boolean;
+  /** 1..10 recent subtitles; used only while the custom count is enabled.
+   * Missing legacy settings use the default count. */
+  visibleSubtitleCount?: number;
   /** `null` follows the system reduce-motion setting. */
   pulseAnimation: boolean | null;
   pulseStyle: PulseStyle;
@@ -191,6 +196,8 @@ export interface SettingsDraft {
   showIntermediateSubtitles?: boolean;
   showSubtitleDividers?: boolean;
   showSubtitleTimestamps?: boolean;
+  customSubtitleCountEnabled?: boolean;
+  visibleSubtitleCount?: number;
   pulseAnimation?: boolean;
   pulseStyle?: PulseStyle;
   subtitleAnimation?: boolean;

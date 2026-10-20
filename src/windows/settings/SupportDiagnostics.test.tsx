@@ -3,7 +3,7 @@ import { SettingsToastRegion } from "./SettingsToast";
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { I18N, setStoredUiLanguage } from "../../lib/i18n";
+import { I18N, UI_LANGUAGES, setStoredUiLanguage } from "../../lib/i18n";
 import { SupportDiagnostics } from "./SupportDiagnostics";
 import { diagnosticsCopy } from "./diagnosticsCopy";
 
@@ -339,4 +339,34 @@ it("keeps the previous snapshot identified after a failed refresh and clears tha
   await act(async () => host.querySelector<HTMLButtonElement>('[data-action="refresh"]')!.click());
   expect(host.querySelector(".diagnostics-read-state")).toBeNull();
   expect(host.querySelector(".settings-diagnostic-status")?.textContent).toBe(I18N.settings.sessionPaused);
+});
+
+it.each(UI_LANGUAGES)("renders a runtime recognition failure with a neutral status and local category in %s", async language => {
+  setStoredUiLanguage(language);
+  const expected = {
+    zh: ["字幕发生错误", "语音识别失败"],
+    "zh-TW": ["字幕發生錯誤", "語音辨識失敗"],
+    en: ["Subtitle error", "Speech recognition failed"],
+    ja: ["字幕でエラーが発生しました", "音声認識に失敗"],
+    de: ["Untertitelfehler", "Spracherkennung fehlgeschlagen"],
+    ko: ["자막 오류", "음성 인식 실패"],
+    fr: ["Erreur des sous-titres", "Échec de la reconnaissance vocale"],
+    th: ["คำบรรยายเกิดข้อผิดพลาด", "การรู้จำเสียงไม่สำเร็จ"],
+  }[language];
+  const classification = { category: "recognition", phase: "asr_recognition", code: "APPLE_SPEECH_RECOGNITION_FAILED", description: "private-native-description" };
+  mocks.invoke.mockResolvedValue(JSON.stringify({
+    schema: "mimi.support.v2", session_status: "error", last_error: { classification },
+    journal: { recent_events: [
+      { sequence: 1, elapsed_since_app_start_ms: 100, kind: "status", status: "listening" },
+      { sequence: 2, elapsed_since_app_start_ms: 707_700, kind: "failure", classification },
+      { sequence: 3, elapsed_since_app_start_ms: 707_701, kind: "status", status: "error" },
+    ] },
+  }));
+  await act(async () => root.render(<SupportDiagnostics visible />));
+  expect(host.querySelector(".settings-diagnostic-status")?.textContent).toBe(expected[0]);
+  expect(host.querySelector(".diagnostics-last-error strong")?.textContent).toBe(expected[1]);
+  const events = [...host.querySelectorAll(".settings-diagnostic-events li")].map(event => event.textContent);
+  expect(events).toEqual([`0.1 s${I18N.settings.sessionListening}`, `707.7 s${expected[1]}`, `707.7 s${expected[0]}`]);
+  expect(host.textContent).not.toContain("private-native-description");
+  expect(host.textContent).not.toContain("APPLE_SPEECH_RECOGNITION_FAILED");
 });

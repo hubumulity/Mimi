@@ -155,7 +155,7 @@ export const SUPPLEMENTAL = {
     title: "ข้อมูลวินิจฉัย", copy: "คัดลอกข้อมูลวินิจฉัย", issue: "แจ้งปัญหาบน GitHub",
     refresh: "รีเฟรชข้อมูลวินิจฉัย", refreshing: "กำลังเตรียมข้อมูลวินิจฉัย…", refreshed: "รีเฟรชข้อมูลวินิจฉัยแล้ว",
     status: "สถานะเซสชัน", lastError: "ข้อผิดพลาดล่าสุด", recent: "เหตุการณ์ล่าสุด", sinceStart: "ตั้งแต่เปิดแอป", noEvents: "ยังไม่มีเหตุการณ์",
-    failures: {
+    failures: { recognition: "การรู้จำเสียงไม่สำเร็จ",
       unknown: "ข้อผิดพลาดที่ยังไม่จัดประเภท", configuration: "ไม่รองรับการกำหนดค่า", authentication: "ยืนยันตัวตนไม่สำเร็จ",
       credential_storage: "ที่เก็บข้อมูลรับรองใช้งานไม่ได้", device_unavailable: "เอาต์พุตเสียงใช้งานไม่ได้", timeout: "บริการหมดเวลา",
       request_rejected: "คำขอถูกปฏิเสธ", service_error: "บริการใช้งานไม่ได้", rate_limit: "บริการจำกัดคำขอ",

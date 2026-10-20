@@ -146,3 +146,25 @@ it("never recommends a service retry when the report says it is already schedule
   expect(diagnosticNextStep(result(true))).toBeNull();
   expect(diagnosticNextStep(result(false))).toBe("services");
 });
+
+it("preserves recognition failures after listening without inventing a startup failure or native cause", () => {
+  const classification = { category: "recognition", phase: "asr_recognition", code: "APPLE_SPEECH_RECOGNITION_FAILED", description: "private-native-detail" };
+  const result = supportDiagnosticSummary(report({
+    session_status: "error",
+    last_error: { classification },
+    journal: { recent_events: [
+      { sequence: 1, elapsed_since_app_start_ms: 100, kind: "status", status: "listening" },
+      { sequence: 2, elapsed_since_app_start_ms: 707_700, kind: "failure", classification },
+      { sequence: 3, elapsed_since_app_start_ms: 707_701, kind: "status", status: "error" },
+    ] },
+  }));
+  expect(result?.status).toBe("error");
+  expect(result?.lastError).toBe("recognition");
+  expect(result?.recentEvents).toEqual([
+    { sequence: 1, elapsedMs: 100, kind: "status", status: "listening" },
+    { sequence: 2, elapsedMs: 707_700, kind: "failure", category: "recognition" },
+    { sequence: 3, elapsedMs: 707_701, kind: "status", status: "error" },
+  ]);
+  expect(JSON.stringify(result)).not.toContain("private-native-detail");
+  expect(JSON.stringify(result)).not.toContain("asr_setup");
+});

@@ -27,7 +27,7 @@ Interface illustration with sample dialogue. [Watch subtitles and Immersive Mode
 
 - **Floating subtitles** for films, streams, and classes. Show both languages, translations only, or originals only.
 - **Choose your audio**: computer audio, microphone, or both. Select an app on macOS / Windows 11, or an individual playback stream on Linux.
-- **Adjust the display**: change position, font size, and color. Immersive Mode shows only text; click-through lets you use the app underneath.
+- **Adjust the display**: on desktop, change position, text size from 14–48 px, and color. Show all recent subtitles or the latest 1–10 entries, and scroll up to read available history. Immersive Mode shows only text; click-through lets you use the app underneath.
 - **Save subtitles and audio**: on desktop, export subtitles as TXT or Markdown, or record selected audio as WAV. Both saving options are off until you enable them.
 
 ## Get started
@@ -56,9 +56,11 @@ Special thanks to [@yebuwudong](https://github.com/yebuwudong) for the [Android 
 
 Thanks also to [@Chtholly000](https://github.com/Chtholly000) for improving [Gemini's continuous captions and planned connection rotation](https://github.com/yuxino/Mimi/pull/176).
 
-Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [Wayland overlay controls](https://github.com/yuxino/Mimi/pull/242) and adding [individual playback stream capture on Linux](https://github.com/yuxino/Mimi/pull/275).
+Thanks to [@EmmetZ](https://github.com/EmmetZ) for fixing [Wayland overlay controls](https://github.com/yuxino/Mimi/pull/242) and adding [individual playback stream capture on Linux](https://github.com/yuxino/Mimi/pull/275) and [application icons for playback streams](https://github.com/yuxino/Mimi/pull/304).
 
 Thanks to [@wangmian0](https://github.com/wangmian0) for [disabling thinking mode in DeepSeek live subtitle translation](https://github.com/yuxino/Mimi/pull/270).
+
+Thanks to [@hubumulity](https://github.com/hubumulity) for the [visible subtitle count setting](https://github.com/yuxino/Mimi/pull/303).
 
 <p>
   <a href="https://github.com/yuxino"><img src="docs/assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
@@ -68,6 +70,7 @@ Thanks to [@wangmian0](https://github.com/wangmian0) for [disabling thinking mod
   <a href="https://github.com/inhome"><img src="docs/assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="docs/assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
   <a href="https://github.com/wangmian0"><img src="docs/assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="docs/assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
 </p>
 
 [All contributors](https://github.com/yuxino/mimi/graphs/contributors)

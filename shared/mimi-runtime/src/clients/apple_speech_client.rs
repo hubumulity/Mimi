@@ -78,6 +78,7 @@ impl SentenceRanges {
 struct EventState {
     sender: Option<ProviderEventSender>,
     ranges: SentenceRanges,
+    runtime_failure: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -172,6 +173,7 @@ impl AppleSpeechClient {
         {
             let mut state = self.inner.events.lock().unwrap();
             state.ranges = SentenceRanges::default();
+            state.runtime_failure = None;
             if let Some(sender) = &state.sender {
                 sender
                     .send_if(LiveTranslateServerEvent::SessionCreated, || {
@@ -210,12 +212,17 @@ impl AppleSpeechClient {
                             }
                         }
                         Ok(None) => continue,
-                        Err(label) => error_event(label),
+                        Err(label) => runtime_error_event(&inner, &mut state, label),
                     },
                     Ok(None) if inner.finishing.load(Ordering::SeqCst) => {
                         LiveTranslateServerEvent::SessionFinished
                     }
-                    Ok(None) | Err(_) => error_event("apple_speech_recognition_failed"),
+                    Ok(None) => {
+                        runtime_error_event(&inner, &mut state, "apple_speech_stream_closed")
+                    }
+                    Err(error) => {
+                        runtime_error_event(&inner, &mut state, runtime_error_label(&error))
+                    }
                 };
                 let terminal = matches!(
                     event,
@@ -249,19 +256,44 @@ impl AppleSpeechClient {
     }
 
     pub async fn send_audio(&self, pcm: &[u8]) -> Result<(), RecognitionClientError> {
-        if !self.inner.connected.load(Ordering::SeqCst)
+        let generation = self.inner.generation.load(Ordering::SeqCst);
+        if self.inner.finishing.load(Ordering::SeqCst) {
+            return Err(local_error("apple_speech_not_connected"));
+        }
+        if !self.inner.connected.load(Ordering::SeqCst) {
+            return Err(local_error(
+                self.inner
+                    .events
+                    .lock()
+                    .unwrap()
+                    .runtime_failure
+                    .unwrap_or("apple_speech_not_connected"),
+            ));
+        }
+        let lifecycle = self.inner.lifecycle.lock().await;
+        let mut state = self.inner.events.lock().unwrap();
+        // A disconnect/reconnect while this send waited for the lifecycle lock
+        // must not submit old PCM to the replacement native session.
+        if self.inner.generation.load(Ordering::SeqCst) != generation
             || self.inner.finishing.load(Ordering::SeqCst)
         {
             return Err(local_error("apple_speech_not_connected"));
         }
-        let lifecycle = self.inner.lifecycle.lock().await;
-        let _content = self.inner.events.lock().unwrap();
-        lifecycle
+        if let Some(label) = state.runtime_failure {
+            return Err(local_error(label));
+        }
+        let result = lifecycle
             .session
             .as_ref()
             .ok_or_else(|| local_error("apple_speech_not_connected"))?
-            .send_pcm(pcm)
-            .map_err(|_| local_error("apple_speech_audio_failed"))?;
+            .send_pcm(pcm);
+        if let Err(error) = result {
+            let label = *state
+                .runtime_failure
+                .get_or_insert(runtime_error_label(&error));
+            self.inner.connected.store(false, Ordering::SeqCst);
+            return Err(local_error(label));
+        }
         self.inner
             .sent_pcm_bytes
             .fetch_add(pcm.len() as u64, Ordering::SeqCst);
@@ -272,7 +304,14 @@ impl AppleSpeechClient {
         if self.inner.connected.load(Ordering::SeqCst) {
             Ok(())
         } else {
-            Err(local_error("apple_speech_not_connected"))
+            Err(local_error(
+                self.inner
+                    .events
+                    .lock()
+                    .unwrap()
+                    .runtime_failure
+                    .unwrap_or("apple_speech_not_connected"),
+            ))
         }
     }
 
@@ -354,6 +393,60 @@ fn local_error(label: &str) -> RecognitionClientError {
     RecognitionClientError::Apple(label.to_owned())
 }
 
+/// Public SDK domain/code pairs only. Unknown framework failures remain
+/// terminal; neither descriptions nor arbitrary domains become event labels.
+fn runtime_error_label(error: &AppleSpeechError) -> &'static str {
+    match error {
+        AppleSpeechError::ServiceUnavailable => "apple_speech_runtime_service_unavailable",
+        AppleSpeechError::Timeout => "apple_speech_runtime_timeout",
+        AppleSpeechError::Closed => "apple_speech_stream_closed",
+        AppleSpeechError::QueueOverflow => "apple_speech_result_backlog",
+        AppleSpeechError::InvalidResult => "apple_speech_invalid_result",
+        AppleSpeechError::InvalidPcm | AppleSpeechError::IncompatibleFormat => {
+            "apple_speech_audio_failed"
+        }
+        AppleSpeechError::Unavailable => "apple_speech_unavailable",
+        AppleSpeechError::AssetsNotInstalled => "apple_speech_assets_missing",
+        AppleSpeechError::AssetsDownloading => "apple_speech_preparing",
+        AppleSpeechError::InvalidLocale => "apple_speech_language_unsupported",
+        AppleSpeechError::ReservationLimit => "apple_speech_reservation_limit",
+        AppleSpeechError::ResourcesUnavailable => "apple_speech_resources_unavailable",
+        AppleSpeechError::StatusUnavailable => "apple_speech_status_failed",
+        AppleSpeechError::Native { domain, code }
+            if (domain == "NSCocoaErrorDomain" && matches!(code, 4097 | 4099))
+                || (domain == "SFSpeechErrorDomain" && *code == 1) =>
+        {
+            "apple_speech_runtime_service_unavailable"
+        }
+        AppleSpeechError::Native { domain, code }
+            if domain == "SFSpeechErrorDomain" && *code == 12 =>
+        {
+            "apple_speech_runtime_timeout"
+        }
+        _ => "apple_speech_recognition_failed",
+    }
+}
+
+fn runtime_error_event(
+    inner: &Inner,
+    state: &mut EventState,
+    label: &'static str,
+) -> LiveTranslateServerEvent {
+    // The PCM sender and result reader can observe the same native failure.
+    // Preserve the first classification until this connection is replaced.
+    let label = *state.runtime_failure.get_or_insert(label);
+    LiveTranslateServerEvent::Error {
+        code: if inner.finishing.load(Ordering::SeqCst) {
+            // Explicit stop owns finalization; it must not reopen recognition.
+            "apple_speech_recognition_failed"
+        } else {
+            label
+        }
+        .to_owned(),
+        message: label.to_owned(),
+    }
+}
+
 fn start_error(error: AppleSpeechError) -> RecognitionClientError {
     local_error(match error {
         AppleSpeechError::Unavailable => "apple_speech_unavailable",
@@ -376,6 +469,166 @@ fn error_event(label: &str) -> LiveTranslateServerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::recovery::provider_error_is_retryable;
+
+    #[test]
+    fn apple_runtime_interruptions_use_only_known_domain_code_pairs() {
+        for (error, expected) in [
+            (
+                AppleSpeechError::ServiceUnavailable,
+                "apple_speech_runtime_service_unavailable",
+            ),
+            (AppleSpeechError::Timeout, "apple_speech_runtime_timeout"),
+            (AppleSpeechError::Closed, "apple_speech_stream_closed"),
+            (
+                AppleSpeechError::QueueOverflow,
+                "apple_speech_result_backlog",
+            ),
+            (
+                AppleSpeechError::Native {
+                    domain: "NSCocoaErrorDomain".into(),
+                    code: 4097,
+                },
+                "apple_speech_runtime_service_unavailable",
+            ),
+            (
+                AppleSpeechError::Native {
+                    domain: "NSCocoaErrorDomain".into(),
+                    code: 4099,
+                },
+                "apple_speech_runtime_service_unavailable",
+            ),
+            (
+                AppleSpeechError::Native {
+                    domain: "SFSpeechErrorDomain".into(),
+                    code: 1,
+                },
+                "apple_speech_runtime_service_unavailable",
+            ),
+            (
+                AppleSpeechError::Native {
+                    domain: "SFSpeechErrorDomain".into(),
+                    code: 12,
+                },
+                "apple_speech_runtime_timeout",
+            ),
+        ] {
+            let label = runtime_error_label(&error);
+            assert_eq!(label, expected);
+            assert!(provider_error_is_retryable(label));
+        }
+        for error in [
+            AppleSpeechError::Native {
+                domain: "private/context".into(),
+                code: 12,
+            },
+            AppleSpeechError::Native {
+                domain: "NSCocoaErrorDomain".into(),
+                code: 12,
+            },
+            AppleSpeechError::Native {
+                domain: "SFSpeechErrorDomain".into(),
+                code: 4097,
+            },
+            AppleSpeechError::Native {
+                domain: "SFSpeechErrorDomain".into(),
+                code: -1,
+            },
+            AppleSpeechError::Native {
+                domain: "SFSpeechErrorDomain".into(),
+                code: 2,
+            },
+            AppleSpeechError::InvalidResult,
+            AppleSpeechError::InvalidPcm,
+            AppleSpeechError::IncompatibleFormat,
+            AppleSpeechError::Unavailable,
+            AppleSpeechError::AssetsNotInstalled,
+            AppleSpeechError::AssetsDownloading,
+            AppleSpeechError::InvalidLocale,
+            AppleSpeechError::ReservationLimit,
+            AppleSpeechError::ResourcesUnavailable,
+            AppleSpeechError::StatusUnavailable,
+        ] {
+            let label = runtime_error_label(&error);
+            assert!(!provider_error_is_retryable(label), "{label}");
+            assert!(!label.contains("private"));
+        }
+    }
+
+    #[tokio::test]
+    async fn apple_send_and_health_preserve_reader_failure_without_an_event_sender() {
+        let client = AppleSpeechClient::new(SourceLanguage::English);
+        let event = runtime_error_event(
+            &client.inner,
+            &mut client.inner.events.lock().unwrap(),
+            "apple_speech_invalid_result",
+        );
+        assert!(matches!(
+            event,
+            LiveTranslateServerEvent::Error { code, .. }
+                if code == "apple_speech_invalid_result"
+        ));
+        assert!(matches!(
+            client.ping(),
+            Err(RecognitionClientError::Apple(label))
+                if label == "apple_speech_invalid_result"
+        ));
+        let error = tokio::time::timeout(Duration::from_millis(100), client.send_audio(&[0, 0]))
+            .await
+            .unwrap();
+        assert!(matches!(
+            error,
+            Err(RecognitionClientError::Apple(label))
+                if label == "apple_speech_invalid_result"
+        ));
+        let event = runtime_error_event(
+            &client.inner,
+            &mut client.inner.events.lock().unwrap(),
+            "apple_speech_stream_closed",
+        );
+        assert!(matches!(
+            event,
+            LiveTranslateServerEvent::Error { code, .. }
+                if code == "apple_speech_invalid_result"
+        ));
+    }
+
+    #[tokio::test]
+    async fn apple_queued_send_rejects_a_replaced_generation() {
+        let client = AppleSpeechClient::new(SourceLanguage::English);
+        client.inner.connected.store(true, Ordering::SeqCst);
+        let lifecycle = client.inner.lifecycle.lock().await;
+        let mut send = Box::pin(client.send_audio(&[0, 0]));
+        // Poll the send up to the occupied lifecycle lock before replacing it.
+        assert!(futures_util::poll!(&mut send).is_pending());
+        client.inner.generation.fetch_add(1, Ordering::SeqCst);
+        client.inner.events.lock().unwrap().runtime_failure = Some("apple_speech_runtime_timeout");
+        drop(lifecycle);
+        assert!(matches!(
+            send.await,
+            Err(RecognitionClientError::Apple(label)) if label == "apple_speech_not_connected"
+        ));
+    }
+
+    #[tokio::test]
+    async fn apple_explicit_finish_does_not_publish_a_retryable_runtime_failure() {
+        let client = AppleSpeechClient::new(SourceLanguage::English);
+        client.inner.finishing.store(true, Ordering::SeqCst);
+        let event = runtime_error_event(
+            &client.inner,
+            &mut client.inner.events.lock().unwrap(),
+            "apple_speech_runtime_timeout",
+        );
+        let LiveTranslateServerEvent::Error { code, message } = event else {
+            panic!("expected the finalization failure");
+        };
+        assert!(!provider_error_is_retryable(&code));
+        assert_eq!(message, "apple_speech_runtime_timeout");
+        assert!(matches!(
+            client.send_audio(&[0, 0]).await,
+            Err(RecognitionClientError::Apple(label)) if !provider_error_is_retryable(&label)
+        ));
+    }
 
     #[test]
     fn startup_readiness_races_keep_actionable_resource_errors() {
@@ -466,6 +719,26 @@ mod tests {
         let mut invalid = result(0.0, "Bad time", true);
         invalid.start_ms = f64::NAN;
         assert_eq!(ranges.admit(&invalid), Err("apple_speech_invalid_result"));
+    }
+
+    #[test]
+    fn apple_unfinished_oldest_range_reports_backlog_without_discarding_it() {
+        let mut ranges = SentenceRanges::default();
+        for index in 0..MAX_TRACKED_RANGES {
+            ranges
+                .admit(&result(index as f64 * 1000.0, "Sentence", index != 0))
+                .unwrap();
+        }
+        let next = result(MAX_TRACKED_RANGES as f64 * 1000.0, "Next", true);
+        assert_eq!(ranges.admit(&next), Err("apple_speech_result_backlog"));
+        assert_eq!(ranges.ranges.len(), MAX_TRACKED_RANGES);
+        // The retained oldest final can still complete, freeing the bounded
+        // slot without dropping or assigning another sentence's identity.
+        assert_eq!(
+            ranges.admit(&result(0.0, "Oldest final", true)),
+            Ok(Some(1))
+        );
+        assert_eq!(ranges.admit(&next), Ok(Some(MAX_TRACKED_RANGES as u64 + 1)));
     }
 
     #[tokio::test]

@@ -379,7 +379,20 @@ impl AppleSpeechSession {
         if pcm.len() > MAX_PCM_BYTES || !pcm.len().is_multiple_of(2) {
             return Err(AppleSpeechError::InvalidPcm);
         }
-        match unsafe { mimi_apple_speech_push(self.id, pcm.as_ptr(), pcm.len()) } {
+        let result = unsafe { mimi_apple_speech_push(self.id, pcm.as_ptr(), pcm.len()) };
+        self.push_result(result)
+    }
+
+    fn push_result(&self, result: i32) -> Result<(), AppleSpeechError> {
+        if result != 0 {
+            // A native failure may have arrived after send_pcm's first status
+            // read and closed the input queue. Keep its reason instead of
+            // replacing a permanent failure with a retryable closed stream.
+            if let Status::Failed(error) = self.status.borrow().clone() {
+                return Err(error);
+            }
+        }
+        match result {
             0 => Ok(()),
             1 => Err(AppleSpeechError::InvalidPcm),
             2 => Err(AppleSpeechError::QueueOverflow),
@@ -562,6 +575,31 @@ mod tests {
         assert_send::<AppleSpeechEvents>();
         assert_send::<AppleSpeechError>();
         assert_sync::<AppleSpeechError>();
+    }
+
+    #[test]
+    fn failed_native_push_keeps_a_concurrent_permanent_callback_error() {
+        let (route, _events, status) = session_route(1);
+        let session = AppleSpeechSession {
+            id: 0,
+            status,
+            // This fixture tests only the return/status boundary, without
+            // opening or cancelling a native recognition session.
+            active: false,
+        };
+        assert!(!dispatch(
+            &route,
+            Ok(NativeEvent::Error {
+                domain: "SFSpeechErrorDomain".into(),
+                code: 2,
+            }),
+        ));
+        for result in [1, 2, 3] {
+            assert!(matches!(
+                session.push_result(result),
+                Err(AppleSpeechError::Native { code: 2, .. })
+            ));
+        }
     }
 
     #[test]
