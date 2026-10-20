@@ -4,6 +4,30 @@
 实测范围和未解决项；条目是历史证据，后续任务仍须核对当前源码与设备。
 不写密钥、音频、字幕正文或个人目录，不把临时日志当作已持久归档的案例。
 
+## 2026-10-20：Linux 播放流图标消歧回归
+
+- 基于 main `6812e4d6`，修复提交 `fb3eaadd` 经
+  [PR #305](https://github.com/yuxino/Mimi/pull/305) 合并为 `5b8e68c8`；
+  合并树与受测 PR head 完全一致。依据与范围见
+  [设计记录](../plans/2026-10-20-linux-icon-match-ambiguity.md)。
+- 共享 executable 的桌面入口按准确名称消歧，重复名称或无充分依据时
+  使用默认图标；明确 ID 和缺少 artwork 的入口不落到更弱的其他应用。
+  native／Flatpak 共用候选规则，支持官方允许的两类 Flatpak 后缀入口。
+- 原文决策函数的独立夹具使用相同 28 个输入，旧版失败 15 个，修复后
+  全通过；该夹具替代 AppInfo 元数据，不作为原生 GIO 证据。
+- 无参数 `./scripts/check.sh` 全通过：本机 desktop 632＋既有 ignored 1、
+  前端 147 文件／2,454 项、core／runtime／实际主机 JNI、格式、严格
+  Clippy、lint、类型检查与生产构建。
+- [跨平台 CI](https://github.com/yuxino/Mimi/actions/runs/39413303934) 与
+  [Android CI](https://github.com/yuxino/Mimi/actions/runs/39413303047)
+  全部适用作业通过，含 macOS、Windows、Linux、Windows ARM64 与 MSRV。
+  Linux 默认 Rust 609 passed／16 ignored，包含 9 项真实 GIO／属性测试；
+  CI 新增精确 Xvfb 步骤，实际 GTK PNG／SVG、损坏回退及预算测试另有
+  1 passed。既有私有 PulseAudio 合成采集和凭据兼容回归也通过。
+- 未启动或替换本机正式应用，未读真实凭据；本轮未验收用户 Linux
+  桌面主题、物理设备或提供商。清理一次性夹具与前端构建产物，保留
+  原有运行会话及共享依赖／编译缓存。本轮未打包或发布版本。
+
 ## 2026-10-20：v1.6.5 公开发布验收
 
 - [v1.6.5](https://github.com/yuxino/Mimi/releases/tag/v1.6.5) 已公开为
