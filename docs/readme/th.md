@@ -28,7 +28,7 @@
 - **เข้าใจสิ่งที่กำลังเล่น**: แสดงคำพูดในภาพยนตร์ ไลฟ์ และบทเรียนเป็นคำบรรยายลอย เลือกสองภาษา เฉพาะคำแปล หรือเฉพาะต้นฉบับได้
 - **เลือกเสียงที่ต้องการ**: ค่าเริ่มต้นคือเสียงคอมพิวเตอร์ เปิดไมโครโฟนหรือทั้งสองแหล่งเองได้ และเลือกแอปเฉพาะบน macOS / Windows 11 ได้ บน Linux เลือกสตรีมการเล่นเสียงแต่ละรายการได้
 - **ปรับให้อ่านสบาย**: บนเดสก์ท็อป เปลี่ยนตำแหน่ง ขนาดตัวอักษร 14–48 px และสีได้ เลือกแสดงคำบรรยายล่าสุดทั้งหมดหรือเพียง 1–10 รายการ และเลื่อนขึ้นเพื่ออ่านประวัติที่ยังเก็บอยู่ โหมดเต็มอารมณ์เหลือแค่ข้อความ และการคลิกทะลุช่วยให้ใช้แอปด้านล่างต่อได้
-- **บันทึกคำบรรยายและเสียง**: บนเดสก์ท็อป บันทึกคำบรรยายเป็น TXT หรืออัดเสียงจากแหล่งที่เลือกเป็น WAV ได้ ต้องเปิดใช้ทั้งสองฟังก์ชันด้วยตนเอง
+- **บันทึกคำบรรยายและเสียง**: บนเดสก์ท็อป ส่งออกคำบรรยายเป็น TXT หรือ Markdown หรืออัดเสียงจากแหล่งที่เลือกเป็น WAV ได้ ต้องเปิดใช้การบันทึกทั้งสองอย่างด้วยตนเอง
 
 ## เริ่มใช้งาน
 
@@ -63,14 +63,14 @@ Mimi ใช้ฟรี แต่บริการคลาวด์อาจ�
 ขอบคุณ [@hubumulity](https://github.com/hubumulity) สำหรับ[การตั้งค่าจำนวนคำบรรยายที่แสดง](https://github.com/yuxino/Mimi/pull/303)
 
 <p>
-  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [ผู้ร่วมพัฒนาทั้งหมด](https://github.com/yuxino/mimi/graphs/contributors)

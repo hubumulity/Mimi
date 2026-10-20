@@ -62,6 +62,7 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
   const typeahead = useRef({ text: "", at: 0 });
   const lastChoice = useRef(value);
   const [popup, setPopup] = useState<MenuStyle | null>(null);
+  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   const [query, setQuery] = useState("");
   const searchable = searchLabel !== undefined;
   const open = popup !== null && !disabled;
@@ -116,6 +117,7 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
     // In short windows, allow the searchable menu to overlap the trigger so
     // the input and at least one result remain usable within the viewport.
     const height = Math.min(desired, Math.max(searchable ? 90 : 40, upwards ? above : below), ...(searchable ? [Math.max(0, window.innerHeight - 16)] : []));
+    setPortalTarget(button.closest('[role="dialog"], [role="alertdialog"]') ?? document.body);
     setPopup({
       position: "fixed",
       width,
@@ -211,7 +213,7 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
         event.stopPropagation();
       }
       setPopup(null);
-      // The input lives in a body portal. Restore the form's tab starting
+      // The input lives in a portal. Restore the form's tab starting
       // point before the browser performs its normal Tab/Shift+Tab action.
       if (editing) trigger.current?.focus({ preventScroll: true });
       return;
@@ -306,13 +308,15 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
         </span><Icon name="chevron-down" />
       </button>
       {open && createPortal(
+        // Keep modal menus within its focus and interaction boundary. Fixed
+        // positioning still lets them escape the dialog's scrolling content.
         <div ref={menu} id={searchable ? undefined : id} className={`mimi-select__menu${searchable ? " mimi-select__menu--searchable" : ""}`}
           role={searchable ? undefined : "listbox"} aria-label={searchable ? undefined : label} style={popup}>
           {searchable ? <>
             <input ref={input} className="mimi-select__search" type="text" role="combobox"
               aria-label={searchLabel} placeholder={searchLabel} aria-expanded={true}
               aria-autocomplete="list" aria-haspopup="listbox" aria-controls={id} aria-activedescendant={activeId}
-              autoComplete="off" spellCheck={false} value={query}
+              autoComplete="off" spellCheck={false} tabIndex={-1} value={query}
               onChange={event => updateQuery(event.currentTarget.value)} onKeyDown={onKeyDown} />
             {loadingMessage && <div className="mimi-select__empty" role="status">{loadingMessage}</div>}
             <div ref={list} id={id} className="mimi-select__options" role="listbox" aria-label={label} aria-busy={loadingMessage ? true : undefined}>
@@ -320,7 +324,7 @@ export function Select({ label, value, options, disabled = false, searchLabel, e
               {visible.length === 0 && !loadingMessage && <div className="mimi-select__empty" role="status">{emptyMessage}</div>}
             </div>
           </> : rows}
-        </div>, document.body,
+        </div>, portalTarget ?? document.body,
       )}
     </span>
   );

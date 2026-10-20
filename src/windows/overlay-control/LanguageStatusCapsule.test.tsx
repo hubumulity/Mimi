@@ -6,6 +6,45 @@ import { setStoredUiLanguage } from "../../lib/i18n";
 import { useStore } from "../../lib/store";
 import { LanguageStatusCapsule } from "./LanguageStatusCapsule";
 import { audioInputLabel } from "../../lib/audioInput";
+import { recordingStatusLabel } from "../../lib/recordingStatus";
+
+it("keeps actual recording feedback in the existing control and replaces duplicate paused copy", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  setStoredUiLanguage("zh");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const props = {
+    phase: "listening" as const, status: { source: "日语", separator: "→", target: "中文" },
+    settings: { ...useStore.getState().settings, recordSessionAudio: true },
+    isPaused: false, isWaitingForFinalTranslation: false, expanded: false, onToggle: () => {},
+  };
+  try {
+    await act(async () => root.render(<LanguageStatusCapsule {...props} />));
+    expect(host.querySelector("[data-recording-status]")).toBeNull();
+    for (const audioRecording of ["starting", "recording", "paused", "limited", "error", "off"] as const) {
+      await act(async () => root.render(<LanguageStatusCapsule {...props}
+        audioRecording={audioRecording} isPaused={audioRecording === "paused"} />));
+      expect(host.querySelectorAll("button")).toHaveLength(1);
+      const label = recordingStatusLabel(audioRecording, "zh");
+      if (!label) {
+        expect(host.querySelector("[data-recording-status]")).toBeNull();
+        continue;
+      }
+      expect(host.querySelector("button")!.getAttribute("aria-label")).toContain(label);
+      expect(host.querySelector("button")!.title).toContain(label);
+      expect(host.querySelector("[data-recording-status]")?.getAttribute("data-recording-status")).toBe(audioRecording);
+      if (audioRecording === "paused") {
+        expect(host.querySelector(".overlay-control-island__phase")).toBeNull();
+        expect(host.textContent).toContain("录音暂停");
+      }
+    }
+  } finally {
+    await act(async () => root.unmount());
+    host.remove(); setStoredUiLanguage("system"); vi.unstubAllGlobals();
+  }
+});
 
 it.each([
   { label: "explicit off", reduced: false, pulseAnimation: false },

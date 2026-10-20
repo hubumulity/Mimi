@@ -132,7 +132,9 @@ export function SettingsConfirmation({
       }
     };
     document.addEventListener("focusin", trapFocus, true);
-    document.addEventListener("keydown", handleKeyDown, true);
+    // Nested controls consume Escape before the dialog. Their Tab handlers
+    // restore the form anchor before this trap advances within the modal.
+    document.addEventListener("keydown", handleKeyDown);
     for (const event of ["pointerdown", "mousedown", "click"]) document.addEventListener(event, stopBackgroundInteraction, true);
     focusCancel();
 
@@ -140,7 +142,7 @@ export function SettingsConfirmation({
       observer.disconnect();
       themeObserver.disconnect();
       document.removeEventListener("focusin", trapFocus, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
       for (const event of ["pointerdown", "mousedown", "click"]) document.removeEventListener(event, stopBackgroundInteraction, true);
       for (const element of [...background.keys()]) restoreBackground(element);
       document.body.style.overflow = previousOverflow;

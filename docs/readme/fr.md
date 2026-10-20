@@ -28,7 +28,7 @@ Illustration de l’interface avec un dialogue d’exemple. [Voir les sous-titre
 - **Comprendre ce qui passe** : des sous-titres flottants pour les voix des films, diffusions et cours. Affichez les deux langues, la traduction seule ou l’original seul.
 - **Choisir la source** : le son de l’ordinateur par défaut ; activez vous-même le microphone ou les deux sources. Sélectionnez une application sous macOS / Windows 11. Sous Linux, choisissez un flux de lecture individuel.
 - **Adapter l’affichage** : sur ordinateur, réglez la position, la taille du texte de 14 à 48 px et la couleur. Affichez tous les sous-titres récents ou seulement les 1 à 10 derniers, et remontez pour lire l’historique disponible. Le mode immersif ne garde que le texte ; la transparence aux clics permet d’utiliser l’application dessous.
-- **Enregistrer les sous-titres et le son** : sur ordinateur, sauvegardez les sous-titres en TXT ou enregistrez la source audio choisie en WAV. Ces deux options doivent être activées manuellement.
+- **Enregistrer les sous-titres et le son** : sur ordinateur, exportez les sous-titres en TXT ou Markdown, ou enregistrez la source audio choisie en WAV. Ces deux options d’enregistrement doivent être activées manuellement.
 
 ## Premiers pas
 
@@ -63,14 +63,14 @@ Merci à [@wangmian0](https://github.com/wangmian0) d’avoir [désactivé le mo
 Merci à [@hubumulity](https://github.com/hubumulity) pour le [réglage du nombre de sous-titres affichés](https://github.com/yuxino/Mimi/pull/303).
 
 <p>
-  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [Tous les contributeurs](https://github.com/yuxino/mimi/graphs/contributors)

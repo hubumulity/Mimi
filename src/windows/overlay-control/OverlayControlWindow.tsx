@@ -44,6 +44,7 @@ export const OverlayControlWindow = memo(function OverlayControlWindow({ embedde
   const errorRequiresConfiguration = errorSettingsTarget !== null;
   const start = useStore(state => state.start);
   const sessionIsPaused = useStore((state) => state.session.isPaused);
+  const audioRecording = useStore((state) => state.session.audioRecording);
   const detectedLanguage = useStore(
     (state) => state.session.detectedLanguage,
   );
@@ -190,6 +191,7 @@ export const OverlayControlWindow = memo(function OverlayControlWindow({ embedde
           phase={phase}
           status={status}
           settings={settings}
+          audioRecording={audioRecording}
           model={model}
           isPaused={sessionIsPaused}
           isWaitingForFinalTranslation={isWaiting}
@@ -227,6 +229,7 @@ export const OverlayControlWindow = memo(function OverlayControlWindow({ embedde
           phase={phase}
           status={status}
           settings={settings}
+          audioRecording={audioRecording}
           isPaused={sessionIsPaused}
           isWaitingForFinalTranslation={isWaiting}
           expanded={false}

@@ -1,0 +1,58 @@
+.recording-indicator {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--control-text-muted, var(--settings-text-muted, rgba(255, 255, 255, 0.9)));
+  font-family: var(--mimi-ui-font);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: inherit;
+}
+
+.recording-indicator__mark {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.recording-indicator__dot {
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.recording-indicator[data-recording-status="recording"] .recording-indicator__mark,
+.recording-indicator[data-recording-status="error"] .recording-indicator__mark {
+  color: var(--settings-danger, #ff8a80);
+}
+
+.recording-indicator[data-recording-status="recording"] .recording-indicator__dot {
+  background: currentColor;
+}
+
+.recording-indicator[data-recording-status="limited"] .recording-indicator__mark {
+  color: #ffb852;
+}
+
+.recording-indicator[data-recording-status="limited"] .recording-indicator__dot {
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.recording-indicator__mark > svg {
+  width: 10px;
+  height: 10px;
+}
+
+.recording-indicator--compact {
+  gap: 0;
+}

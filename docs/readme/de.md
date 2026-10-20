@@ -28,7 +28,7 @@ Oberflächenillustration mit Beispieldialog. [Untertitel und immersiven Modus an
 - **Verstehen, was läuft**: schwebende Untertitel für Sprache in Filmen, Streams und Unterricht. Zeige beide Sprachen, nur die Übersetzung oder nur das Original.
 - **Audio auswählen**: standardmäßig den Computerton; Mikrofon oder beide Quellen aktivierst du selbst. Unter macOS / Windows 11 kannst du eine einzelne App wählen. Unter Linux kannst du einen einzelnen Wiedergabestream auswählen.
 - **Lesbarkeit anpassen**: Ändere am Desktop Position, Schriftgröße von 14–48 px und Farbe. Zeige alle zuletzt erfassten Untertitel oder nur die neuesten 1–10 Einträge und scrolle nach oben, um den verfügbaren Verlauf zu lesen. Im immersiven Modus bleibt nur der Text; mit Klickdurchleitung bedienst du die App darunter.
-- **Untertitel und Audio speichern**: Speichere am Desktop Untertitel als TXT oder nimm die gewählte Audioquelle als WAV auf. Beide Funktionen sind zunächst ausgeschaltet.
+- **Untertitel und Audio speichern**: Exportiere am Desktop Untertitel als TXT oder Markdown oder nimm die gewählte Audioquelle als WAV auf. Beide Speicherfunktionen sind zunächst ausgeschaltet.
 
 ## Erste Schritte
 
@@ -63,14 +63,14 @@ Danke an [@wangmian0](https://github.com/wangmian0) für die [Deaktivierung des 
 Danke an [@hubumulity](https://github.com/hubumulity) für die [Einstellung der Anzahl sichtbarer Untertitel](https://github.com/yuxino/Mimi/pull/303).
 
 <p>
-  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [Alle Mitwirkenden](https://github.com/yuxino/mimi/graphs/contributors)

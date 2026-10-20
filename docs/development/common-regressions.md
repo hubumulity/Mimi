@@ -452,6 +452,12 @@ page must include a review of other instances of the same pattern.
 - Use `./scripts/dev-app.sh --ui-only` for visual states that do not require a
   provider. UI-only mode must never read Keychain items, open provider sockets,
   or start system-audio capture.
+- For native export-dialog checks, explicitly launch with
+  `MIMI_UI_TEST_EXPORT=1 ./scripts/dev-app.sh --watch --ui-only`.
+  Enable subtitle saving in the in-memory fixture, start and stop a synthetic
+  session, then export its bounded sample. This opt-in retains only the test
+  archive after Stop; it does not enable saved-history writes or capture.
+  The launcher resets it to zero on ordinary UI-test and live launches.
 
 ## Validate the test audio before blaming capture
 

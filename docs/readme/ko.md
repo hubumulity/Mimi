@@ -28,7 +28,7 @@
 - **재생 중인 내용 이해하기**: 영화, 방송, 수업의 음성을 플로팅 자막으로 표시합니다. 두 언어, 번역문만, 원문만 볼 수 있습니다.
 - **들을 소리 선택하기**: 기본값은 컴퓨터 소리입니다. 마이크나 두 입력을 직접 켤 수 있으며, macOS / Windows 11에서는 앱을 지정할 수 있습니다. Linux에서는 개별 재생 스트림을 선택할 수 있습니다.
 - **읽기 편하게 조정하기**: 데스크톱에서 위치, 14–48 px 글자 크기, 색상을 바꿀 수 있습니다. 최근 자막 전체 또는 최신 1–10개만 표시하고, 위로 스크롤해 남아 있는 기록을 읽을 수 있습니다. 몰입 모드는 자막만 남기고, 클릭 통과로 뒤에 있는 앱을 조작할 수 있습니다.
-- **자막과 오디오 저장**: 데스크톱에서 자막을 TXT로 저장하거나 선택한 오디오를 WAV로 녹음할 수 있습니다. 두 기능 모두 직접 켜야 작동합니다.
+- **자막과 오디오 저장**: 데스크톱에서 자막을 TXT 또는 Markdown으로 내보내거나 선택한 오디오를 WAV로 녹음할 수 있습니다. 두 저장 기능 모두 직접 켜야 작동합니다.
 
 ## 시작하기
 
@@ -63,14 +63,14 @@ Mimi는 무료지만 클라우드 서비스는 요금이 발생할 수 있습니
 [자막 표시 개수 설정](https://github.com/yuxino/Mimi/pull/303)을 기여해 주신 [@hubumulity](https://github.com/hubumulity)께 감사드립니다.
 
 <p>
-  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [모든 기여자](https://github.com/yuxino/mimi/graphs/contributors)

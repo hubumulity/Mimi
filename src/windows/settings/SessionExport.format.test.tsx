@@ -9,7 +9,7 @@ import { SessionExport } from "./SessionExport";
 const ipc = vi.hoisted(() => ({
   sessionArchiveState: vi.fn(), sessionArchiveClear: vi.fn(), sessionExport: vi.fn(),
   sessionTranscriptPage: vi.fn(), sessionHistoryList: vi.fn(), sessionHistoryPage: vi.fn(),
-  sessionHistoryAudio: vi.fn(), sessionHistoryDelete: vi.fn(),
+  sessionHistoryAudio: vi.fn(), sessionArchiveAudio: vi.fn(), sessionHistoryDelete: vi.fn(), sessionHistoryRename: vi.fn(),
 }));
 const store = vi.hoisted(() => ({
   session: { isActive: false },
@@ -60,6 +60,12 @@ async function mount() {
 async function tick(ms = 1_000) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 }
+async function openCurrentReader() {
+  const current = host.querySelector<HTMLButtonElement>('[data-history-id="current"]');
+  expect(current).not.toBeNull();
+  await act(async () => current!.click());
+  await tick(0);
+}
 
 function observeFormatters(defaultTimeZone?: () => string) {
   const instances: Array<{ options: Intl.DateTimeFormatOptions | undefined; format: ReturnType<typeof vi.fn> }> = [];
@@ -73,23 +79,35 @@ function observeFormatters(defaultTimeZone?: () => string) {
   return { constructor, instances };
 }
 
-it("bounds formatter work on unchanged archive polls without remounting history or delaying new state", async () => {
+it("bounds formatter work in the library and reader without remounting visible content or delaying new state", async () => {
   await mount();
   const observer = observeFormatters();
   const historyButton = host.querySelector(".session-history__group button");
-  const article = host.querySelector("article");
+  expect(historyButton).not.toBeNull();
   const reads = ipc.sessionArchiveState.mock.calls.length;
   for (let index = 0; index < 5; index++) {
     observer.constructor.mockClear(); observer.instances.length = 0;
     await tick();
-    expect(observer.constructor).toHaveBeenCalledTimes(3);
+    expect(observer.constructor).toHaveBeenCalledTimes(2);
     expect(observer.instances.find(item => item.options?.year)?.format).toHaveBeenCalledOnce();
     expect(observer.instances.find(item => item.options?.hour && !item.options.second)?.format).toHaveBeenCalledTimes(20);
-    expect(observer.instances.find(item => item.options?.second)?.format).toHaveBeenCalledTimes(30);
     expect(host.querySelector(".session-history__group button")).toBe(historyButton);
-    expect(host.querySelector("article")).toBe(article);
+    expect(host.querySelector("article")).toBeNull();
   }
   expect(ipc.sessionArchiveState).toHaveBeenCalledTimes(reads + 5);
+  expect(ipc.sessionTranscriptPage).not.toHaveBeenCalled();
+  await openCurrentReader();
+  const article = host.querySelector("article");
+  expect(article).not.toBeNull();
+  for (let index = 0; index < 5; index++) {
+    observer.constructor.mockClear(); observer.instances.length = 0;
+    await tick();
+    expect(observer.constructor).toHaveBeenCalledOnce();
+    expect(observer.instances.find(item => item.options?.second)?.format).toHaveBeenCalledTimes(30);
+    expect(host.querySelector("article")).toBe(article);
+    expect(host.querySelector(".session-history__group")).toBeNull();
+  }
+  expect(ipc.sessionArchiveState).toHaveBeenCalledTimes(reads + 10);
   expect(ipc.sessionTranscriptPage).toHaveBeenCalledOnce();
   archive.transcriptCount = 31;
   ipc.sessionTranscriptPage.mockResolvedValue({ total: 31, page: 0, entries: [{
@@ -104,14 +122,21 @@ it("bounds formatter work on unchanged archive polls without remounting history 
 it.each(UI_LANGUAGES)("preserves distinct date, session time and transcript time formats when switching to %s", async language => {
   await mount();
   const historyButton = host.querySelector(".session-history__group button");
-  const article = host.querySelector("article");
+  expect(historyButton).not.toBeNull();
   setStoredUiLanguage(language);
   await tick();
   expect(host.querySelector(".session-history__group h4")?.textContent).toBe(new OriginalFormatter(language, dayOptions).format(startedAtMs));
   expect(historyButton?.querySelector("span")?.textContent).toBe(new OriginalFormatter(language, sessionOptions).format(startedAtMs));
+  expect(host.querySelector(".session-history__group button")).toBe(historyButton);
+  setStoredUiLanguage("en");
+  await tick();
+  await openCurrentReader();
+  const article = host.querySelector("article");
+  expect(article).not.toBeNull();
+  setStoredUiLanguage(language);
+  await tick();
   expect(article?.querySelector("time")?.textContent).toBe(new OriginalFormatter(language, transcriptOptions).format(startedAtMs));
   expect(article?.querySelector("time")?.dateTime).toBe(new Date(startedAtMs).toISOString());
-  expect(host.querySelector(".session-history__group button")).toBe(historyButton);
   expect(host.querySelector("article")).toBe(article);
 });
 
@@ -142,8 +167,12 @@ it("uses fresh default-time-zone formatters on a later poll", async () => {
   timeZone = "Asia/Tokyo";
   await tick();
   expect(sessionTime()).toBe(new OriginalFormatter("en", { ...sessionOptions, timeZone }).format(startedAtMs));
-  expect(transcriptTime()).toBe(new OriginalFormatter("en", { ...transcriptOptions, timeZone }).format(startedAtMs));
   expect(host.querySelector(".session-history__group h4")?.textContent).toBe(new OriginalFormatter("en", { ...dayOptions, timeZone }).format(startedAtMs));
+  await openCurrentReader();
+  expect(transcriptTime()).toBe(new OriginalFormatter("en", { ...transcriptOptions, timeZone }).format(startedAtMs));
+  timeZone = "UTC";
+  await tick();
+  expect(transcriptTime()).toBe(new OriginalFormatter("en", { ...transcriptOptions, timeZone }).format(startedAtMs));
 });
 
 it("does not construct date formatters for an empty archive and history", async () => {

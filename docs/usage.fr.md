@@ -73,6 +73,12 @@ Sous macOS et Windows build 20348+, le sélecteur d’applications permet de cho
 
 Dans Réglages → Enregistrer et exporter, choisissez d’enregistrer les sous-titres ou les sources audio sélectionnées. Les deux options sont désactivées par défaut. Les contenus sont écrits progressivement dans des fichiers privés locaux, avec des fichiers audio séparés pour le système et le microphone. Désactiver une option efface son contenu de la session en cours. Les sessions déjà enregistrées nécessitent une suppression explicite.
 
+Recherchez les sessions enregistrées par nom ou filtrez celles contenant du texte ou de l’audio. Sélectionnez une session pour ouvrir la vue de lecture ; le retour rétablit la position dans la liste. Recherchez dans l’original et la traduction, lisez l’un ou les deux et copiez chaque passage. La vue propose Exporter et Plus ; le menu Plus permet de renommer ou supprimer une session enregistrée.
+
+Dans Exporter, choisissez TXT, Markdown ou WAV parmi les formats disponibles. Le texte exporté couvre toute la session sélectionnée, indépendamment de la recherche : original, traduction ou les deux, avec les heures de confirmation si souhaité. Si les deux sources audio ont été enregistrées, choisissez la source pour le WAV. Les sessions enregistrées peuvent être exportées pendant que les sous-titres en direct fonctionnent ; arrêtez ceux-ci avant d’exporter la session en cours.
+
+Arrêtez les sous-titres en direct avant d’écouter un enregistrement. Appuyez sur Lecture dans la vue de lecture pour charger et lancer l’audio. Vous pouvez mettre en pause, consulter le temps écoulé et la durée totale, et déplacer le curseur pour changer de position. Réessayez en cas d’échec du chargement ou de la lecture. Une session en cours arrêtée peut aussi lire l’audio encore disponible ; après un arrêt normal, retrouvez généralement l’enregistrement dans la liste des sessions.
+
 Une nouvelle session conserve les sous-titres confirmés déjà à l’écran, dans la limite d’affichage. Effacer les retire. Cela n’active pas la sauvegarde, ne copie pas les anciennes lignes dans la nouvelle session et ne restaure pas les sous-titres non enregistrés après avoir quitté Mimi.
 
 Les limites sont 10 000 paires confirmées / 2 MiB de texte et 64 MiB d’audio. La sauvegarde s’arrête avec une notification à la limite. Les horodatages des sous-titres indiquent la confirmation ; le WAV omet les pauses et les interruptions de connexion. Leurs chronologies ne sont donc pas directement synchronisées.
@@ -96,6 +102,8 @@ Afficher les sous-titres plus tôt montre des brouillons susceptibles de changer
 ## Erreurs de reconnaissance
 
 Les sous-titres existants restent visibles avec la cause de l’erreur. Ouvrez les commandes flottantes pour les détails et les actions de récupération. Une erreur de configuration reconnue propose Modèles et services ; une erreur temporaire de connexion ou de service propose Réessayer. Corriger ou changer la configuration ramène la session en attente sans démarrer la capture. Réactivez les sous-titres en direct lorsque vous êtes prêt.
+
+Réglages → Diagnostic présente un état de l’entrée audio, de la traduction, des dernières mesures et des événements, avec des raccourcis vers les réglages concernés. Actualisez-le ou copiez le rapport pour un signalement GitHub, puis vérifiez son contenu avant l’envoi. Il ne contient ni identifiants ni texte des sous-titres. Ces observations ne déterminent pas la cause : le nombre d’événements n’est pas un nombre de phrases, et les mesures ne représentent pas le délai total des sous-titres.
 
 ## Autres documents
 

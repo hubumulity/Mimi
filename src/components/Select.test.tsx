@@ -39,6 +39,24 @@ async function render(value: string) {
 }
 function trigger() { return host.querySelector<HTMLButtonElement>('[role="combobox"]')!; }
 
+it.each(["dialog", "alertdialog"])("keeps a fixed popup inside its nearest %s", async role => {
+  await act(() => root.render(<div role="dialog"><div role={role} className="nearest-dialog">
+    <Select label="Choice" value="translation" options={options} onChange={onChange} />
+  </div></div>));
+  await act(() => trigger().click());
+  const popup = document.querySelector<HTMLElement>('[role="listbox"]')!;
+  expect(popup.parentElement).toBe(host.querySelector(".nearest-dialog"));
+  expect(popup.style.position).toBe("fixed");
+  await act(() => document.querySelectorAll<HTMLElement>('[role="option"]')[1].click());
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("bilingual");
+});
+
+it("keeps ordinary page pickers in the body portal", async () => {
+  await render("translation");
+  await act(() => trigger().click());
+  expect(document.querySelector('[role="listbox"]')?.parentElement).toBe(document.body);
+});
+
 it.each([
   { target: "sibling element", staysOpen: true },
   { target: "sibling SVG", staysOpen: true },

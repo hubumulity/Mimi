@@ -192,7 +192,7 @@ export const SETTINGS = {
   subtitleTimestampsHelp: "在已確認字幕旁顯示本機時間（HH:mm:ss），適用於系統聲音和麥克風。時間以字幕確認為準，並非精確的說話起點；沉浸模式也跟隨此開關。",
 
   sessionAudioTiming: "WAV 會省略暫停和重新連線間隙，音訊與字幕時間戳記不直接對齊。",
-  sessionTranscriptTiming: "TXT 時間戳記表示字幕確認時距工作階段開始的時間，並非媒體播放位置。",
+  sessionTranscriptTiming: "TXT / Markdown 時間戳記表示字幕確認時距工作階段開始的時間，並非媒體播放位置。",
   sessionExportDetails: "儲存與時間戳記說明",
   sessionExportEphemeral: "預設關閉。內容只儲存在這台電腦；關閉開關不會刪除已儲存的紀錄。",
   preferencesTitle: "語言與更新",
@@ -308,7 +308,7 @@ export const SETTINGS = {
   transcriptPrevious: "上一頁",
   transcriptNext: "下一頁",
   retainSessionHistory: "儲存字幕",
-  retainSessionHistoryHelp: "儲存原文和譯文，可檢視或匯出 TXT。",
+  retainSessionHistoryHelp: "儲存原文和譯文，可檢視或匯出 TXT / Markdown。",
   recordSessionAudio: "錄製工作階段音訊",
   recordSessionAudioHelp: "錄製已選擇的系統聲音和麥克風，可播放或匯出 WAV。雙路音訊分別儲存和匯出；更換來源會關閉錄音，需要重新開啟。",
   recordingSource: "錄音來源",

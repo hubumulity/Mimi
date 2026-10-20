@@ -1,7 +1,9 @@
 //! Settings-only manual export: native save picker, then atomic file replacement.
 use crate::commands::AppState;
 use crate::core::audio_input::AudioSource;
-use crate::core::session_archive::{ArchiveState, TranscriptPage};
+use crate::core::session_archive::{
+    ArchiveState, TranscriptExportFormat, TranscriptExportOptions, TranscriptPage,
+};
 use crate::session_history::HistoryItem;
 use serde::Deserialize;
 use std::io::Write;
@@ -106,12 +108,57 @@ pub async fn session_history_audio(
 }
 
 #[tauri::command]
+pub async fn session_archive_audio(
+    state: State<'_, AppState>,
+    audio_source: Option<AudioSource>,
+) -> Result<tauri::ipc::Response, String> {
+    let session = std::sync::Arc::clone(&state.session);
+    let audio = read_stopped_audio(state.session.settings_mutation_guard(true), move || {
+        session.export_audio_from(audio_source)
+    })
+    .await?;
+    Ok(tauri::ipc::Response::new(audio))
+}
+
+async fn read_stopped_audio(
+    lifecycle: impl std::future::Future<Output = Result<tokio::sync::OwnedMutexGuard<()>, String>>,
+    read: impl FnOnce() -> std::io::Result<Option<Vec<u8>>> + Send + 'static,
+) -> Result<Vec<u8>, String> {
+    let lifecycle = lifecycle
+        .await
+        .map_err(|_| "Stop live subtitles before playing a recording.")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // Keep Start/clear/opt-out serialized with the actual disk read even if
+        // the window closes and cancels its request while the worker is running.
+        let _lifecycle = lifecycle;
+        read()
+    })
+    .await
+    .map_err(|_| "Could not read current session audio.")?
+    .map_err(|_| "Could not read current session audio.")?
+    .ok_or_else(|| "No current session audio is available.".into())
+}
+
+#[tauri::command]
 pub async fn session_history_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let history = state.session.history();
     tauri::async_runtime::spawn_blocking(move || history.delete(&id))
         .await
         .map_err(|_| "Could not delete session history.")?
         .map_err(|_| "Could not delete session history.".into())
+}
+
+#[tauri::command]
+pub async fn session_history_rename(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    let history = state.session.history();
+    tauri::async_runtime::spawn_blocking(move || history.rename(&id, &title))
+        .await
+        .map_err(|_| "Could not rename session history.")?
+        .map_err(|_| "Could not rename session history.".into())
 }
 
 #[tauri::command]
@@ -131,6 +178,7 @@ pub async fn session_export(
     kind: ExportKind,
     id: Option<String>,
     audio_source: Option<AudioSource>,
+    options: Option<TranscriptExportOptions>,
 ) -> Result<bool, String> {
     if EXPORT_BUSY
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -139,10 +187,11 @@ pub async fn session_export(
         return Err("An export is already open.".into());
     }
     let _busy = ExportGuard;
+    let options = options.unwrap_or_default();
     let (revision, bytes) = if let Some(id) = id {
         let history = state.session.history();
         let bytes = tauri::async_runtime::spawn_blocking(move || match kind {
-            ExportKind::Transcript => history.export_transcript(&id),
+            ExportKind::Transcript => history.export_transcript_with_options(&id, options),
             ExportKind::Audio => history.audio_selected(&id, audio_source),
         })
         .await
@@ -152,17 +201,14 @@ pub async fn session_export(
     } else {
         let _lifecycle = state.session.settings_mutation_guard(true).await?;
         let bytes = match kind {
-            ExportKind::Transcript => state.session.export_transcript(),
+            ExportKind::Transcript => state.session.export_transcript(options),
             ExportKind::Audio => state.session.export_audio_from(audio_source),
         }
         .map_err(|_| "Could not read current session content.")?
         .ok_or("No session content is available to export.")?;
         (Some(state.session.archive_revision()), bytes)
     };
-    let (extension, description) = match kind {
-        ExportKind::Transcript => ("txt", "Text transcript"),
-        ExportKind::Audio => ("wav", "WAV audio"),
-    };
+    let (extension, description) = export_file_type(kind, options);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let file_name = match (kind, audio_source) {
         (ExportKind::Audio, Some(AudioSource::System)) => "mimi-session-system.wav".to_owned(),
@@ -207,6 +253,17 @@ pub async fn session_export(
     Ok(true)
 }
 
+fn export_file_type(
+    kind: ExportKind,
+    options: TranscriptExportOptions,
+) -> (&'static str, &'static str) {
+    match (kind, options.format) {
+        (ExportKind::Transcript, TranscriptExportFormat::Txt) => ("txt", "Text transcript"),
+        (ExportKind::Transcript, TranscriptExportFormat::Markdown) => ("md", "Markdown transcript"),
+        (ExportKind::Audio, _) => ("wav", "WAV audio"),
+    }
+}
+
 fn write_export(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = path
         .parent()
@@ -226,6 +283,101 @@ mod tests {
     use crate::core::models::SubtitlePair;
     use crate::session_history::SessionHistory;
     use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn current_audio_requires_stopped_state_and_sanitizes_read_failures() {
+        let denied = read_stopped_audio(
+            async { Err("Synthetic internal lifecycle detail".into()) },
+            || panic!("An active session must not read recording data"),
+        )
+        .await;
+        assert_eq!(
+            denied.unwrap_err(),
+            "Stop live subtitles before playing a recording."
+        );
+
+        for failure in [true, false] {
+            let lock = Arc::new(tokio::sync::Mutex::new(()));
+            let result =
+                read_stopped_audio(async move { Ok(lock.lock_owned().await) }, move || {
+                    if failure {
+                        Err(std::io::Error::other("Synthetic private file detail"))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .await;
+            assert_eq!(
+                result.unwrap_err(),
+                if failure {
+                    "Could not read current session audio."
+                } else {
+                    "No current session audio is available."
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn current_audio_keeps_lifecycle_locked_until_a_cancelled_read_finishes() {
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let reader_lock = Arc::clone(&lock);
+        let (started, reading) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let task = tokio::spawn(read_stopped_audio(
+            async move { Ok(reader_lock.lock_owned().await) },
+            move || {
+                started.send(()).unwrap();
+                released.recv().unwrap();
+                Ok(Some(vec![1, 2, 3]))
+            },
+        ));
+        reading.await.unwrap();
+        assert!(lock.try_lock().is_err());
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(lock.try_lock().is_err());
+        release.send(()).unwrap();
+        let _guard = tokio::time::timeout(std::time::Duration::from_secs(2), lock.lock())
+            .await
+            .expect("The completed read must release the lifecycle lock");
+    }
+
+    #[tokio::test]
+    async fn current_audio_returns_the_existing_wav_bytes_without_reformatting() {
+        let mut recording = crate::core::session_archive::AudioRecording::default();
+        recording.begin(true);
+        recording.append(16_000, &[1, 0, 255, 127]);
+        let expected = recording.export().unwrap();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let audio = read_stopped_audio(async move { Ok(lock.lock_owned().await) }, move || {
+            Ok(recording.export())
+        })
+        .await
+        .unwrap();
+        assert_eq!(audio, expected);
+    }
+
+    #[test]
+    fn picker_extension_matches_transcript_format_and_audio_ignores_options() {
+        for (format, extension) in [
+            (TranscriptExportFormat::Txt, "txt"),
+            (TranscriptExportFormat::Markdown, "md"),
+        ] {
+            let options = TranscriptExportOptions {
+                format,
+                ..Default::default()
+            };
+            assert_eq!(
+                export_file_type(ExportKind::Transcript, options).0,
+                extension
+            );
+            assert_eq!(
+                export_file_type(ExportKind::Audio, options),
+                ("wav", "WAV audio")
+            );
+        }
+    }
 
     #[tokio::test]
     async fn history_listing_uses_the_session_owner_after_the_file_read() {

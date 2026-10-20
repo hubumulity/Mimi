@@ -9,6 +9,41 @@ pub const TRANSCRIPT_COUNT_LIMIT: usize = 10_000;
 pub const AUDIO_BYTE_LIMIT: usize = 64 * 1024 * 1024;
 pub const TRANSCRIPT_PAGE_SIZE: usize = 30;
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscriptExportFormat {
+    #[default]
+    Txt,
+    Markdown,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscriptExportContent {
+    #[default]
+    Bilingual,
+    Source,
+    Translation,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TranscriptExportOptions {
+    pub format: TranscriptExportFormat,
+    pub content: TranscriptExportContent,
+    pub include_timestamps: bool,
+}
+
+impl Default for TranscriptExportOptions {
+    fn default() -> Self {
+        Self {
+            format: TranscriptExportFormat::Txt,
+            content: TranscriptExportContent::Bilingual,
+            include_timestamps: true,
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptPageEntry {
@@ -44,7 +79,11 @@ impl SavedTranscript {
     }
 
     pub fn export(&self) -> Option<String> {
-        format_transcript(self.started_at_ms, &self.entries, self.limited)
+        self.export_with_options(TranscriptExportOptions::default())
+    }
+
+    pub fn export_with_options(&self, options: TranscriptExportOptions) -> Option<String> {
+        format_transcript(self.started_at_ms, &self.entries, self.limited, options)
     }
 }
 
@@ -129,7 +168,11 @@ impl TranscriptArchive {
     }
 
     pub fn export(&self) -> Option<String> {
-        format_transcript(self.started_at_ms, &self.entries, self.limited)
+        self.export_with_options(TranscriptExportOptions::default())
+    }
+
+    pub fn export_with_options(&self, options: TranscriptExportOptions) -> Option<String> {
+        format_transcript(self.started_at_ms, &self.entries, self.limited, options)
     }
 }
 
@@ -137,31 +180,91 @@ fn format_transcript(
     started_at_ms: u64,
     entries: &[SubtitlePair],
     limited: bool,
+    options: TranscriptExportOptions,
 ) -> Option<String> {
     if entries.is_empty() {
         return None;
     }
-    let mut text = format!("Mimi transcript\nSession started: {}\nTimestamps mark final confirmation, not media playback positions.\n\n", utc_timestamp(started_at_ms));
+    let markdown = options.format == TranscriptExportFormat::Markdown;
+    let mut text = if markdown {
+        "# Mimi transcript\n".to_owned()
+    } else {
+        "Mimi transcript\n".to_owned()
+    };
+    if options.include_timestamps {
+        let _ = writeln!(text, "Session started: {}", utc_timestamp(started_at_ms));
+        text.push_str("Timestamps mark final confirmation, not media playback positions.\n");
+    }
+    text.push('\n');
     for pair in entries {
-        let elapsed = pair.created_at_ms.saturating_sub(started_at_ms);
-        let _ = writeln!(
-            text,
-            "[{} | +{:02}:{:02}:{:02}.{:03} | {}]\n{}\n{}\n",
-            utc_timestamp(pair.created_at_ms),
-            elapsed / 3_600_000,
-            elapsed / 60_000 % 60,
-            elapsed / 1_000 % 60,
-            elapsed % 1_000,
-            match pair.audio_source {
-                AudioSource::System => "System audio",
-                AudioSource::Microphone => "Microphone",
-            },
-            pair.source,
-            pair.translation
-        );
+        if markdown {
+            text.push_str("## ");
+        } else {
+            text.push('[');
+        }
+        if options.include_timestamps {
+            let elapsed = pair.created_at_ms.saturating_sub(started_at_ms);
+            let _ = write!(
+                text,
+                "{} | +{:02}:{:02}:{:02}.{:03} | ",
+                utc_timestamp(pair.created_at_ms),
+                elapsed / 3_600_000,
+                elapsed / 60_000 % 60,
+                elapsed / 1_000 % 60,
+                elapsed % 1_000,
+            );
+        }
+        text.push_str(match pair.audio_source {
+            AudioSource::System => "System audio",
+            AudioSource::Microphone => "Microphone",
+        });
+        text.push_str(if markdown { "\n\n" } else { "]\n" });
+        for (label, value, included) in [
+            (
+                "Source",
+                &pair.source,
+                options.content != TranscriptExportContent::Translation,
+            ),
+            (
+                "Translation",
+                &pair.translation,
+                options.content != TranscriptExportContent::Source,
+            ),
+        ] {
+            if !included {
+                continue;
+            }
+            if markdown {
+                let _ = writeln!(text, "**{label}**\n");
+                // Captions are plain text, even when they contain Markdown or
+                // HTML. Preserve line breaks without letting content introduce
+                // document headings, links or executable HTML.
+                for character in value.chars() {
+                    if character == '\n' {
+                        text.push_str("  \n");
+                    } else {
+                        if character.is_ascii_punctuation() {
+                            text.push('\\');
+                        }
+                        text.push(character);
+                    }
+                }
+                text.push('\n');
+            } else {
+                text.push_str(value);
+            }
+            text.push('\n');
+        }
+        if !markdown {
+            text.push('\n');
+        }
     }
     if limited {
-        text.push_str("[Transcript limit reached; later entries were not retained.]\n");
+        text.push_str(if markdown {
+            "> Transcript limit reached; later entries were not retained.\n"
+        } else {
+            "[Transcript limit reached; later entries were not retained.]\n"
+        });
     }
     Some(text)
 }
@@ -316,6 +419,112 @@ mod tests {
         archive.begin(true, 2000);
         archive.append(&pair(1000));
         assert!(archive.export().unwrap().contains("+00:00:00.000"));
+    }
+
+    #[test]
+    fn export_defaults_preserve_the_existing_txt_bytes() {
+        let mut archive = TranscriptArchive::default();
+        archive.begin(true, 1000);
+        archive.append(&pair(1500));
+        archive.limited = true;
+        let expected = "Mimi transcript\nSession started: 1970-01-01T00:00:01.000Z\n\
+Timestamps mark final confirmation, not media playback positions.\n\n\
+[1970-01-01T00:00:01.500Z | +00:00:00.500 | System audio]\n日本語\n中文\n\n\
+[Transcript limit reached; later entries were not retained.]\n";
+        assert_eq!(archive.export().as_deref(), Some(expected));
+        let options: TranscriptExportOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(options, TranscriptExportOptions::default());
+        let partial: TranscriptExportOptions =
+            serde_json::from_str(r#"{"content":"translation"}"#).unwrap();
+        assert_eq!(partial.content, TranscriptExportContent::Translation);
+        assert!(partial.include_timestamps);
+        assert_eq!(partial.format, TranscriptExportFormat::Txt);
+        assert!(serde_json::from_str::<TranscriptExportOptions>(r#"{"format":"srt"}"#).is_err());
+    }
+
+    #[test]
+    fn export_options_select_content_without_losing_source_or_limit_information() {
+        let mut microphone = SubtitlePair::new("Second source".into(), "第二译文".into(), 2500);
+        microphone.audio_source = AudioSource::Microphone;
+        let saved = SavedTranscript {
+            version: 1,
+            id: "synthetic".into(),
+            started_at_ms: 1000,
+            ended_at_ms: 3000,
+            limited: true,
+            entries: vec![pair(1500), microphone],
+        };
+        for format in [
+            TranscriptExportFormat::Txt,
+            TranscriptExportFormat::Markdown,
+        ] {
+            for content in [
+                TranscriptExportContent::Bilingual,
+                TranscriptExportContent::Source,
+                TranscriptExportContent::Translation,
+            ] {
+                for include_timestamps in [true, false] {
+                    let options = TranscriptExportOptions {
+                        format,
+                        content,
+                        include_timestamps,
+                    };
+                    let exported = saved.export_with_options(options).unwrap();
+                    assert_eq!(
+                        exported.contains("日本語") && exported.contains("Second source"),
+                        content != TranscriptExportContent::Translation,
+                    );
+                    assert_eq!(
+                        exported.contains("中文") && exported.contains("第二译文"),
+                        content != TranscriptExportContent::Source,
+                    );
+                    assert!(exported.contains("System audio"));
+                    assert!(exported.contains("Microphone"));
+                    assert!(exported.find("System audio") < exported.find("Microphone"));
+                    assert!(exported.contains("Transcript limit reached"));
+                    assert_eq!(exported.contains("1970-01-01"), include_timestamps);
+                    assert_eq!(exported.contains("+00:00:00.500"), include_timestamps);
+                    assert_eq!(exported.contains("final confirmation"), include_timestamps);
+                    assert_eq!(
+                        exported.starts_with("# "),
+                        format == TranscriptExportFormat::Markdown
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            saved.export(),
+            saved.export_with_options(TranscriptExportOptions::default()),
+        );
+    }
+
+    #[test]
+    fn markdown_exports_caption_syntax_as_literal_text_and_preserves_line_breaks() {
+        let mut archive = TranscriptArchive::default();
+        archive.begin(true, 0);
+        archive.append(&SubtitlePair::new(
+            "# heading\n[link](https://example.test) <script> &amp; `code`".into(),
+            "译文 *bold* \\ path".into(),
+            1000,
+        ));
+        let markdown = archive
+            .export_with_options(TranscriptExportOptions {
+                format: TranscriptExportFormat::Markdown,
+                include_timestamps: false,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(markdown.contains("\\# heading  \n\\[link\\]\\(https\\:\\/\\/example\\.test\\)"));
+        assert!(markdown.contains("\\<script\\> \\&amp\\; \\`code\\`"));
+        assert!(markdown.contains("译文 \\*bold\\* \\\\ path"));
+        assert!(!markdown.contains("<script>"));
+        archive.clear();
+        assert!(archive
+            .export_with_options(TranscriptExportOptions {
+                format: TranscriptExportFormat::Markdown,
+                ..Default::default()
+            })
+            .is_none());
     }
 
     #[test]

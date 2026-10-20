@@ -28,7 +28,7 @@
 - **再生中の内容を理解する**：映画、配信、授業の音声をフローティング字幕に。二言語、訳文のみ、原文のみを選べます。
 - **音源を選ぶ**：初期設定はパソコンの音声。マイクや両方の音源も自分で有効にできます。macOS / Windows 11 ではアプリを指定できます。Linux では個別の再生ストリームを選べます。
 - **読みやすく調整する**：デスクトップ版では位置、14–48 px の文字サイズ、色を変更できます。最近の字幕をすべて、または最新の 1–10 件だけ表示し、上にスクロールして保持されている履歴を読めます。イマーシブモードは字幕だけを表示し、クリック透過で背後のアプリを操作できます。
-- **字幕と音声を保存する**：デスクトップ版では字幕を TXT、選択した音源の録音を WAV で保存できます。どちらも自分で有効にするまで保存・録音しません。
+- **字幕と音声を保存する**：デスクトップ版では字幕を TXT または Markdown、選択した音源の録音を WAV で書き出せます。どちらも自分で有効にするまで保存・録音しません。
 
 ## はじめに
 
@@ -63,14 +63,14 @@ Mimi は無料ですが、クラウドサービスは有料の場合がありま
 [@hubumulity](https://github.com/hubumulity) さんによる[字幕表示件数の設定](https://github.com/yuxino/Mimi/pull/303)に感謝します。
 
 <p>
-  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="../assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="../assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="../assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [すべての貢献者を見る](https://github.com/yuxino/mimi/graphs/contributors)

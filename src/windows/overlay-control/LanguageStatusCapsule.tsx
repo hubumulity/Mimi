@@ -1,11 +1,14 @@
 import { useLayoutEffect, useRef } from "react";
 import { Icon } from "../../components/Icon";
 import { AudioInputIndicator } from "../../components/AudioInputIndicator";
+import { RecordingIndicator } from "../../components/RecordingIndicator";
 import { audioInputLabel } from "../../lib/audioInput";
-import { I18N } from "../../lib/i18n";
+import { effectiveUiLanguage, I18N } from "../../lib/i18n";
+import { recordingStatusLabel } from "../../lib/recordingStatus";
 import { diagnosticPlatform } from "../../lib/connectionDiagnostics";
 import {
   OVERLAY_ACTIVITY_PHASES,
+  type AudioRecordingStatus,
   type OverlayActivityPhaseKind,
   type SettingsSnapshot,
 } from "../../lib/types";
@@ -18,6 +21,7 @@ interface LanguageStatusCapsuleProps {
   phase: OverlayActivityPhaseKind;
   status: LanguageStatus;
   settings: SettingsSnapshot;
+  audioRecording?: AudioRecordingStatus;
   isPaused: boolean;
   isWaitingForFinalTranslation: boolean;
   expanded: boolean;
@@ -33,6 +37,7 @@ export function LanguageStatusCapsule({
   phase,
   status,
   settings,
+  audioRecording,
   isPaused,
   isWaitingForFinalTranslation,
   expanded,
@@ -53,7 +58,9 @@ export function LanguageStatusCapsule({
   const sources = audioInputLabel(settings.audioInput, settings.systemAudioTarget);
   const phaseLabel = isStopping ? I18N.overlay.stopping : OVERLAY_ACTIVITY_PHASES[phase].accessibilityLabel;
   const sourceLabel = compact.source === I18N.settings.recognitionServiceDefault ? compact.source : status.source;
-  const fullLabel = `${sources} · ${phaseLabel} · ${sourceLabel} ${status.separator} ${status.target}`;
+  const recordingLabel = recordingStatusLabel(audioRecording, effectiveUiLanguage());
+  const recordingSuffix = recordingLabel ? ` · ${recordingLabel}` : "";
+  const fullLabel = `${sources} · ${phaseLabel} · ${sourceLabel} ${status.separator} ${status.target}${recordingSuffix}`;
 
   useLayoutEffect(() => {
     const capsule = capsuleRef.current;
@@ -91,14 +98,14 @@ export function LanguageStatusCapsule({
       className={expanded ? "overlay-control-header" : "overlay-control-island"}
       onClick={onToggle}
       title={`${fullLabel}. ${actionLabel}`}
-      aria-label={`${sources} · ${phaseLabel}${I18N.overlay.accessibilityCurrentLanguagePrefix}${sourceLabel} ${status.separator} ${status.target}. ${actionLabel}`}
+      aria-label={`${sources} · ${phaseLabel}${I18N.overlay.accessibilityCurrentLanguagePrefix}${sourceLabel} ${status.separator} ${status.target}${recordingSuffix}. ${actionLabel}`}
       aria-haspopup={expanded ? undefined : "dialog"}
       aria-expanded={expanded ? undefined : false}
       aria-controls={expanded ? undefined : "overlay-control-panel"}
     >
       <PulseRing phase={phase} compact motionEnabled={pulseOn} animationVisible={animationVisible} pulseStyle={settings.pulseStyle} />
       <AudioInputIndicator input={settings.audioInput} target={settings.systemAudioTarget} />
-      {transientPhase && (
+      {transientPhase && !(transientPhase === "paused" && audioRecording === "paused") && (
         <span className="overlay-control-island__phase">{compact.phase}</span>
       )}
       <span className="overlay-control-island__summary">
@@ -106,6 +113,7 @@ export function LanguageStatusCapsule({
         <span aria-hidden="true">{status.separator}</span>
         <span>{compact.target}</span>
       </span>
+      <RecordingIndicator status={audioRecording} language={effectiveUiLanguage()} />
       <Icon name={expanded ? "chevron-up" : "chevron-down"} />
     </button>
   );

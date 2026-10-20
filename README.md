@@ -28,7 +28,7 @@
 - **悬浮字幕**：为电影、直播、网课实时显示字幕，支持双语、仅译文或仅原文。
 - **选择音源**：采集电脑声音、麦克风，或同时采集两路。macOS / Windows 11 支持指定应用，Linux 支持选择单独的播放流。
 - **调整显示**：桌面端可调整位置、14–48 px 字号和颜色，显示全部或最近 1–10 条字幕，上翻查看已有历史；沉浸模式只显示文字，点击穿透可让你继续操作下方应用。
-- **保存字幕和录音**：桌面端可将字幕保存为 TXT，也可将所选音源录制为 WAV。两项功能均需手动开启。
+- **保存字幕和录音**：桌面端可将字幕导出为 TXT 或 Markdown，也可将所选音源录制为 WAV。两项保存功能均需手动开启。
 
 ## 开始使用
 
@@ -63,14 +63,14 @@ Mimi 本身免费，云服务可能收费。使用云端识别或翻译时，音
 感谢 [@hubumulity](https://github.com/hubumulity) 贡献[字幕显示条数设置](https://github.com/yuxino/Mimi/pull/303)。
 
 <p>
-  <a href="https://github.com/yuxino"><img src="docs/assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
-  <a href="https://github.com/LLLin000"><img src="docs/assets/contributors/LLLin000.svg" width="64" height="64" alt="@LLLin000"></a>
-  <a href="https://github.com/yebuwudong"><img src="docs/assets/contributors/yebuwudong.svg" width="64" height="64" alt="@yebuwudong"></a>
-  <a href="https://github.com/Chtholly000"><img src="docs/assets/contributors/Chtholly000.svg" width="64" height="64" alt="@Chtholly000"></a>
-  <a href="https://github.com/inhome"><img src="docs/assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
-  <a href="https://github.com/EmmetZ"><img src="docs/assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
-  <a href="https://github.com/wangmian0"><img src="docs/assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
-  <a href="https://github.com/hubumulity"><img src="docs/assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
+  <a href="https://github.com/yuxino"><img src="docs/assets/contributors/yuxino.svg" width="40" height="40" alt="@yuxino"></a>
+  <a href="https://github.com/LLLin000"><img src="docs/assets/contributors/LLLin000.svg" width="40" height="40" alt="@LLLin000"></a>
+  <a href="https://github.com/yebuwudong"><img src="docs/assets/contributors/yebuwudong.svg" width="40" height="40" alt="@yebuwudong"></a>
+  <a href="https://github.com/Chtholly000"><img src="docs/assets/contributors/Chtholly000.svg" width="40" height="40" alt="@Chtholly000"></a>
+  <a href="https://github.com/inhome"><img src="docs/assets/contributors/inhome.svg" width="40" height="40" alt="@inhome"></a>
+  <a href="https://github.com/EmmetZ"><img src="docs/assets/contributors/EmmetZ.svg" width="40" height="40" alt="@EmmetZ"></a>
+  <a href="https://github.com/wangmian0"><img src="docs/assets/contributors/wangmian0.svg" width="40" height="40" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="docs/assets/contributors/hubumulity.svg" width="40" height="40" alt="@hubumulity"></a>
 </p>
 
 [查看所有贡献者](https://github.com/yuxino/mimi/graphs/contributors)

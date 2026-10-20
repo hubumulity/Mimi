@@ -21,6 +21,7 @@ import { SUBTITLE_DISPLAY_OPTIONS, subtitleDisplayShortcut } from "../../lib/sub
 import type { SubtitleDisplayMode } from "../../lib/types";
 import {
   type OverlayActivityPhaseKind,
+  type AudioRecordingStatus,
   type SettingsSnapshot,
   type SourceLanguage,
   type TargetLanguage,
@@ -50,6 +51,7 @@ interface OverlayControlPanelProps {
   phase: OverlayActivityPhaseKind;
   status: LanguageStatus;
   settings: SettingsSnapshot;
+  audioRecording?: AudioRecordingStatus;
   model: OverlayControlPanelModel;
   isPaused: boolean;
   isWaitingForFinalTranslation: boolean;
@@ -77,6 +79,7 @@ export function OverlayControlPanel({
   phase,
   status,
   settings,
+  audioRecording,
   model,
   isPaused,
   isWaitingForFinalTranslation,
@@ -235,6 +238,7 @@ export function OverlayControlPanel({
           phase={phase}
           status={status}
           settings={settings}
+          audioRecording={audioRecording}
           isPaused={isPaused}
           isWaitingForFinalTranslation={isWaitingForFinalTranslation}
           expanded

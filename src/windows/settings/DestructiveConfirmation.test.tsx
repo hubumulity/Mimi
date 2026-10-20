@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { I18N, setStoredUiLanguage } from "../../lib/i18n";
+import { Select } from "../../components/Select";
 import { DestructiveConfirmation, SettingsConfirmation, type SettingsConfirmationProps } from "./DestructiveConfirmation";
 
 let host: HTMLDivElement, root: Root;
@@ -98,6 +99,70 @@ it("traps keyboard and programmatic focus within the modal, including optional b
   expect((await key("Escape")).defaultPrevented).toBe(true);
   expect(actions.onCancel).toHaveBeenCalledOnce();
   expect(actions.onConfirm).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("allows modal picker clicks while keeping the background inert (search=%s)", async searchable => {
+  const outside = document.createElement("button"); extras.push(outside); document.body.append(outside);
+  const outsideClick = vi.fn(); outside.addEventListener("click", outsideClick);
+  const onChange = vi.fn();
+  await render({ variant: "default", children: <Select label="Format" value="txt"
+    searchLabel={searchable ? "Find format" : undefined}
+    options={[{ value: "txt", label: "Plain text" }, { value: "markdown", label: "Markdown" }]} onChange={onChange} /> });
+  const trigger = modal().querySelector<HTMLButtonElement>(".mimi-select__trigger")!;
+  await act(() => trigger.click());
+  const menu = modal().querySelector<HTMLElement>(".mimi-select__menu")!;
+  expect(menu).not.toBeNull();
+  expect(menu.closest("[inert], [aria-hidden=true]")).toBeNull();
+  expect(host.hasAttribute("inert")).toBe(true);
+  expect(outside.hasAttribute("inert")).toBe(true);
+  await act(() => outside.click());
+  expect(outsideClick).not.toHaveBeenCalled();
+  const option = menu.querySelectorAll<HTMLElement>('[role="option"]')[1];
+  await act(() => {
+    option.dispatchEvent(new Event("pointerdown", { bubbles: true, cancelable: true }));
+    option.click();
+  });
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("markdown");
+  expect(document.querySelector(".mimi-select__menu")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(actions.onCancel).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("lets a picker consume keyboard selection and the first Escape before its dialog (search=%s)", async searchable => {
+  const previous = document.createElement("button"); extras.push(previous); document.body.append(previous); previous.focus();
+  const onChange = vi.fn();
+  await render({ children: <Select label="Format" value="txt" searchLabel={searchable ? "Find format" : undefined}
+    options={[{ value: "txt", label: "Plain text" }, { value: "markdown", label: "Markdown" }]} onChange={onChange} /> });
+  const trigger = modal().querySelector<HTMLButtonElement>(".mimi-select__trigger")!;
+  trigger.focus();
+  await key("Enter");
+  expect(document.activeElement).toBe(searchable ? modal().querySelector(".mimi-select__search") : trigger);
+  await key("ArrowDown");
+  await key("Enter");
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("markdown");
+  expect(document.activeElement).toBe(trigger);
+  await key("Enter");
+  expect((await key("Escape")).defaultPrevented).toBe(true);
+  expect(document.querySelector(".mimi-select__menu")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(actions.onCancel).not.toHaveBeenCalled();
+  expect((await key("Escape")).defaultPrevented).toBe(true);
+  expect(actions.onCancel).toHaveBeenCalledOnce();
+  await act(() => root.render(null));
+  expect(document.activeElement).toBe(previous);
+  expect(previous.hasAttribute("inert")).toBe(false);
+});
+
+it.each([false, true])("returns searchable popup Tab navigation to the dialog's form order (shift=%s)", async shift => {
+  await render({ children: <Select label="Format" value="txt" searchLabel="Find format"
+    options={[{ value: "txt", label: "Plain text" }, { value: "markdown", label: "Markdown" }]} onChange={vi.fn()} /> });
+  const trigger = modal().querySelector<HTMLButtonElement>(".mimi-select__trigger")!;
+  await act(() => trigger.click());
+  expect(document.activeElement).toBe(modal().querySelector(".mimi-select__search"));
+  expect((await key("Tab", shift)).defaultPrevented).toBe(true);
+  expect(document.querySelector(".mimi-select__menu")).toBeNull();
+  expect(document.activeElement).toBe(shift ? confirm() : cancel());
+  expect(actions.onCancel).not.toHaveBeenCalled();
 });
 
 it("keeps confirmation disabled while Cancel and Escape remain available", async () => {
