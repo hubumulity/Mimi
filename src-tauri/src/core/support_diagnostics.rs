@@ -69,6 +69,9 @@ impl SafeFailure {
         if let Some(failure) = Self::from_volcano_error(error) {
             return failure;
         }
+        if let Some(failure) = Self::from_apple_speech_error(error) {
+            return failure;
+        }
         let translation_failure = match error {
             "translation_rate_limited" => Some(("rate_limit", "TRANSLATION_RATE_LIMITED")),
             "translation_temporarily_unavailable" => {
@@ -213,6 +216,61 @@ impl SafeFailure {
         }
     }
 
+    /// Preserve the observed Apple recognition boundary without retaining
+    /// native descriptions or guessing the cause of an unclassified failure.
+    fn from_apple_speech_error(error: &str) -> Option<Self> {
+        let (phase, category, code) = match error {
+            "apple_speech_recognition_failed" => (
+                "asr_recognition",
+                "recognition",
+                "APPLE_SPEECH_RECOGNITION_FAILED",
+            ),
+            "apple_speech_runtime_service_unavailable" => (
+                "asr_recognition",
+                "service_error",
+                "APPLE_SPEECH_RUNTIME_SERVICE_UNAVAILABLE",
+            ),
+            "apple_speech_runtime_timeout" => {
+                ("asr_recognition", "timeout", "APPLE_SPEECH_RUNTIME_TIMEOUT")
+            }
+            "apple_speech_stream_closed" => (
+                "asr_recognition",
+                "recognition",
+                "APPLE_SPEECH_STREAM_CLOSED",
+            ),
+            "apple_speech_result_backlog" => {
+                ("asr_recognition", "backlog", "APPLE_SPEECH_RESULT_BACKLOG")
+            }
+            "apple_speech_invalid_result" => (
+                "asr_recognition",
+                "recognition",
+                "APPLE_SPEECH_INVALID_RESULT",
+            ),
+            "apple_speech_audio_failed" => {
+                ("audio_send", "recognition", "APPLE_SPEECH_AUDIO_FAILED")
+            }
+            "apple_speech_finalize_timeout" => {
+                ("session_close", "timeout", "APPLE_SPEECH_FINALIZE_TIMEOUT")
+            }
+            "apple_speech_service_unavailable" => (
+                "asr_setup",
+                "service_error",
+                "APPLE_SPEECH_SERVICE_UNAVAILABLE",
+            ),
+            "apple_speech_setup_timeout" => ("asr_setup", "timeout", "APPLE_SPEECH_SETUP_TIMEOUT"),
+            "apple_speech_start_failed" => {
+                ("asr_setup", "recognition", "APPLE_SPEECH_START_FAILED")
+            }
+            _ => return None,
+        };
+        Some(Self {
+            phase,
+            category,
+            code,
+            provider_status_code: None,
+        })
+    }
+
     /// Only locally emitted labels and canonical nonnegative protobuf int32 codes
     /// are accepted. Never retain the provider's free-form response message.
     fn from_volcano_error(error: &str) -> Option<Self> {
@@ -292,6 +350,9 @@ impl SafeFailure {
 
     /// Known local transport/MT labels win over arbitrary provider messages.
     pub fn from_provider_error(code: &str, message: &str) -> Self {
+        if let Some(failure) = Self::from_apple_speech_error(code) {
+            return failure;
+        }
         if let Some(failure) = Self::from_volcano_error(code) {
             return failure;
         }
@@ -802,6 +863,92 @@ mod tests {
                 journal: journal.snapshot(),
                 ..Default::default()
             });
+            for excluded in [
+                "synthetic-secret",
+                "/Users/private",
+                "caption-words",
+                "private.invalid",
+            ] {
+                assert!(!report.contains(excluded));
+            }
+        }
+        assert_eq!(
+            SafeFailure::from_provider_error(marker, marker).code,
+            "OTHER"
+        );
+    }
+
+    #[test]
+    fn apple_speech_failures_preserve_phase_without_guessing_or_exposing_native_errors() {
+        let marker = "synthetic-secret /Users/private caption-words https://private.invalid";
+        for (label, phase, category) in [
+            (
+                "apple_speech_recognition_failed",
+                "asr_recognition",
+                "recognition",
+            ),
+            (
+                "apple_speech_runtime_service_unavailable",
+                "asr_recognition",
+                "service_error",
+            ),
+            ("apple_speech_runtime_timeout", "asr_recognition", "timeout"),
+            (
+                "apple_speech_stream_closed",
+                "asr_recognition",
+                "recognition",
+            ),
+            ("apple_speech_result_backlog", "asr_recognition", "backlog"),
+            (
+                "apple_speech_invalid_result",
+                "asr_recognition",
+                "recognition",
+            ),
+            ("apple_speech_audio_failed", "audio_send", "recognition"),
+            ("apple_speech_finalize_timeout", "session_close", "timeout"),
+            (
+                "apple_speech_service_unavailable",
+                "asr_setup",
+                "service_error",
+            ),
+            ("apple_speech_setup_timeout", "asr_setup", "timeout"),
+            ("apple_speech_start_failed", "asr_setup", "recognition"),
+        ] {
+            let failure = SafeFailure::from_provider_error(label, marker);
+            assert_eq!(failure.phase, phase);
+            assert_eq!(failure.category, category);
+            assert_eq!(failure.code, label.to_ascii_uppercase());
+            assert_eq!(failure.provider_status_code, None);
+            assert_eq!(SafeFailure::from_error(label), failure);
+            for unsafe_label in [format!("{label}: {marker}"), format!("{label}_unknown")] {
+                assert_eq!(SafeFailure::from_error(&unsafe_label).code, "OTHER");
+                assert_eq!(
+                    SafeFailure::from_provider_error(&unsafe_label, marker).code,
+                    "OTHER"
+                );
+            }
+            let mut journal = DiagnosticJournal::default();
+            journal.record(
+                DiagnosticEvent::Failure {
+                    classification: failure,
+                },
+                707_700,
+            );
+            let report = render(DiagnosticFacts {
+                last_error: Some((failure, 0)),
+                journal: journal.snapshot(),
+                ..Default::default()
+            });
+            let json: serde_json::Value = serde_json::from_str(&report).unwrap();
+            assert_eq!(json["last_error"]["classification"]["category"], category);
+            assert_eq!(
+                json["journal"]["recent_events"][0]["classification"]["phase"],
+                phase
+            );
+            assert!(json["unknown"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("root_cause")));
             for excluded in [
                 "synthetic-secret",
                 "/Users/private",

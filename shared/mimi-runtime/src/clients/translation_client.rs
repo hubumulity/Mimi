@@ -578,6 +578,35 @@ pub enum ConnectError {
 }
 
 impl ConnectError {
+    /// Send/health errors from the local Apple adapter keep their finite
+    /// classification instead of racing the result reader as generic transport
+    /// failures. No arbitrary provider message is returned here.
+    pub fn recognition_failure_label(&self) -> Option<&'static str> {
+        let Self::MT(QwenMTClientError::RequestFailed { message, .. }) = self else {
+            return None;
+        };
+        Some(match message.as_str() {
+            "apple_speech_runtime_service_unavailable" => {
+                "apple_speech_runtime_service_unavailable"
+            }
+            "apple_speech_runtime_timeout" => "apple_speech_runtime_timeout",
+            "apple_speech_stream_closed" => "apple_speech_stream_closed",
+            "apple_speech_result_backlog" => "apple_speech_result_backlog",
+            "apple_speech_recognition_failed" => "apple_speech_recognition_failed",
+            "apple_speech_invalid_result" => "apple_speech_invalid_result",
+            "apple_speech_audio_failed" => "apple_speech_audio_failed",
+            "apple_speech_not_connected" => "apple_speech_not_connected",
+            "apple_speech_unavailable" => "apple_speech_unavailable",
+            "apple_speech_assets_missing" => "apple_speech_assets_missing",
+            "apple_speech_preparing" => "apple_speech_preparing",
+            "apple_speech_language_unsupported" => "apple_speech_language_unsupported",
+            "apple_speech_reservation_limit" => "apple_speech_reservation_limit",
+            "apple_speech_resources_unavailable" => "apple_speech_resources_unavailable",
+            "apple_speech_status_failed" => "apple_speech_status_failed",
+            _ => return None,
+        })
+    }
+
     /// Fixed adapter code derived from typed provider errors. No endpoint,
     /// recognized content or arbitrary vendor message crosses this boundary.
     pub fn safe_code(&self) -> &'static str {
@@ -701,6 +730,45 @@ mod tests {
     use super::*;
     use crate::clients::provider_events::provider_event_channel;
     use crate::core::models::{SourceLanguage, TargetLanguage};
+
+    #[test]
+    fn apple_recognition_failure_labels_preserve_only_exact_safe_codes() {
+        for label in [
+            "apple_speech_runtime_service_unavailable",
+            "apple_speech_runtime_timeout",
+            "apple_speech_stream_closed",
+            "apple_speech_result_backlog",
+            "apple_speech_recognition_failed",
+            "apple_speech_invalid_result",
+            "apple_speech_audio_failed",
+            "apple_speech_not_connected",
+            "apple_speech_unavailable",
+            "apple_speech_assets_missing",
+            "apple_speech_preparing",
+            "apple_speech_language_unsupported",
+            "apple_speech_reservation_limit",
+            "apple_speech_resources_unavailable",
+            "apple_speech_status_failed",
+        ] {
+            let error = ConnectError::MT(QwenMTClientError::RequestFailed {
+                status_code: 0,
+                message: label.into(),
+            });
+            assert_eq!(error.recognition_failure_label(), Some(label));
+        }
+        for message in [
+            "apple_speech_private/context",
+            "apple_speech_runtime_timeout: private/context",
+            "vendor content",
+            "transport_error",
+        ] {
+            let error = ConnectError::MT(QwenMTClientError::RequestFailed {
+                status_code: 0,
+                message: message.into(),
+            });
+            assert_eq!(error.recognition_failure_label(), None);
+        }
+    }
 
     #[test]
     fn apple_text_override_selects_bounded_pipeline_without_text_network_credentials() {

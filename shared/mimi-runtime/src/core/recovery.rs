@@ -22,6 +22,10 @@ pub fn normalize_provider_error_code(code: &str) -> &'static str {
         "translation_backlog_overflow" => "translation_backlog_overflow",
         "translation_rate_limited" => "translation_rate_limited",
         "translation_temporarily_unavailable" => "translation_temporarily_unavailable",
+        "apple_speech_runtime_service_unavailable" => "apple_speech_runtime_service_unavailable",
+        "apple_speech_runtime_timeout" => "apple_speech_runtime_timeout",
+        "apple_speech_stream_closed" => "apple_speech_stream_closed",
+        "apple_speech_result_backlog" => "apple_speech_result_backlog",
         "invalid_api_key"
         | "authentication_error"
         | "unauthorized"
@@ -228,6 +232,40 @@ mod schedule_tests {
         assert!(!recovery.accept_failure(13));
         assert!(recovery.accept_failure(12));
     }
+
+    #[test]
+    fn apple_runtime_recovery_is_cooldown_bounded_and_excludes_setup_or_unknown_errors() {
+        for code in [
+            "apple_speech_runtime_service_unavailable",
+            "apple_speech_runtime_timeout",
+            "apple_speech_stream_closed",
+            "apple_speech_result_backlog",
+        ] {
+            assert_eq!(normalize_provider_error_code(code), code);
+            assert!(provider_error_is_retryable(code));
+            let delay = provider_recovery_minimum_delay(code);
+            assert_eq!(delay, Duration::from_millis(600));
+            let mut schedule = RecoverySchedule::new(1, 2, delay);
+            for _ in 0..RECOVERY_ATTEMPTS {
+                assert!(schedule.next_attempt().unwrap().delay >= delay);
+            }
+            assert!(schedule.next_attempt().is_none());
+        }
+        for code in [
+            "apple_speech_service_unavailable",
+            "apple_speech_setup_timeout",
+            "apple_speech_recognition_failed",
+            "apple_speech_invalid_result",
+            "apple_speech_audio_failed",
+            "apple_speech_finalize_timeout",
+            "apple_speech_not_connected",
+        ] {
+            assert!(!provider_error_is_retryable(code));
+            assert!(!provider_error_is_retryable(normalize_provider_error_code(
+                code
+            )));
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -426,6 +464,10 @@ pub fn provider_error_is_retryable(code: &str) -> bool {
             | "translation_backlog_overflow"
             | "translation_rate_limited"
             | "translation_temporarily_unavailable"
+            | "apple_speech_runtime_service_unavailable"
+            | "apple_speech_runtime_timeout"
+            | "apple_speech_stream_closed"
+            | "apple_speech_result_backlog"
     )
 }
 
@@ -435,6 +477,10 @@ pub fn provider_recovery_minimum_delay(code: &str) -> Duration {
         // generation after finite retries or bounded final-queue pressure.
         "translation_rate_limited" | "translation_backlog_overflow" => Duration::from_secs(8),
         "translation_temporarily_unavailable" => Duration::from_millis(600),
+        "apple_speech_runtime_service_unavailable"
+        | "apple_speech_runtime_timeout"
+        | "apple_speech_stream_closed"
+        | "apple_speech_result_backlog" => Duration::from_millis(600),
         _ => Duration::ZERO,
     }
 }

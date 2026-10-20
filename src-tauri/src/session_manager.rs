@@ -1913,6 +1913,7 @@ impl SessionManager {
             // Create the client and consume its events through this manager.
             let (event_tx, mut event_rx) = provider_event_channel();
             event_tx.set_debug_context(source, generation);
+            let audio_error_events = event_tx.clone();
             let new_client = TranslationClient::new(&configuration, event_tx).map_err(|error| {
                 pipeline_log!(
                     "provider client creation failed label={}",
@@ -1985,7 +1986,7 @@ impl SessionManager {
                     .map_err(|error| error.to_string())?;
             let send_manager = Arc::clone(&self);
             let on_error_self = Arc::clone(&self);
-            let pipeline = Arc::new(AudioSendPipeline::spawn(
+            let pipeline = Arc::new(AudioSendPipeline::spawn_with_error_handler(
                 move |data| {
                     let manager = Arc::clone(&send_manager);
                     Box::pin(async move {
@@ -2003,16 +2004,36 @@ impl SessionManager {
                                 client.send_audio(&data),
                             )
                             .await
-                            .map_err(|_| ()),
-                            None => Err(()),
+                            .map_err(Some),
+                            None => Err(None),
                         }
                     })
                 },
                 move |failure| {
+                    if let Some(label) = failure
+                        .as_ref()
+                        .and_then(|error| error.recognition_failure_label())
+                    {
+                        // Use the same generation-bound provider lane as the
+                        // recognition reader, including permanent failures.
+                        if audio_error_events
+                            .send(LiveTranslateServerEvent::Error {
+                                code: label.into(),
+                                message: label.into(),
+                            })
+                            .is_ok()
+                        {
+                            return;
+                        }
+                    }
                     let manager = Arc::clone(&on_error_self);
                     tokio::spawn(async move {
                         manager
-                            .handle_audio_transport_failure(generation, attempt, failure)
+                            .handle_audio_transport_failure(
+                                generation,
+                                attempt,
+                                AudioPipelineFailure::TransportStopped,
+                            )
                             .await;
                     });
                 },
@@ -3817,6 +3838,24 @@ impl SessionManager {
                         error.diagnostic_label()
                     );
                     self.clear_health_task_if_id(task_id);
+                    if let Some(label) = error.recognition_failure_label() {
+                        // The reader, PCM sender and health probe must agree
+                        // on permanent versus retryable local failures. Clear
+                        // this task's slot before event teardown stops health.
+                        self.handle_event(
+                            source,
+                            generation,
+                            ProviderEvent::unsequenced(
+                                LiveTranslateServerEvent::Error {
+                                    code: label.into(),
+                                    message: label.into(),
+                                },
+                                client.content_revision(),
+                            ),
+                        )
+                        .await;
+                        return false;
+                    }
                     if self.invalidate_generation(generation) {
                         self.queue_recovery(generation, error.to_string()).await;
                     }
