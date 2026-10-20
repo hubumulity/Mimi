@@ -969,13 +969,15 @@ mod tests {
     #[ignore = "requires the isolated PulseAudio or PipeWire-Pulse harness"]
     async fn native_playback_stream_isolation_move_pause_delete_and_stale_token() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
+        let tone_613 = prepare_test_frequency(613.0);
         let module = pactl(&[
             "load-module",
             "module-null-sink",
             "sink_name=mimi-stream-output",
         ]);
-        let (_target_audio, target_playback) = play_test_frequency_on("mimi-stream-output", 997.0);
-        let (_other_audio, other_playback) = play_test_frequency_on("mimi-stream-output", 613.0);
+        let target_playback = tone_997.play_on("mimi-stream-output");
+        let other_playback = tone_613.play_on("mimi-stream-output");
         let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 let snapshot = super::super::linux_streams::list("en".into())
@@ -1021,7 +1023,7 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            expect_monitor_frequency(&mut rx, &mut failures, rate, 997.0, "selected-stream").await;
             assert!(matches!(
                 super::super::linux_streams::expired_refresh_for_test().await,
                 Err(SystemAudioCaptureError::ApplicationListFailed)
@@ -1031,7 +1033,14 @@ mod tests {
                 index,
                 "a healthy discovery connection must retain the selected token after a query timeout"
             );
-            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            expect_monitor_frequency(
+                &mut rx,
+                &mut failures,
+                rate,
+                997.0,
+                "selected-stream-after-refresh",
+            )
+            .await;
             assert!(failures.try_recv().is_err());
             let refreshed = super::super::linux_streams::list("en".into())
                 .await
@@ -1064,7 +1073,14 @@ mod tests {
             )
             .await
             .unwrap();
-        expect_monitor_frequency(&mut rx, 16_000, 997.0).await;
+        expect_monitor_frequency(
+            &mut rx,
+            &mut failures,
+            16_000,
+            997.0,
+            "selected-stream-before-move",
+        )
+        .await;
         assert_eq!(
             observe_native_failure(&mut rx, &mut failures, move || {
                 pactl(&["move-sink-input", &index.to_string(), "mimi-output"]);
@@ -1086,7 +1102,14 @@ mod tests {
             )
             .await
             .unwrap();
-        expect_monitor_frequency(&mut rx, 16_000, 997.0).await;
+        expect_monitor_frequency(
+            &mut rx,
+            &mut failures,
+            16_000,
+            997.0,
+            "selected-stream-recovered",
+        )
+        .await;
         assert_eq!(
             observe_native_failure(&mut rx, &mut failures, move || drop(target_playback)).await,
             Some(SystemAudioCaptureFailure::ApplicationUnavailable)
@@ -1380,18 +1403,14 @@ mod tests {
         }
     }
 
-    fn play_test_tone() -> (tempfile::NamedTempFile, TestPlayback) {
-        play_test_tone_on("@DEFAULT_SINK@")
-    }
-
-    fn play_test_tone_on(sink: &str) -> (tempfile::NamedTempFile, TestPlayback) {
-        play_test_frequency_on(sink, 997.0)
-    }
-
-    fn play_test_frequency_on(
-        sink: &str,
+    struct TestTone {
+        audio: tempfile::NamedTempFile,
         frequency: f64,
-    ) -> (tempfile::NamedTempFile, TestPlayback) {
+    }
+
+    fn prepare_test_frequency(frequency: f64) -> TestTone {
+        // Generate before capture starts so the current-thread test runtime
+        // can keep draining its bounded PCM sender during playback.
         let mut audio = tempfile::NamedTempFile::new().unwrap();
         // Synthetic PCM only; never write the audio captured from a device.
         let pcm: Vec<u8> = (0..(48_000 * 30))
@@ -1403,18 +1422,24 @@ mod tests {
             .collect();
         audio.write_all(&pcm).unwrap();
         audio.flush().unwrap();
-        let child = Command::new("paplay")
-            .args(["--raw", "--format=s16le", "--rate=48000", "--channels=2"])
-            .arg(format!("--device={sink}"))
-            .arg("--client-name=mimi-stream-test")
-            .arg(format!("--stream-name=tone-{frequency}"))
-            .arg(audio.path())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Linux audio smoke needs paplay from pulseaudio-utils");
-        (audio, TestPlayback(child))
+        TestTone { audio, frequency }
+    }
+
+    impl TestTone {
+        fn play_on(&self, sink: &str) -> TestPlayback {
+            let child = Command::new("paplay")
+                .args(["--raw", "--format=s16le", "--rate=48000", "--channels=2"])
+                .arg(format!("--device={sink}"))
+                .arg("--client-name=mimi-stream-test")
+                .arg(format!("--stream-name=tone-{}", self.frequency))
+                .arg(self.audio.path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Linux audio smoke needs paplay from pulseaudio-utils");
+            TestPlayback(child)
+        }
     }
 
     fn matches_tone(pcm: &[u8], sample_rate: u32) -> bool {
@@ -1556,11 +1581,25 @@ mod tests {
         }
     }
 
-    async fn expect_monitor_frequency(rx: &mut mpsc::Receiver<Vec<u8>>, rate: u32, frequency: f64) {
+    async fn expect_monitor_frequency(
+        rx: &mut mpsc::Receiver<Vec<u8>>,
+        failures: &mut mpsc::Receiver<SystemAudioCaptureFailure>,
+        rate: u32,
+        frequency: f64,
+        stage: &str,
+    ) {
         tokio::time::timeout(Duration::from_secs(6), async {
             let mut window = Vec::new();
-            while let Some(pcm) = rx.recv().await {
+            loop {
+                let pcm = tokio::select! {
+                    biased;
+                    Some(failure) = failures.recv() => {
+                        panic!("native capture failed at {stage}, rate={rate}, expectedHz={frequency}: {failure:?}");
+                    }
+                    pcm = rx.recv() => pcm.expect("monitor ended before its assigned tone arrived"),
+                };
                 assert_eq!(pcm.len(), rate as usize * 2 * FRAGMENT_MS / 1000);
+                assert!(pcm.len().is_multiple_of(2));
                 window.extend(pcm);
                 if window.len() >= rate as usize / 2 {
                     if matches_frequency(&window, rate, frequency) {
@@ -1569,10 +1608,11 @@ mod tests {
                     window.clear();
                 }
             }
-            panic!("monitor ended before its assigned tone arrived");
         })
         .await
-        .expect("capture must retain the selected monitor's dominant tone");
+        .unwrap_or_else(|_| {
+            panic!("capture must retain the selected monitor's dominant tone: stage={stage}, rate={rate}, expectedHz={frequency}")
+        });
     }
 
     // Keep the bounded test transport responsive while commands and native
@@ -1636,6 +1676,9 @@ mod tests {
     #[ignore = "requires an isolated PulseAudio server and paplay"]
     async fn native_default_output_switch_pins_monitor_until_restart() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
+        let tone_613 = prepare_test_frequency(613.0);
+        let tone_811 = prepare_test_frequency(811.0);
         let second_sink = TestSink::new("mimi-switch-output");
         let _restore = RestoreDefaultSink;
         let capture = LinuxSystemAudioCapture::new();
@@ -1652,18 +1695,31 @@ mod tests {
                 .await
                 .unwrap();
             expect_native_silence(&pipeline, &mut rx, rate, "switch-before-playback").await;
-            let (_first_audio, first_playback) = play_test_frequency_on("mimi-output", 997.0);
-            let (_second_audio, second_playback) =
-                play_test_frequency_on("mimi-switch-output", 613.0);
-            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            let first_playback = tone_997.play_on("mimi-output");
+            let second_playback = tone_613.play_on("mimi-switch-output");
+            expect_monitor_frequency(
+                &mut rx,
+                &mut failures,
+                rate,
+                997.0,
+                "switch-before-default-change",
+            )
+            .await;
             pactl(&["set-default-sink", "mimi-switch-output"]);
             // Old native/send buffers could still contain 997 Hz. Stop that
             // tone, observe silence, then require a fresh distinct tone on A
             // while B is audible. Pre-switch PCM cannot satisfy this check.
             drop(first_playback);
             expect_native_silence(&pipeline, &mut rx, rate, "switch-pinned-silent").await;
-            let (_fresh_audio, fresh_playback) = play_test_frequency_on("mimi-output", 811.0);
-            expect_monitor_frequency(&mut rx, rate, 811.0).await;
+            let fresh_playback = tone_811.play_on("mimi-output");
+            expect_monitor_frequency(
+                &mut rx,
+                &mut failures,
+                rate,
+                811.0,
+                "switch-pinned-fresh-tone",
+            )
+            .await;
             assert!(failures.try_recv().is_err());
             stop_and_assert_quiet(&capture, &pipeline, &mut rx).await;
             drop(fresh_playback);
@@ -1681,8 +1737,15 @@ mod tests {
                 .await
                 .unwrap();
             expect_native_silence(&restarted, &mut restarted_rx, rate, "switch-restarted").await;
-            let (_audio, playback) = play_test_frequency_on("mimi-switch-output", 613.0);
-            expect_monitor_frequency(&mut restarted_rx, rate, 613.0).await;
+            let playback = tone_613.play_on("mimi-switch-output");
+            expect_monitor_frequency(
+                &mut restarted_rx,
+                &mut failures,
+                rate,
+                613.0,
+                "switch-restarted",
+            )
+            .await;
             stop_and_assert_quiet(&capture, &restarted, &mut restarted_rx).await;
             assert!(failures.try_recv().is_err());
             drop(playback);
@@ -1697,6 +1760,8 @@ mod tests {
     #[ignore = "requires an isolated PulseAudio server and paplay"]
     async fn native_removed_monitor_fails_and_recovers_without_fallback() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
+        let tone_613 = prepare_test_frequency(613.0);
         let _restore = RestoreDefaultSink;
         let capture = LinuxSystemAudioCapture::new();
         for rate in [16_000, 24_000] {
@@ -1712,10 +1777,17 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            let (_audio, playback) = play_test_frequency_on("mimi-removable-output", 997.0);
-            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            let playback = tone_997.play_on("mimi-removable-output");
+            expect_monitor_frequency(
+                &mut rx,
+                &mut failures,
+                rate,
+                997.0,
+                "monitor-before-removal",
+            )
+            .await;
             drop(playback);
-            let (_other_audio, other_playback) = play_test_frequency_on("mimi-output", 613.0);
+            let other_playback = tone_613.play_on("mimi-output");
             // Set the fallback first; removal must still report failure.
             assert_eq!(
                 observe_native_failure(&mut rx, &mut failures, move || {
@@ -1746,8 +1818,15 @@ mod tests {
                 .await
                 .unwrap();
             expect_native_silence(&restarted, &mut restarted_rx, rate, "monitor-restored").await;
-            let (_audio, playback) = play_test_frequency_on("mimi-removable-output", 997.0);
-            expect_monitor_frequency(&mut restarted_rx, rate, 997.0).await;
+            let playback = tone_997.play_on("mimi-removable-output");
+            expect_monitor_frequency(
+                &mut restarted_rx,
+                &mut failures,
+                rate,
+                997.0,
+                "monitor-restored",
+            )
+            .await;
             stop_and_assert_quiet(&capture, &restarted, &mut restarted_rx).await;
             assert!(failures.try_recv().is_err());
             drop(playback);
@@ -1762,6 +1841,7 @@ mod tests {
     #[ignore = "requires the private server lifecycle setup in linux-audio-smoke.sh"]
     async fn native_server_disconnect_fails_and_recovers() {
         let directory = isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
         async fn start_private_server(directory: &std::path::Path) -> TestPlayback {
             let socket = directory.join("pulse.sock");
             let pipewire =
@@ -1835,8 +1915,9 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            let (_audio, playback) = play_test_tone();
-            expect_monitor_frequency(&mut rx, rate, 997.0).await;
+            let playback = tone_997.play_on("@DEFAULT_SINK@");
+            expect_monitor_frequency(&mut rx, &mut failures, rate, 997.0, "server-before-loss")
+                .await;
             let snapshot = super::super::linux_streams::list("en".into())
                 .await
                 .unwrap();
@@ -1861,7 +1942,7 @@ mod tests {
                 .unwrap();
             // Keep both bounded sinks consumed while waiting for the selected tone.
             tokio::select! {
-                _ = expect_monitor_frequency(&mut selected_rx, rate, 997.0) => {},
+                _ = expect_monitor_frequency(&mut selected_rx, &mut selected_failures, rate, 997.0, "selected-before-server-loss") => {},
                 _ = async { while rx.recv().await.is_some() {} } => panic!("system lane ended early"),
             }
             drop(server);
@@ -1912,8 +1993,15 @@ mod tests {
                 .await
                 .unwrap();
             expect_native_silence(&restarted, &mut restarted_rx, rate, "server-restored").await;
-            let (_audio, playback) = play_test_tone();
-            expect_monitor_frequency(&mut restarted_rx, rate, 997.0).await;
+            let playback = tone_997.play_on("@DEFAULT_SINK@");
+            expect_monitor_frequency(
+                &mut restarted_rx,
+                &mut failures,
+                rate,
+                997.0,
+                "server-restored",
+            )
+            .await;
             let snapshot = super::super::linux_streams::list("en".into())
                 .await
                 .unwrap();
@@ -1932,6 +2020,8 @@ mod tests {
     #[ignore = "requires an isolated PulseAudio server with mimi-input and paplay"]
     async fn native_dual_inputs_keep_audio_separate_and_restart() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
+        let tone_613 = prepare_test_frequency(613.0);
         struct RestoreDefaultSource;
         impl Drop for RestoreDefaultSource {
             fn drop(&mut self) {
@@ -1948,27 +2038,11 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        async fn expect_frequency(rx: &mut mpsc::Receiver<Vec<u8>>, rate: u32, frequency: f64) {
-            tokio::time::timeout(Duration::from_secs(6), async {
-                let mut window = Vec::new();
-                while let Some(pcm) = rx.recv().await {
-                    assert_eq!(pcm.len(), rate as usize * 2 * FRAGMENT_MS / 1000);
-                    window.extend(pcm);
-                    if window.len() >= rate as usize / 2 {
-                        if matches_frequency(&window, rate, frequency) {
-                            return;
-                        }
-                        window.clear();
-                    }
-                }
-                panic!("independent capture ended before its assigned tone arrived");
-            })
-            .await
-            .expect("each source must retain its own dominant tone");
-        }
         async fn expect_both_frequencies(
             system_rx: &mut mpsc::Receiver<Vec<u8>>,
             mic_rx: &mut mpsc::Receiver<Vec<u8>>,
+            system_failures: &mut mpsc::Receiver<SystemAudioCaptureFailure>,
+            mic_failures: &mut mpsc::Receiver<SystemAudioCaptureFailure>,
             rate: u32,
         ) {
             fn observe(
@@ -1998,6 +2072,13 @@ mod tests {
                 // matches too, so its bounded test sink cannot stall capture.
                 while !system_matched || !mic_matched {
                     tokio::select! {
+                        biased;
+                        Some(failure) = system_failures.recv() => {
+                            panic!("native dual system capture failed, rate={rate}: {failure:?}");
+                        }
+                        Some(failure) = mic_failures.recv() => {
+                            panic!("native dual microphone capture failed, rate={rate}: {failure:?}");
+                        }
                         pcm = system_rx.recv() => observe(
                             pcm, &mut system_window, &mut system_matched, rate, 997.0
                         ),
@@ -2036,9 +2117,16 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            let (_output_audio, output_playback) = play_test_frequency_on("mimi-output", 997.0);
-            let (_input_audio, input_playback) = play_test_frequency_on("mimi-microphone", 613.0);
-            expect_both_frequencies(&mut system_rx, &mut mic_rx, rate).await;
+            let output_playback = tone_997.play_on("mimi-output");
+            let input_playback = tone_613.play_on("mimi-microphone");
+            expect_both_frequencies(
+                &mut system_rx,
+                &mut mic_rx,
+                &mut system_failures,
+                &mut mic_failures,
+                rate,
+            )
+            .await;
             // Releasing one native worker must not terminate the other lane.
             // Keep that live lane's test sink consumed during native teardown
             // and the stopped lane's bounded drain.
@@ -2052,7 +2140,14 @@ mod tests {
                 },
             }
             while mic_rx.try_recv().is_ok() {}
-            expect_frequency(&mut mic_rx, rate, 613.0).await;
+            expect_monitor_frequency(
+                &mut mic_rx,
+                &mut mic_failures,
+                rate,
+                613.0,
+                "microphone-after-system-stop",
+            )
+            .await;
             assert!(system_rx.try_recv().is_err());
             microphone.stop().await;
             finish_recording_pipeline(&mic_pipeline, &mut mic_rx).await;
@@ -2071,6 +2166,7 @@ mod tests {
     #[ignore = "requires an isolated PulseAudio server with mimi-input and paplay"]
     async fn native_microphone_captures_only_explicit_input_and_restarts() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
         fn set_default_source(source: &str) {
             assert!(Command::new("timeout")
                 .args(["2s", "pactl"])
@@ -2121,7 +2217,7 @@ mod tests {
             .unwrap()
             .unwrap();
             expect_native_silence(&pipeline, &mut rx, rate, "microphone-before-playback").await;
-            let (_output_audio, output_playback) = play_test_tone();
+            let output_playback = tone_997.play_on("@DEFAULT_SINK@");
             // Drain a full half-second while output is audible: microphone
             // mode must not capture that independently playing system tone.
             let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
@@ -2140,23 +2236,9 @@ mod tests {
             );
             drop(output_playback);
 
-            let (_input_audio, input_playback) = play_test_tone_on("mimi-microphone");
-            tokio::time::timeout(Duration::from_secs(6), async {
-                let mut window = Vec::new();
-                while let Some(pcm) = rx.recv().await {
-                    assert_eq!(pcm.len(), rate as usize * 2 * FRAGMENT_MS / 1000);
-                    window.extend(pcm);
-                    if window.len() >= rate as usize / 2 {
-                        if matches_tone(&window, rate) {
-                            return;
-                        }
-                        window.clear();
-                    }
-                }
-                panic!("microphone capture ended before its input tone arrived");
-            })
-            .await
-            .expect("default input must contain its 997 Hz tone at the provider rate");
+            let input_playback = tone_997.play_on("mimi-microphone");
+            expect_monitor_frequency(&mut rx, &mut failures, rate, 997.0, "microphone-playback")
+                .await;
             drop(input_playback);
             tokio::time::timeout(Duration::from_secs(1), capture.stop())
                 .await
@@ -2181,6 +2263,7 @@ mod tests {
     #[ignore = "requires an isolated PulseAudio server and paplay"]
     async fn native_monitor_capture_is_pcm16_and_restarts() {
         isolated_audio_directory();
+        let tone_997 = prepare_test_frequency(997.0);
         let capture = LinuxSystemAudioCapture::new();
         for rate in [16_000, 24_000] {
             let (pipeline, mut rx) = recording_pipeline();
@@ -2202,24 +2285,8 @@ mod tests {
             .expect("monitor capture startup is bounded")
             .expect("default output monitor should open");
             expect_native_silence(&pipeline, &mut rx, rate, "before-playback").await;
-            let (_audio, playback) = play_test_tone();
-            tokio::time::timeout(Duration::from_secs(6), async {
-                let mut window = Vec::new();
-                while let Some(pcm) = rx.recv().await {
-                    assert_eq!(pcm.len(), rate as usize * 2 * FRAGMENT_MS / 1000);
-                    assert!(pcm.len().is_multiple_of(2));
-                    window.extend(pcm);
-                    if window.len() >= rate as usize / 2 {
-                        if matches_tone(&window, rate) {
-                            return;
-                        }
-                        window.clear();
-                    }
-                }
-                panic!("capture ended before the playback tone was detected");
-            })
-            .await
-            .expect("monitor must contain the 997 Hz output tone at the requested sample rate");
+            let playback = tone_997.play_on("@DEFAULT_SINK@");
+            expect_monitor_frequency(&mut rx, &mut failures, rate, 997.0, "monitor-playback").await;
             assert_eq!(pipeline.input_activity(), (true, true));
             eprintln!("linux native rate={rate} stage=playback pcm=true sound=true");
             drop(playback);
