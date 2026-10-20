@@ -1013,23 +1013,23 @@ mod tests {
     #[test]
     fn subtitle_count_preferences_are_allowed_during_an_active_session() {
         for enabled in [false, true] {
-            let draft: SettingsDraft = serde_json::from_value(
-                serde_json::json!({"customSubtitleCountEnabled": enabled}),
-            )
-            .unwrap();
+            let draft: SettingsDraft =
+                serde_json::from_value(serde_json::json!({"customSubtitleCountEnabled": enabled}))
+                    .unwrap();
             assert_eq!(draft.custom_subtitle_count_enabled, Some(enabled));
             assert!(ensure_settings_draft_allowed(&draft, true).is_ok());
             assert!(ensure_settings_draft_window_allowed("settings", &draft).is_ok());
         }
         for count in [1_u8, 10] {
             let draft: SettingsDraft =
-                serde_json::from_value(serde_json::json!({"visibleSubtitleCount": count}))
-                    .unwrap();
+                serde_json::from_value(serde_json::json!({"visibleSubtitleCount": count})).unwrap();
             assert_eq!(draft.visible_subtitle_count, Some(count));
             assert!(ensure_settings_draft_allowed(&draft, true).is_ok());
             assert!(ensure_settings_draft_window_allowed("settings", &draft).is_ok());
         }
-        assert!(SettingsDraft::default().custom_subtitle_count_enabled.is_none());
+        assert!(SettingsDraft::default()
+            .custom_subtitle_count_enabled
+            .is_none());
         assert!(SettingsDraft::default().visible_subtitle_count.is_none());
     }
 
@@ -2962,6 +2962,7 @@ pub async fn capture_status(
 /// returns synthetic choices and never invokes OS capture APIs.
 #[tauri::command]
 pub async fn audio_applications(
+    _app: AppHandle,
     state: State<'_, AppState>,
     cached_only: Option<bool>,
 ) -> Result<crate::audio::applications::ApplicationSnapshot, String> {
@@ -2980,9 +2981,12 @@ pub async fn audio_applications(
             }],
         });
     }
-    state
+    let snapshot = state
         .session
         .audio_applications(cached_only.unwrap_or(false))
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "linux")]
+    let snapshot = crate::audio::linux_application_icons::populate(&_app, snapshot).await;
+    Ok(snapshot)
 }
