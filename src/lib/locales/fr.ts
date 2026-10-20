@@ -413,7 +413,7 @@ export const SETTINGS = {
   sessionListening: "Sous-titres en cours",
   sessionPaused: "Sous-titres en pause",
   sessionStopping: "Arrêt…",
-  sessionError: "Impossible de démarrer les sous-titres",
+  sessionError: "Erreur des sous-titres",
   sessionSetupRequired: "Configurez d’abord un service de reconnaissance vocale",
   sessionCredentialUnavailable: "Les identifiants du service sont temporairement indisponibles",
   sessionActionFailed: "Impossible d’effectuer cette action. Vérifiez les réglages du service et réessayez.",

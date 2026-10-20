@@ -413,7 +413,7 @@ export const SETTINGS = {
   sessionListening: "คำบรรยายกำลังทำงาน",
   sessionPaused: "คำบรรยายหยุดชั่วคราว",
   sessionStopping: "กำลังหยุด…",
-  sessionError: "เริ่มคำบรรยายไม่สำเร็จ",
+  sessionError: "คำบรรยายเกิดข้อผิดพลาด",
   sessionSetupRequired: "ตั้งค่าบริการเสียงก่อน",
   sessionCredentialUnavailable: "ข้อมูลรับรองบริการยังใช้งานไม่ได้",
   sessionActionFailed: "ดำเนินการไม่สำเร็จ ตรวจสอบการตั้งค่าบริการแล้วลองอีกครั้ง",

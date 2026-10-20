@@ -17,6 +17,7 @@ private enum BridgeError: Int, Error {
 }
 
 private let resourceLogger = Logger(subsystem: "app.yuxino.mimi", category: "AppleSpeechResources")
+private let speechLogger = Logger(subsystem: "app.yuxino.mimi", category: "AppleSpeech")
 
 @available(macOS 26.0, *)
 private func resourceStatusLabel(_ status: AssetInventory.Status) -> String {
@@ -190,10 +191,16 @@ private final class Output: @unchecked Sendable {
     }
 
     func fail(_ error: any Error) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return }
         let value = error as NSError
         let code = (error as? BridgeError)?.rawValue ?? value.code
         let known = ["SFSpeechErrorDomain", "NSOSStatusErrorDomain", "NSCocoaErrorDomain", "NSPOSIXErrorDomain", "NSURLErrorDomain"]
         let domain = error is BridgeError ? "MimiAppleSpeech" : (known.contains(value.domain) ? value.domain : "SpeechFrameworkError")
+        // Preserve only the same allowlisted domain and numeric code crossing
+        // the bridge. Never log localizedDescription, userInfo or result text.
+        speechLogger.notice("native_failure domain=\(domain, privacy: .public) code=\(code)")
         try? send(["event": "error", "domain": domain, "code": code])
     }
 
@@ -304,6 +311,10 @@ private final class Session: @unchecked Sendable {
                 try await reader.value
                 try output.send(["event": "done"])
             } catch {
+                // Publish the actual failure before closing the PCM queue.
+                // Otherwise a concurrent push can report only "closed" and
+                // obscure a permanent framework failure as a transient end.
+                if !(error is CancellationError) { output.fail(error) }
                 input.cancel()
                 reader.cancel()
                 // Rust imposes the externally observable deadline and removes
@@ -312,9 +323,9 @@ private final class Session: @unchecked Sendable {
                 throw error
             }
         } catch {
+            if !(error is CancellationError) { output.fail(error) }
             input.cancel()
             if let current = clearHandles() { Task { await current.cancelAndFinishNow() } }
-            if !(error is CancellationError) { output.fail(error) }
         }
         output.close()
     }
