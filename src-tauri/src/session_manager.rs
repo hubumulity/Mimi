@@ -74,6 +74,20 @@ fn finish_ui_test_archive(
     }
 }
 
+fn ui_test_audio_samples(source: AudioSource, retain_for_export: bool) -> Vec<u8> {
+    let frequency = match source {
+        AudioSource::System => 440.0,
+        AudioSource::Microphone => 613.0,
+    };
+    let sample_count = 16_000 * if retain_for_export { 8 } else { 1 };
+    (0..sample_count)
+        .flat_map(|index| {
+            let phase = index as f32 * std::f32::consts::TAU * frequency / 16_000.0;
+            ((phase.sin() * 1_000.0) as i16).to_le_bytes()
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum StatusPayload {
@@ -3189,14 +3203,17 @@ impl SessionManager {
         self.history.page(id, query, page)
     }
 
-    pub fn export_transcript(&self) -> std::io::Result<Option<Vec<u8>>> {
+    pub fn export_transcript(
+        &self,
+        options: crate::core::session_archive::TranscriptExportOptions,
+    ) -> std::io::Result<Option<Vec<u8>>> {
         if self.is_ui_test() {
             return Ok(self
                 .controller
                 .lock()
                 .unwrap()
                 .archive()
-                .export()
+                .export_with_options(options)
                 .map(String::into_bytes));
         }
         let pending = self.history_pending_id.lock().unwrap();
@@ -3204,7 +3221,10 @@ impl SessionManager {
             .as_deref()
             .filter(|_| self.history_pending_text.load(Ordering::SeqCst))
         {
-            Some(id) => self.history.export_transcript(id).map(Some),
+            Some(id) => self
+                .history
+                .export_transcript_with_options(id, options)
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -4775,17 +4795,13 @@ impl SessionManager {
             );
         }
         if preferences.record_session_audio && !dual_live_fixture {
+            let retain_for_export = std::env::var("MIMI_UI_TEST_EXPORT").as_deref() == Ok("1");
             for &source in preferences.audio_input.sources() {
-                let (slot, frequency) = match source {
-                    AudioSource::System => (0, 440.0),
-                    AudioSource::Microphone => (1, 613.0),
+                let slot = match source {
+                    AudioSource::System => 0,
+                    AudioSource::Microphone => 1,
                 };
-                let samples: Vec<u8> = (0..16_000)
-                    .flat_map(|index| {
-                        let phase = index as f32 * std::f32::consts::TAU * frequency / 16_000.0;
-                        ((phase.sin() * 1_000.0) as i16).to_le_bytes()
-                    })
-                    .collect();
+                let samples = ui_test_audio_samples(source, retain_for_export);
                 let mut recordings = self.recording.lock().unwrap();
                 recordings[slot].begin(true);
                 recordings[slot].append(16_000, &samples);
@@ -6427,6 +6443,37 @@ mod lifecycle_tests {
         recording.begin(false);
         assert!(controller.archive().export().is_none());
         assert!(recording.export().is_none());
+    }
+
+    #[test]
+    fn ui_export_audio_fixture_is_eight_seconds_low_amplitude_and_source_specific() {
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            for retain_for_export in [false, true] {
+                let samples = ui_test_audio_samples(source, retain_for_export);
+                assert_eq!(
+                    samples.len(),
+                    16_000 * 2 * if retain_for_export { 8 } else { 1 }
+                );
+                let pcm: Vec<_> = samples
+                    .chunks_exact(2)
+                    .map(|sample| i16::from_le_bytes([sample[0], sample[1]]))
+                    .collect();
+                assert!(pcm.iter().any(|sample| *sample != 0));
+                assert!(pcm.iter().all(|sample| sample.abs() <= 1000));
+                let mut recording = crate::core::session_archive::AudioRecording::default();
+                recording.begin(true);
+                recording.append(16_000, &samples);
+                let wav = recording.export().unwrap();
+                assert_eq!(&wav[..4], b"RIFF");
+                assert_eq!(&wav[24..28], &16_000_u32.to_le_bytes());
+                assert_eq!(wav.len(), samples.len() + 44);
+                assert_eq!(&wav[44..], samples);
+            }
+        }
+        assert_ne!(
+            ui_test_audio_samples(AudioSource::System, true),
+            ui_test_audio_samples(AudioSource::Microphone, true),
+        );
     }
 
     #[test]

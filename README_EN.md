@@ -28,7 +28,7 @@ Interface illustration with sample dialogue. [Watch subtitles and Immersive Mode
 - **Floating subtitles** for films, streams, and classes. Show both languages, translations only, or originals only.
 - **Choose your audio**: computer audio, microphone, or both. Select an app on macOS / Windows 11, or an individual playback stream on Linux.
 - **Adjust the display**: change position, font size, and color. Immersive Mode shows only text; click-through lets you use the app underneath.
-- **Save subtitles and audio**: on desktop, save subtitles as TXT or record selected audio as WAV. Both options are off until you enable them.
+- **Save subtitles and audio**: on desktop, export subtitles as TXT or Markdown, or record selected audio as WAV. Both saving options are off until you enable them.
 
 ## Get started
 

@@ -8,6 +8,7 @@ TEST_APP="/synthetic app directory/mimi-dev.app"
 TEST_UI_TEST=1
 TEST_AUTO_START=1
 TEST_COMPACT_SETTINGS=1
+TEST_EXPORT_FIXTURE=1
 TEST_WORKSPACE=previous-batch
 TEST_OPEN_COUNT=0
 
@@ -21,6 +22,7 @@ open() {
       MIMI_UI_TEST=*) TEST_UI_TEST="${2#*=}" ;;
       MIMI_AUTO_START=*) TEST_AUTO_START="${2#*=}" ;;
       MIMI_UI_TEST_COMPACT_SETTINGS=*) TEST_COMPACT_SETTINGS="${2#*=}" ;;
+      MIMI_UI_TEST_EXPORT=*) TEST_EXPORT_FIXTURE="${2#*=}" ;;
       MIMI_DEVELOPMENT_EVIDENCE_WORKSPACE=*) TEST_WORKSPACE="${2#*=}" ;;
       *) echo "Unexpected launch environment." >&2; return 1 ;;
     esac
@@ -30,9 +32,10 @@ open() {
   TEST_OPEN_COUNT=$((TEST_OPEN_COUNT + 1))
 }
 
-MIMI_UI_TEST=1 MIMI_AUTO_START=1 MIMI_UI_TEST_COMPACT_SETTINGS=1 open_mimi_development_app live "" "$TEST_APP"
+MIMI_UI_TEST=1 MIMI_AUTO_START=1 MIMI_UI_TEST_COMPACT_SETTINGS=1 MIMI_UI_TEST_EXPORT=1 open_mimi_development_app live "" "$TEST_APP"
 [[ "$TEST_UI_TEST" == "0" && "$TEST_AUTO_START" == "0" && -z "$TEST_WORKSPACE" ]]
 [[ "$TEST_COMPACT_SETTINGS" == "0" ]]
+[[ "$TEST_EXPORT_FIXTURE" == "0" ]]
 
 unset MIMI_AUTO_START
 MIMI_UI_TEST=0 open_mimi_development_app ui-only named-batch "$TEST_APP"
@@ -45,9 +48,13 @@ MIMI_UI_TEST_COMPACT_SETTINGS=1 open_mimi_development_app ui-only compact-batch 
 MIMI_AUTO_START=1 open_mimi_development_app ui-only synthetic-batch "$TEST_APP"
 [[ "$TEST_UI_TEST" == "1" && "$TEST_AUTO_START" == "1" ]]
 
+MIMI_UI_TEST_EXPORT=1 open_mimi_development_app ui-only export-batch "$TEST_APP"
+[[ "$TEST_UI_TEST" == "1" && "$TEST_EXPORT_FIXTURE" == "1" ]]
+
 open_mimi_development_app ui-only "" "$TEST_APP"
 [[ "$TEST_UI_TEST" == "1" && "$TEST_AUTO_START" == "0" && -z "$TEST_WORKSPACE" ]]
 [[ "$TEST_COMPACT_SETTINGS" == "0" ]]
+[[ "$TEST_EXPORT_FIXTURE" == "0" ]]
 
 open_mimi_development_app live "" "$TEST_APP"
 [[ "$TEST_UI_TEST" == "0" && "$TEST_AUTO_START" == "0" && -z "$TEST_WORKSPACE" ]]
@@ -56,5 +63,5 @@ if open_mimi_development_app invalid "" "$TEST_APP" >/dev/null 2>&1; then
   echo "Invalid launch mode was accepted." >&2
   exit 1
 fi
-[[ "$TEST_OPEN_COUNT" == "6" ]]
+[[ "$TEST_OPEN_COUNT" == "7" ]]
 echo "Development launch mode tests passed."

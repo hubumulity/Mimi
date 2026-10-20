@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Switch } from "../../components/Switch";
 import { effectiveUiLanguage, I18N } from "../../lib/i18n";
@@ -11,11 +11,14 @@ import {
   sessionHistoryList,
   sessionHistoryPage,
   sessionHistoryAudio,
+  sessionArchiveAudio,
   sessionHistoryDelete,
+  sessionHistoryRename,
 } from "../../lib/ipc";
 import { useStore } from "../../lib/store";
 import { useDocumentVisibility } from "../../lib/useDocumentVisibility";
-import type { AudioSource, SessionArchiveState, SessionHistoryItem, SettingsDraft, TranscriptPage } from "../../lib/types";
+import type { AudioSource, SessionArchiveState, SessionHistoryItem, SettingsDraft, TranscriptPage, TranscriptExportOptions } from "../../lib/types";
+import { writeDiagnosticClipboard } from "../../lib/diagnosticClipboard";
 import {
   InlineFeedback,
   SettingsRow,
@@ -25,8 +28,13 @@ import {
 import { monitorSessionArchive } from "./sessionArchiveMonitor";
 import { SettingsConfirmation } from "./DestructiveConfirmation";
 import { useSettingsToast } from "./useSettingsToast";
+import { SettingsActionMenu } from "./SettingsActionMenu";
+import { SessionAudioPlayer } from "./SessionAudioPlayer";
+import { SettingsHelp } from "./SettingsHelp";
+import { sessionWorkspaceCopy } from "./sessionWorkspaceCopy";
+import "./session-workspace.css";
 
-export function SessionExport({ visible }: { visible: boolean }) {
+export function SessionExport({ visible, onReaderChange }: { visible: boolean; onReaderChange?: (open: boolean) => void }) {
   const documentVisible = useDocumentVisibility();
   const pageVisible = visible && documentVisible;
   const active = useStore((state) => state.session.isActive);
@@ -42,8 +50,15 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const [page, setPage] = useState(0);
   const [transcriptError, setTranscriptError] = useState(false);
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [historyError, setHistoryError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [exportAudio, setExportAudio] = useState(false);
+  const workspace = useRef<HTMLDivElement>(null);
+  const readerHeading = useRef<HTMLHeadingElement>(null);
+  const catalogScroll = useRef({ page: 0, list: 0 });
+  const previousReaderOpen = useRef(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [recordingSource, setRecordingSource] = useState<AudioSource>("system");
@@ -51,6 +66,15 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const [audioLoading, setAudioLoading] = useState(false);
   const [readError, setReadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [reading, setReading] = useState<TranscriptExportOptions["content"]>("bilingual");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOptions, setExportOptions] = useState<TranscriptExportOptions>({ format: "txt", content: "bilingual", includeTimestamps: false });
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [renameError, setRenameError] = useState(false);
+  const [manualCopy, setManualCopy] = useState<string | null>(null);
   const { beginToast, clearToast } = useSettingsToast();
   const monitor = useRef<ReturnType<typeof monitorSessionArchive> | null>(null);
   const operation = useRef(false);
@@ -61,9 +85,20 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const audioInFlight = useRef(false);
   const interaction = useRef(0);
   const selectedHistoryId = useRef<string | null>(null);
+  const [renderedAudioContext, setRenderedAudioContext] = useState({ active, pageVisible, selectedId, recordAudio });
+  if (renderedAudioContext.active !== active || renderedAudioContext.pageVisible !== pageVisible
+    || renderedAudioContext.selectedId !== selectedId || renderedAudioContext.recordAudio !== recordAudio) {
+    setRenderedAudioContext({ active, pageVisible, selectedId, recordAudio });
+    if (active || !pageVisible || (!selectedId && !recordAudio)) {
+      setAudioUrl(null);
+      setAudioError(false);
+    }
+  }
   // Counts can match across a reset. Current reads belong to an exact local
   // lifecycle, while saved-history reads remain independent of live capture.
   const archiveContext = useMemo(() => Symbol(`${active}:${retainHistory}`), [active, retainHistory]);
+  const latestArchiveContext = useRef(archiveContext);
+  useLayoutEffect(() => { latestArchiveContext.current = archiveContext; }, [archiveContext]);
   const transcriptContext = selectedId ?? archiveContext;
   const transcriptEnabled = selectedId !== null || retainHistory;
   const [renderedArchiveContext, setRenderedArchiveContext] = useState(archiveContext);
@@ -81,7 +116,39 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const availableCount = selectedId ? (selected?.count ?? 0) : (archive?.transcriptCount ?? 0);
   const displayedTranscript = availableCount && transcript?.owner === transcriptContext ? transcript.page : undefined;
 
+  useLayoutEffect(() => {
+    onReaderChange?.(readerOpen);
+    if (previousReaderOpen.current === readerOpen) return;
+    previousReaderOpen.current = readerOpen;
+    const scroll = workspace.current?.closest(".settings-console__scroll");
+    if (scroll) scroll.scrollTop = readerOpen ? 0 : catalogScroll.current.page;
+    if (readerOpen) readerHeading.current?.focus({ preventScroll: true });
+    else {
+      const catalog = workspace.current?.querySelector(".session-workspace__catalog");
+      if (catalog) catalog.scrollTop = catalogScroll.current.list;
+      const target = [...workspace.current?.querySelectorAll<HTMLButtonElement>("[data-history-id]") ?? []]
+        .find(node => node.dataset.historyId === (selectedHistoryId.current ?? "current"));
+      target?.focus({ preventScroll: true });
+    }
+  }, [readerOpen, onReaderChange]);
+
+  function returnToLibrary() {
+    interaction.current += 1;
+    audioRequest.current += 1;
+    setAudioUrl(null);
+    setAudioError(false);
+    setReaderOpen(false);
+    clearToast();
+  }
+
   function selectHistory(id: string | null) {
+    if (!readerOpen) {
+      catalogScroll.current = {
+        page: workspace.current?.closest(".settings-console__scroll")?.scrollTop ?? 0,
+        list: workspace.current?.querySelector(".session-workspace__catalog")?.scrollTop ?? 0,
+      };
+    }
+    setReaderOpen(true);
     if (id === selectedHistoryId.current) return;
     selectedHistoryId.current = id;
     interaction.current += 1;
@@ -93,24 +160,28 @@ export function SessionExport({ visible }: { visible: boolean }) {
     setAudioError(false);
     setTranscriptError(false);
     setConfirmDelete(false);
+    setRenameOpen(false);
+    setExportOpen(false);
+    setManualCopy(null);
     setSelectedId(id);
     setQuery("");
     setPage(0);
     setTranscript(undefined);
   }
 
-  function loadAudio(id: string) {
+  function loadAudio() {
     // One WAV may be 64 MiB. Superseding its result must not start another
     // full-file transfer while the native read is still in flight.
-    if (audioInFlight.current) return;
+    if (audioInFlight.current || !pageVisible || !readerOpen || useStore.getState().session.isActive) return;
     audioInFlight.current = true;
     const currentLifetime = lifetime.current;
     const request = ++audioRequest.current;
     setAudioLoading(true);
     setAudioError(false);
-    void sessionHistoryAudio(id, selectedAudioSource).then(
+    const read = selectedId ? sessionHistoryAudio(selectedId, selectedAudioSource) : sessionArchiveAudio(selectedAudioSource);
+    void read.then(
       (bytes) => {
-        if (request !== audioRequest.current) return;
+        if (request !== audioRequest.current || useStore.getState().session.isActive) return;
         setAudioUrl(URL.createObjectURL(new Blob([bytes], { type: "audio/wav" })));
         setAudioError(false);
       },
@@ -157,6 +228,12 @@ export function SessionExport({ visible }: { visible: boolean }) {
   }, [active, retainHistory, recordAudio]);
 
   useEffect(() => {
+    if (active || !pageVisible || (!selectedId && !recordAudio)) {
+      audioRequest.current += 1;
+    }
+  }, [active, pageVisible, selectedId, recordAudio]);
+
+  useEffect(() => {
     if (!pageVisible || !isTauri) return;
     const request = ++historyRequest.current;
     void sessionHistoryList().then(
@@ -168,14 +245,14 @@ export function SessionExport({ visible }: { visible: boolean }) {
       () => { if (request === historyRequest.current) setHistoryError(true); },
     );
     return () => { historyRequest.current += 1; };
-  }, [pageVisible, active]);
+  }, [pageVisible, active, historyRefresh]);
 
   useEffect(() => {
     return () => { if (audioUrl) URL.revokeObjectURL(audioUrl); };
   }, [audioUrl]);
 
   useEffect(() => {
-    if (!pageVisible || !isTauri || !availableCount || !transcriptEnabled) {
+    if (!pageVisible || !readerOpen || !isTauri || !availableCount || !transcriptEnabled) {
       transcriptRequest.current += 1;
       return;
     }
@@ -197,10 +274,10 @@ export function SessionExport({ visible }: { visible: boolean }) {
       transcriptRequest.current += 1;
       clearTimeout(timer);
     };
-  }, [pageVisible, availableCount, selectedId, query, page, transcriptEnabled, transcriptContext]);
+  }, [pageVisible, readerOpen, availableCount, selectedId, query, page, transcriptEnabled, transcriptContext]);
 
-  async function perform(action: () => Promise<"saved" | "cleared" | null>, failureMessage = I18N.settings.sessionExportFailed) {
-    if (!isTauri || operation.current || useStore.getState().session.isActive)
+  async function perform(action: () => Promise<"saved" | "cleared" | null>, failureMessage = I18N.settings.sessionExportFailed, requiresStopped = true) {
+    if (!isTauri || operation.current || (requiresStopped && useStore.getState().session.isActive))
       return;
     const currentLifetime = lifetime.current;
     const currentInteraction = interaction.current;
@@ -221,6 +298,61 @@ export function SessionExport({ visible }: { visible: boolean }) {
     }
   }
 
+  async function renameHistory(id: string) {
+    if (!isTauri || operation.current) return;
+    const currentLifetime = lifetime.current;
+    const currentInteraction = interaction.current;
+    const title = nameDraft.trim();
+    operation.current = true;
+    setBusy(true);
+    setRenameError(false);
+    const notify = beginToast();
+    try {
+      await sessionHistoryRename(id, title);
+      if (lifetime.current !== currentLifetime) return;
+      historyRequest.current += 1;
+      setHistory(items => items.map(item => item.id === id ? { ...item, title: title || undefined } : item));
+      setHistoryRefresh(value => value + 1);
+      if (interaction.current === currentInteraction) {
+        setRenameOpen(false);
+        notify(copy.renamed);
+      }
+    } catch {
+      if (lifetime.current === currentLifetime && interaction.current === currentInteraction) setRenameError(true);
+    } finally {
+      operation.current = false;
+      if (lifetime.current === currentLifetime) setBusy(false);
+    }
+  }
+
+  function clearCurrentArchive() {
+    void perform(async () => {
+      const currentLifetime = lifetime.current;
+      await sessionArchiveClear();
+      // Clearing current files must also retire their loaded or pending WAV.
+      // A late completion cannot release another session's playback.
+      if (lifetime.current === currentLifetime && selectedHistoryId.current === null
+        && latestArchiveContext.current === archiveContext) {
+        audioRequest.current += 1;
+        setAudioUrl(null);
+        setAudioError(false);
+      }
+      return "cleared";
+    });
+  }
+
+  function copyPassage(source: string, translation: string) {
+    const value = (reading === "source" ? [source] : reading === "translation" ? [translation] : [source, translation]).filter(Boolean).join("\n");
+    const currentLifetime = lifetime.current;
+    const currentInteraction = interaction.current;
+    const notify = beginToast();
+    void writeDiagnosticClipboard(Promise.resolve(value)).then(() => {
+      if (lifetime.current === currentLifetime && interaction.current === currentInteraction) notify(copy.copied);
+    }, () => {
+      if (lifetime.current === currentLifetime && interaction.current === currentInteraction) setManualCopy(value);
+    });
+  }
+
   async function deleteHistory(id: string) {
     if (!isTauri || operation.current) return;
     const currentLifetime = lifetime.current;
@@ -236,7 +368,8 @@ export function SessionExport({ visible }: { visible: boolean }) {
       // list snapshot without disturbing another selected session's content.
       historyRequest.current += 1;
       setHistory((items) => items.filter((item) => item.id !== id));
-      if (selectedHistoryId.current === id) selectHistory(null);
+      setHistoryRefresh(value => value + 1);
+      if (selectedHistoryId.current === id) { selectHistory(null); setReaderOpen(false); }
     } catch {
       if (lifetime.current === currentLifetime && interaction.current === currentInteraction) {
         notify(I18N.settings.historyDeleteFailed, true);
@@ -260,10 +393,31 @@ export function SessionExport({ visible }: { visible: boolean }) {
   const canExportTranscript = selected ? selected.count > 0 : hasTranscript;
   const canExportAudio = selected ? selected.hasAudio : hasAudio;
   const showCurrent = active || hasTranscript || hasAudio;
-  const showContent = selected || showCurrent;
+  const showContent = readerOpen;
   // Reuse each format only within this render. Later polls still observe
   // language/default-time-zone changes, and empty lists need no formatter.
   const language = effectiveUiLanguage();
+  const copy = sessionWorkspaceCopy[language];
+  const contentOptions = [
+    { value: "bilingual", label: copy.bilingual },
+    { value: "source", label: copy.source },
+    { value: "translation", label: copy.translation },
+  ];
+  const exportDisabled = !isTauri || busy || (!selected && (active || readError));
+  const filteredHistory = history.filter(item =>
+    (!historyQuery.trim() || (item.title ?? "").toLocaleLowerCase(language).includes(historyQuery.trim().toLocaleLowerCase(language)))
+    && (historyFilter === "all" || (historyFilter === "text" ? item.count > 0 : item.hasAudio)));
+  const sessionName = selected ? selected.title || I18N.settings.historySelectedTitle : I18N.settings.historyCurrent;
+  const sourceOptions = audioSources.map(source => ({ value: source, label: source === "system" ? I18N.settings.audioInputSystem : I18N.settings.audioInputMicrophone }));
+  function changeAudioSource(value: string) {
+    audioRequest.current += 1;
+    setRecordingSource(value as AudioSource);
+    setAudioUrl(null);
+    setAudioError(false);
+  }
+  const sourceControl = audioSources.length > 1
+    ? <SettingsSelect label={I18N.settings.recordingSource} value={selectedAudioSource ?? "system"} disabled={busy} options={sourceOptions} onChange={changeAudioSource} />
+    : <span className="session-workspace__audio-source">{sourceOptions[0]?.label}</span>;
   let sessionTimeFormatter: Intl.DateTimeFormat | undefined;
   let transcriptTimeFormatter: Intl.DateTimeFormat | undefined;
   const formatSessionTime = (timestamp: number) =>
@@ -277,6 +431,8 @@ export function SessionExport({ visible }: { visible: boolean }) {
       title={I18N.settings.sessionExportTitle}
       hideHeading
     >
+      <div ref={workspace}>
+      {!readerOpen && <>
       <SettingsRow
         label={I18N.settings.retainSessionHistory}
         description={I18N.settings.retainSessionHistoryHelp}
@@ -306,15 +462,12 @@ export function SessionExport({ visible }: { visible: boolean }) {
           }
         />
       </SettingsRow>
-      <p className="session-export__privacy">
-        <Icon name="shield-check" />
-        <span>{I18N.settings.sessionExportEphemeral}</span>
-      </p>
-      <div className="session-export__details">
-        {active && (
-          <p className="settings-help">{I18N.settings.sessionExportActive}</p>
+      </>}
+      <div className={`session-export__details${readerOpen ? " session-export__details--reader" : ""}`}>
+        {active && (!readerOpen || !selected) && (
+          <InlineFeedback tone="info">{copy.active}</InlineFeedback>
         )}
-        {active && recordAudio && (
+        {active && recordAudio && !readerOpen && (
           <InlineFeedback tone="info">
             {audioInput === "both" ? I18N.settings.sessionBothAudioEnabled : audioInput === "microphone" ? I18N.settings.sessionMicrophoneEnabled : I18N.settings.sessionAudioEnabled}
           </InlineFeedback>
@@ -332,61 +485,61 @@ export function SessionExport({ visible }: { visible: boolean }) {
         {archive?.historySaveError && (
           <InlineFeedback tone="error">{I18N.settings.historySaveFailed}</InlineFeedback>
         )}
-        <div className="session-history">
+        {!readerOpen && <div className="session-history">
           <div className="session-history__heading">
-            <h3>{I18N.settings.historyTitle}</h3>
+            <h3>{I18N.settings.historyTitle}<SettingsHelp label={I18N.settings.helpLabel} text={I18N.settings.sessionExportEphemeral} /></h3>
             {history.length > 0 && <span>{I18N.settings.historySessionCount(history.length)}</span>}
           </div>
-          {showCurrent && <button type="button" className={`session-history__item${selectedId === null ? " is-selected" : ""}`} onClick={() => selectHistory(null)}>
+          {history.length > 0 && <div className="session-workspace__library-tools">
+            <input type="search" value={historyQuery} aria-label={copy.search} placeholder={copy.search} maxLength={120} onChange={event => setHistoryQuery(event.target.value)} />
+            <SettingsSelect label={copy.filter} value={historyFilter} onChange={setHistoryFilter} options={[{ value: "all", label: copy.all }, { value: "text", label: copy.text }, { value: "audio", label: copy.audio }]} />
+          </div>}
+          <div className="session-workspace__catalog">
+          {showCurrent && <button type="button" data-history-id="current" aria-pressed={selectedId === null} className={`session-history__item${selectedId === null ? " is-selected" : ""}`} onClick={() => selectHistory(null)}>
             <span>{I18N.settings.historyCurrent}</span>
             {(hasTranscript || hasAudio) && <small>{hasTranscript ? I18N.settings.transcriptCount(archive?.transcriptCount ?? 0) : ""}{hasTranscript && hasAudio ? " · " : ""}{hasAudio ? I18N.settings.historyAudio : ""}</small>}
           </button>}
-          {groupHistory(history, language).map((group) => (
+          {groupHistory(filteredHistory, language).map((group) => (
             <div className="session-history__group" key={group.day}>
               <h4>{group.label}</h4>
               {group.items.map((item) => (
-                <button type="button" key={item.id} className={`session-history__item${selectedId === item.id ? " is-selected" : ""}`} onClick={() => selectHistory(item.id)}>
-                  <span>{formatSessionTime(item.startedAtMs)}</span>
+                <button type="button" key={item.id} data-history-id={item.id} aria-pressed={selectedId === item.id} className={`session-history__item${selectedId === item.id ? " is-selected" : ""}`} onClick={() => selectHistory(item.id)}>
+                  <span className="session-workspace__session-name">{item.title || formatSessionTime(item.startedAtMs)}{item.title && <time>{formatSessionTime(item.startedAtMs)}</time>}</span>
                   <small>{item.count > 0 ? I18N.settings.transcriptCount(item.count) : ""}{item.count > 0 && item.hasAudio ? " · " : ""}{item.hasAudio ? I18N.settings.historyAudio : ""}</small>
                 </button>
               ))}
             </div>
           ))}
-          {historyError && <InlineFeedback tone="error">{I18N.settings.historyReadFailed}</InlineFeedback>}
-        </div>
-        {showContent ? <div className="session-transcript">
-          <div className="session-transcript__heading">
-            <div>
-              <h3>{selected ? I18N.settings.historySelectedTitle : I18N.settings.transcriptBrowseTitle}</h3>
-            </div>
-            <span>{I18N.settings.transcriptCount(availableCount)}</span>
           </div>
-          {canExportAudio && audioSources.length > 1 && <SettingsRow label={I18N.settings.recordingSource}>
-            <SettingsSelect label={I18N.settings.recordingSource} value={selectedAudioSource ?? "system"} disabled={busy}
-              options={audioSources.map(source => ({ value: source, label: source === "system" ? I18N.settings.audioInputSystem : I18N.settings.audioInputMicrophone }))}
-              onChange={value => {
-                audioRequest.current += 1;
-                setRecordingSource(value as AudioSource);
-                setAudioUrl(null);
-                setAudioError(false);
-              }} />
-          </SettingsRow>}
-          {selected && <div className="session-history__actions" aria-busy={busy}>
-            {selected.hasAudio && (audioUrl ? <audio controls src={audioUrl} aria-label={I18N.settings.historyAudio} /> : <button type="button" className="settings-button settings-button--quiet" disabled={audioLoading} aria-busy={audioLoading} onClick={() => loadAudio(selected.id)}>{I18N.settings.historyPlayAudio}</button>)}
-            <button type="button" className="settings-button settings-button--danger settings-button--compact" disabled={busy} onClick={() => setConfirmDelete(true)}>
-              <Icon name="trash" />{I18N.settings.historyDelete}
-            </button>
-            {confirmDelete && visible && <SettingsConfirmation
-              message={I18N.settings.historyDeleteConfirm}
-              confirmLabel={I18N.settings.historyDelete}
-              disabled={busy}
-              onCancel={() => setConfirmDelete(false)}
-              onConfirm={() => { void deleteHistory(selected.id); }}
-            >
-              {historyError && <InlineFeedback tone="error">{I18N.settings.historyReadFailed}</InlineFeedback>}
-            </SettingsConfirmation>}
-          </div>}
-          {audioError && <InlineFeedback tone="error">{I18N.settings.historyAudioFailed}</InlineFeedback>}
+          {history.length > 0 && filteredHistory.length === 0 && <p className="session-transcript__empty">{copy.noMatches}</p>}
+          {historyError && <InlineFeedback tone="error">{I18N.settings.historyReadFailed}</InlineFeedback>}
+          {!showCurrent && history.length === 0 && !historyError && <p className="session-export__empty">{I18N.settings.historyEmpty}</p>}
+        </div>}
+        {showContent ? <div className="session-transcript">
+          <button type="button" className="session-workspace__back" onClick={returnToLibrary}><Icon name="chevron-left" />{copy.back}</button>
+          <div className="session-transcript__heading">
+            <div><h3 ref={readerHeading} tabIndex={-1}>{sessionName}</h3>
+              <span className="session-workspace__reader-meta">{selected && <time>{new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(selected.startedAtMs)}</time>}{availableCount > 0 && <span>{I18N.settings.transcriptCount(availableCount)}</span>}</span>
+            </div>
+            <div className="session-workspace__reader-actions">
+              <button type="button" className="settings-button settings-button--quiet" disabled={exportDisabled || (!canExportTranscript && !canExportAudio)}
+                onClick={() => { setExportAudio(!canExportTranscript); setExportOptions(options => ({ ...options, content: reading })); setExportOpen(true); }}><Icon name="download" />{copy.export}</button>
+              <SettingsActionMenu label={I18N.settings.profileActionMore} name={sessionName} disabled={busy || !pageVisible}
+                actions={selected ? [
+                  { id: "rename", label: copy.rename, icon: "captions-bubble", onSelect: () => { setNameDraft(selected.title ?? ""); setRenameError(false); setRenameOpen(true); } },
+                  { id: "delete", label: I18N.settings.historyDelete, icon: "trash", destructive: true, onSelect: () => setConfirmDelete(true) },
+                ] : [{ id: "clear", label: I18N.settings.clearSessionArchive, icon: "eraser", destructive: true, disabled: disabled || readError || (!hasTranscript && !hasAudio),
+                  onSelect: clearCurrentArchive }]} />
+            </div>
+          </div>
+          {canExportAudio && pageVisible && <SessionAudioPlayer key={`${selectedId ?? "current"}:${selectedAudioSource}:${active}`}
+            src={active ? null : audioUrl} loading={audioLoading} readError={audioError} disabled={active || !isTauri || (!selected && readError)} onLoad={loadAudio} sourceControl={sourceControl}
+            labels={{ play: I18N.settings.historyPlayAudio, pause: copy.pause, loading: copy.loadingAudio, retry: copy.retryAudio, seek: copy.seek, playFailed: copy.playFailed, ready: copy.audioReady, label: I18N.settings.historyAudio }} />}
+          {canExportAudio && active && <InlineFeedback tone="info">{copy.stopPlayback}</InlineFeedback>}
+          {confirmDelete && selected && visible && <SettingsConfirmation message={I18N.settings.historyDeleteConfirm} confirmLabel={I18N.settings.historyDelete} disabled={busy}
+            onCancel={() => setConfirmDelete(false)} onConfirm={() => { void deleteHistory(selected.id); }}>
+            {historyError && <InlineFeedback tone="error">{I18N.settings.historyReadFailed}</InlineFeedback>}
+          </SettingsConfirmation>}
           {availableCount > 0 && <div className="session-transcript__toolbar">
             <input
               type="search"
@@ -396,9 +549,8 @@ export function SessionExport({ visible }: { visible: boolean }) {
               aria-label={I18N.settings.transcriptSearch}
               onChange={(event) => { setQuery(event.target.value); setPage(0); setTranscript(undefined); setTranscriptError(false); }}
             />
-            {displayedTranscript && displayedTranscript.total > 0 && (
-              <span>{I18N.settings.transcriptMatches(displayedTranscript.total)}</span>
-            )}
+            <SettingsSelect label={copy.reading} value={reading} options={contentOptions} onChange={value => setReading(value as TranscriptExportOptions["content"])} />
+            {query && displayedTranscript && <span className="session-workspace__search-count">{I18N.settings.transcriptMatches(displayedTranscript.total)}</span>}
           </div>}
           <div className="session-transcript__list" aria-live="polite">
             {availableCount && transcriptError ? (
@@ -410,12 +562,13 @@ export function SessionExport({ visible }: { visible: boolean }) {
                   <time dateTime={new Date(entry.createdAtMs).toISOString()}>
                     {formatTranscriptTime(entry.createdAtMs)}
                   </time>
+                  {entry.audioSource && <span className="session-transcript__audio-source">{entry.audioSource === "system" ? I18N.settings.audioInputSystem : I18N.settings.audioInputMicrophone}</span>}
+                  <button type="button" className="session-workspace__copy" aria-label={`${copy.copy} #${entry.index}`} title={copy.copy} disabled={!(reading === "source" ? entry.source : reading === "translation" ? entry.translation : entry.source || entry.translation)} onClick={() => copyPassage(entry.source, entry.translation)}><Icon name="copy" /></button>
                 </div>
                 <div>
-                  {entry.audioSource && <div className="session-transcript__audio-source">{entry.audioSource === "system" ? I18N.settings.audioInputSystem : I18N.settings.audioInputMicrophone}</div>}
-                <div className="session-transcript__pair">
-                  <div><span>{I18N.settings.transcriptSource}</span><p>{entry.source}</p></div>
-                  <div><span>{I18N.settings.transcriptTranslation}</span><p>{entry.translation}</p></div>
+                <div className={`session-transcript__pair${reading !== "bilingual" ? " session-transcript__pair--single" : ""}`}>
+                  {reading !== "translation" && <div><span>{I18N.settings.transcriptSource}</span><p>{entry.source || "—"}</p></div>}
+                  {reading !== "source" && <div><span>{I18N.settings.transcriptTranslation}</span><p>{entry.translation || "—"}</p></div>}
                 </div>
                 </div>
               </article>
@@ -432,48 +585,31 @@ export function SessionExport({ visible }: { visible: boolean }) {
               <button type="button" disabled={(displayedTranscript.page + 1) * 30 >= displayedTranscript.total} onClick={() => { setPage(displayedTranscript.page + 1); setTranscript(undefined); }} aria-label={I18N.settings.transcriptNext}><Icon name="chevron-right" /></button>
             </nav>
           )}
-        </div> : <p className="session-export__empty">{history.length > 0 ? I18N.settings.historyChoose : I18N.settings.historyEmpty}</p>}
-        {showContent && <div className="session-export__actions">
-          <button
-            type="button"
-            className="settings-button settings-button--quiet"
-            disabled={disabled || (!selected && readError) || !canExportTranscript}
-            onClick={() =>
-              void perform(async () =>
-                (await sessionExport("transcript", selected?.id)) ? "saved" : null,
-              )
-            }
-          >
-            <Icon name="download" />
-            {I18N.settings.exportTranscript}
-          </button>
-          <button
-            type="button"
-            className="settings-button settings-button--quiet"
-            disabled={disabled || (!selected && readError) || !canExportAudio}
-            onClick={() =>
-              void perform(async () =>
-                (await sessionExport("audio", selected?.id, selectedAudioSource)) ? "saved" : null,
-              )
-            }
-          >
-            <Icon name="download" />
-            {I18N.settings.exportAudio}
-          </button>
-          {!selected && <button
-            type="button"
-            className="settings-button settings-button--text"
-            disabled={disabled || readError || (!hasTranscript && !hasAudio)}
-            onClick={() =>
-              void perform(async () => {
-                await sessionArchiveClear();
-                return "cleared";
-              })
-            }
-          >
-            {I18N.settings.clearSessionArchive}
-          </button>}
-        </div>}
+        </div> : null}
+        {renameOpen && selected && visible && <SettingsConfirmation message={copy.rename} variant="default" confirmIcon="checkmark" confirmLabel={copy.save} disabled={busy || [...nameDraft.trim()].length > 120}
+          onCancel={() => setRenameOpen(false)} onConfirm={() => { void renameHistory(selected.id); }}>
+          <label className="session-workspace__name-field">{copy.name}<SettingsHelp label={I18N.settings.helpLabel} text={copy.nameHelp} />
+            <input value={nameDraft} maxLength={240} disabled={busy} onChange={event => { setNameDraft(event.target.value); setRenameError(false); }} />
+          </label>
+          {[...nameDraft.trim()].length > 120 && <InlineFeedback tone="error">{copy.nameHelp}</InlineFeedback>}
+          {renameError && <InlineFeedback tone="error">{copy.renameFailed}</InlineFeedback>}
+        </SettingsConfirmation>}
+        {exportOpen && visible && <SettingsConfirmation message={copy.export} variant="default" confirmIcon="download" confirmLabel={copy.chooseFile} disabled={exportDisabled || (exportAudio ? !canExportAudio : !canExportTranscript)}
+          onCancel={() => setExportOpen(false)} onConfirm={() => {
+            setExportOpen(false);
+            void perform(async () => (await sessionExport(exportAudio ? "audio" : "transcript", selected?.id, exportAudio ? selectedAudioSource : undefined, exportAudio ? undefined : exportOptions)) ? "saved" : null, I18N.settings.sessionExportFailed, !selected);
+          }}>
+          <p className="session-workspace__export-scope">{copy.whole}</p>
+          <div className="session-workspace__export-options">
+          <SettingsRow label={copy.format}><SettingsSelect label={copy.format} value={exportAudio ? "wav" : exportOptions.format} onChange={value => { setExportAudio(value === "wav"); if (value !== "wav") setExportOptions(options => ({ ...options, format: value as TranscriptExportOptions["format"] })); }} options={[...(canExportTranscript ? [{ value: "txt", label: copy.plain }, { value: "markdown", label: copy.markdown }] : []), ...(canExportAudio ? [{ value: "wav", label: copy.wav }] : [])]} /></SettingsRow>
+          {exportAudio ? (audioSources.length > 1 && <SettingsRow label={I18N.settings.recordingSource}>{sourceControl}</SettingsRow>) : <>
+          <SettingsRow label={copy.content}><SettingsSelect label={copy.content} value={exportOptions.content} onChange={value => setExportOptions(options => ({ ...options, content: value as TranscriptExportOptions["content"] }))} options={contentOptions} /></SettingsRow>
+          <SettingsRow label={copy.timestamps} description={copy.timing}><Switch checked={exportOptions.includeTimestamps} aria-label={copy.timestamps} onChange={includeTimestamps => setExportOptions(options => ({ ...options, includeTimestamps }))} /></SettingsRow></>}
+          </div>
+        </SettingsConfirmation>}
+        {manualCopy !== null && visible && <SettingsConfirmation message={copy.copyFailed} variant="default" hideConfirm onCancel={() => setManualCopy(null)} onConfirm={() => {}}>
+          <textarea className="session-workspace__manual-copy" readOnly value={manualCopy} aria-label={copy.copy} onFocus={event => event.currentTarget.select()} />
+        </SettingsConfirmation>}
         {!isTauri && (
           <p className="settings-help">
             {I18N.settings.sessionExportNativeOnly}
@@ -485,7 +621,7 @@ export function SessionExport({ visible }: { visible: boolean }) {
           </InlineFeedback>
         )}
       </div>
-      <details className="session-export__explanation">
+      {!readerOpen && <details className="session-export__explanation">
         <summary>
           {I18N.settings.sessionExportDetails}
           <Icon name="chevron-down" />
@@ -496,7 +632,8 @@ export function SessionExport({ visible }: { visible: boolean }) {
           <p>{I18N.settings.sessionTranscriptTiming}</p>
           <p>{I18N.settings.sessionAudioTiming}</p>
         </div>
-      </details>
+      </details>}
+      </div>
     </SettingsSection>
   );
 }

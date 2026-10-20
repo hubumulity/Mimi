@@ -5,12 +5,215 @@
 // Local UI fixtures only: no native bridge, credentials, provider or capture.
 let fixture = {};
 window.layoutFixtureRequests = { profileCreate: 0, translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0, credentialSave: 0, credentialReveal: 0, connectionCheck: 0 };
+// These scenarios exercise the real settings components with synthetic data only.
+const diagnosticCases = ["idle", "listening", "silent", "permission", "translation-wait", "rate-limit", "recovered", "load-error"];
+const sessionCases = ["empty", "current", "library", "mixed", "read-error", "export-cancel", "delete-fail"];
+const workspaceCommands = new Set(["support_diagnostics", "app_open_support_issue", "session_archive_state",
+  "session_transcript_page", "session_history_list", "session_history_page", "session_history_audio", "session_archive_audio",
+  "session_history_delete", "session_history_rename", "session_export", "session_archive_clear",
+  "session_start", "session_stop", "session_pause", "session_resume"]);
+const workspaceEpoch = Date.UTC(2026, 9, 20, 4);
+let workspace;
+let workspaceRequestId = 0;
+const heldCommands = new Set();
+const pendingWorkspaceRequests = new Map();
+
+function syntheticEntries(count, mixed = false) {
+  return Array.from({ length: count }, (_, index) => ({
+    index: index + 1, audioSource: mixed && index % 2 ? "microphone" : "system",
+    source: index % 3 === 0
+      ? "Increase the text size, move the window, and check that every complete sentence remains readable."
+      : `Synthetic subtitle ${index + 1}: the next product review begins after a short pause.`,
+    translation: index % 3 === 0
+      ? "增大文字、移动窗口，并检查每个完整句子是否仍然清晰可读。"
+      : `合成字幕 ${index + 1}：短暂停顿后，开始下一次产品评审。`,
+    createdAtMs: workspaceEpoch + index * 4_000,
+  }));
+}
+
+function resetWorkspace(next) {
+  const scenario = next.sessions ?? "empty";
+  if (!sessionCases.includes(scenario)) throw new Error("fixture_unknown_session_case");
+  if (next.diagnostics && !diagnosticCases.includes(next.diagnostics)) throw new Error("fixture_unknown_diagnostic_case");
+  // Complete old held work before replacing its owner; disposed views ignore it.
+  for (const request of pendingWorkspaceRequests.values()) request.reject(new Error("fixture_case_replaced"));
+  pendingWorkspaceRequests.clear();
+  heldCommands.clear();
+  window.layoutCopiedValue = null;
+  const hasCurrent = ["current", "mixed", "export-cancel", "delete-fail"].includes(scenario);
+  const hasLibrary = ["library", "mixed", "read-error", "export-cancel", "delete-fail"].includes(scenario);
+  const entries = syntheticEntries(61, true);
+  const history = hasLibrary ? [
+    { id: "11111111-1111-4111-8111-111111111111", title: "Synthetic product review · 字幕と書き出し", startedAtMs: workspaceEpoch,
+      endedAtMs: workspaceEpoch + 244_000, count: entries.length, limited: false, hasAudio: true, audioSources: ["system", "microphone"] },
+    { id: "22222222-2222-4222-8222-222222222222", title: "Synthetic microphone recording", startedAtMs: workspaceEpoch - 86_400_000,
+      endedAtMs: workspaceEpoch - 86_340_000, count: 0, limited: false, hasAudio: true, audioSources: ["microphone"] },
+    { id: "33333333-3333-4333-8333-333333333333", startedAtMs: workspaceEpoch - 172_800_000,
+      endedAtMs: workspaceEpoch - 172_788_000, count: 3, limited: false, hasAudio: false, audioSources: [] },
+  ] : [];
+  workspace = {
+    scenario, history, current: hasCurrent ? entries.slice(0, 4) : [],
+    transcripts: Object.fromEntries(history.map(item => [item.id, item.count ? entries.slice(0, item.count) : []])),
+    archive: { transcriptCount: hasCurrent ? 4 : 0, transcriptLimited: false,
+      audioBytes: hasCurrent ? 32_000 : 0, audioLimited: false, sampleRate: 16_000,
+      historySaveError: false, audioSources: hasCurrent ? ["system", "microphone"] : [] },
+    counts: {}, actions: [],
+  };
+}
+
+function diagnosticReport() {
+  const scenario = fixture.diagnostics ?? "idle";
+  const running = !["idle", "permission", "load-error"].includes(scenario);
+  const status = scenario === "permission" ? "error" : running ? "listening" : "idle";
+  const permission = { phase: "capture_setup", category: "permission", code: "SYSTEM_AUDIO_PERMISSION_DENIED" };
+  const transport = { phase: "websocket_connection", category: "transport", code: "TRANSPORT_ERROR" };
+  const failure = scenario === "permission" ? permission : scenario === "recovered" ? transport : null;
+  const recovery = scenario === "rate-limit" ? { reason: "rateLimited", retryAfterMs: 4_000, retryScheduled: true } : null;
+  const recent = scenario === "idle" ? [] : [
+    { kind: "lifecycle", action: "start_requested" },
+    { kind: "status", status: "connecting" },
+    ...(scenario === "permission" ? [{ kind: "failure", classification: permission }, { kind: "status", status: "error" }]
+      : [{ kind: "status", status: "listening" }]),
+    ...(scenario === "rate-limit" ? [{ kind: "translation_backoff", recovery }] : []),
+    ...(scenario === "recovered" ? [{ kind: "failure", classification: transport },
+      { kind: "recovery", action: "retrying" }, { kind: "recovery", action: "recovered" }] : []),
+  ].map((event, index) => ({ sequence: index + 1, elapsed_since_app_start_ms: 1_000 + index * 500, ...event }));
+  return JSON.stringify({
+    schema: "mimi.support.v2", app_version: "fixture", os: { family: fixture.platform ?? "macos", architecture: "fixture", version: "unknown" },
+    snapshot: { elapsed_since_app_start_ms: 12_000, consistency: "best_effort_observations", audio_recent_window_ms: 2_000 },
+    provider: "alibabaCloud", credentials: { state: "unknown", authentication: "unknown" }, mode: "lowLatency", session_status: status,
+    capture: { output_selection: fixture.platform === "windows" ? "system_default" : "platform_system_audio",
+      output_availability: fixture.platform === "windows" ? "available" : "unknown",
+      observation: running ? { pcm_data_recent: true, sound_recent: scenario !== "silent", observation_age_ms: 100 } : null },
+    service: { websocket_stage: "unknown", asr_stage: "unknown", last_failure_stage: failure?.phase ?? null,
+      translation_pending: scenario === "translation-wait", translation_preview_pending: scenario === "translation-wait",
+      translation_timed_out: false, api_round_trip_ms: running ? 82 : null,
+      translation_duration_ms: running && scenario !== "translation-wait" ? 348 : null,
+      translation_duration_kind: running && scenario !== "translation-wait" ? "request" : null, translation_recovery: recovery },
+    journal: { events_observed: recent.length, events_omitted: 0, text_event_counts: {
+      source_draft_events: running && scenario !== "silent" ? 18 : 0, source_final_events: running && scenario !== "silent" ? 3 : 0,
+      translation_draft_events: running && !["silent", "translation-wait"].includes(scenario) ? 12 : 0,
+      translation_final_events: running && !["silent", "translation-wait"].includes(scenario) ? 3 : 0,
+      confirmed_pair_events: running && !["silent", "translation-wait"].includes(scenario) ? 3 : 0,
+    }, recent_events: recent },
+    last_error: failure ? { classification: failure, observed_ago_ms: 2_000 } : null,
+    recent_recovery: scenario === "recovered" ? { action: "recovered", observed_ago_ms: 200 } : null,
+    unknown: ["root_cause", "app_output_route"], excluded: ["credentials", "audio", "subtitle_text", "raw_logs"],
+  }, null, 2);
+}
+
+function transcriptPage(entries, query = "", page = 0) {
+  const normalized = query.trim().toLocaleLowerCase();
+  const matches = entries.filter(entry => !normalized || `${entry.source}\n${entry.translation}`.toLocaleLowerCase().includes(normalized));
+  const index = Math.max(0, Math.min(Number(page) || 0, Math.max(0, Math.ceil(matches.length / 30) - 1)));
+  return { total: matches.length, page: index, entries: structuredClone(matches.slice(index * 30, index * 30 + 30)) };
+}
+
+function syntheticWav() {
+  // Local silence exercises real decoding, seeking and playback without media.
+  const buffer = new ArrayBuffer(44 + 256_000), view = new DataView(buffer);
+  const write = (offset, text) => [...text].forEach((letter, index) => view.setUint8(offset + index, letter.charCodeAt(0)));
+  write(0, "RIFF"); view.setUint32(4, buffer.byteLength - 8, true); write(8, "WAVE"); write(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 16_000, true); view.setUint32(28, 32_000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  write(36, "data"); view.setUint32(40, 256_000, true);
+  return buffer;
+}
+
+function updateWorkspaceActive(active, paused = false) {
+  const session = useStore.getState().session;
+  useStore.setState({ session: { ...session, isActive: active, isPaused: paused,
+    status: { kind: paused ? "paused" : active ? "listening" : "idle" } } });
+}
+
+async function invokeWorkspace(command, args = {}) {
+  const owner = workspace;
+  owner.counts[command] = (owner.counts[command] ?? 0) + 1;
+  window.layoutFixtureRequests[command] = (window.layoutFixtureRequests[command] ?? 0) + 1;
+  owner.actions.push({ command, args: structuredClone(args) });
+  if (owner.actions.length > 128) owner.actions.shift();
+  if (heldCommands.delete(command)) {
+    const id = ++workspaceRequestId;
+    const result = await new Promise((resolve, reject) => pendingWorkspaceRequests.set(id, { command, resolve, reject }));
+    if (result.override) return result.value;
+  }
+  const delay = Number(fixture.workspaceDelayMs) || 0;
+  if (delay > 0) await new Promise(resolve => setTimeout(resolve, Math.min(delay, 10_000)));
+  if (owner !== workspace) throw new Error("fixture_case_replaced");
+  if (fixture.rejectCommands?.includes(command)) throw new Error("fixture_requested_failure");
+  if (command === "support_diagnostics") {
+    if (fixture.diagnostics === "load-error") throw new Error("fixture_diagnostic_unavailable");
+    return diagnosticReport();
+  }
+  if (command === "app_open_support_issue") return { report: diagnosticReport(), requiresPaste: Boolean(fixture.requiresPaste) };
+  if (command === "session_archive_state") {
+    if (owner.scenario === "read-error" || fixture.failArchiveRead) throw new Error("fixture_archive_unavailable");
+    return structuredClone(owner.archive);
+  }
+  if (command === "session_history_list") {
+    if (fixture.failHistoryList) throw new Error("fixture_history_unavailable");
+    return structuredClone(owner.history);
+  }
+  if (command === "session_transcript_page" || command === "session_history_page") {
+    if (owner.scenario === "read-error" || fixture.failTranscriptRead) throw new Error("fixture_transcript_unavailable");
+    return transcriptPage(command === "session_history_page" ? owner.transcripts[args.id] ?? [] : owner.current, args.query, args.page);
+  }
+  if (command === "session_history_audio") {
+    if (fixture.failAudioRead) throw new Error("fixture_audio_unavailable");
+    const item = owner.history.find(item => item.id === args.id);
+    if (!item?.hasAudio || (args.audioSource && !item.audioSources.includes(args.audioSource))) throw new Error("fixture_audio_unavailable");
+    return syntheticWav();
+  }
+  if (command === "session_archive_audio") {
+    if (fixture.failAudioRead || useStore.getState().session.isActive || !owner.archive.audioBytes) throw new Error("fixture_audio_unavailable");
+    return syntheticWav();
+  }
+  if (command === "session_history_delete") {
+    if (owner.scenario === "delete-fail" || fixture.failDelete) throw new Error("fixture_delete_failed");
+    owner.history = owner.history.filter(item => item.id !== args.id);
+    delete owner.transcripts[args.id];
+    return;
+  }
+  if (command === "session_history_rename") {
+    if (fixture.failRename) throw new Error("fixture_rename_failed");
+    const item = owner.history.find(item => item.id === args.id);
+    if (!item) throw new Error("fixture_history_unavailable");
+    item.title = args.title.trim() || undefined;
+    return;
+  }
+  if (command === "session_export") {
+    if (fixture.failExport) throw new Error("fixture_export_failed");
+    return owner.scenario !== "export-cancel" && fixture.exportResult !== false;
+  }
+  if (command === "session_archive_clear") {
+    if (fixture.failClear) throw new Error("fixture_clear_failed");
+    owner.current = [];
+    owner.archive = { ...owner.archive, transcriptCount: 0, audioBytes: 0, audioSources: [] };
+    return;
+  }
+  updateWorkspaceActive(command !== "session_stop", command === "session_pause");
+}
+
+// A local clipboard stub keeps Copy review away from the user's clipboard.
+Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+  writeText: async value => {
+    if (fixture.failCopy) throw new Error("fixture_clipboard_unavailable");
+    window.layoutCopiedValue = value;
+  },
+  write: async items => {
+    if (fixture.failCopy) throw new Error("fixture_clipboard_unavailable");
+    window.layoutCopiedValue = await (await items[0].getType("text/plain")).text();
+  },
+} });
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 window.__TAURI_INTERNALS__ = {
   metadata: { currentWindow: { label: "settings" }, currentWebview: { label: "settings" } },
   transformCallback: () => 0,
   unregisterCallback: () => {},
   invoke: async (command, args) => {
+    if (workspaceCommands.has(command)) return invokeWorkspace(command, args);
+    if (command === "development_debug_snapshot") return { trace: { available: false } };
+    if (command === "app_is_ui_test") return true;
     if (command === "get_apple_speech_support") return fixture.appleSupport ?? { available: false, languages: [] };
     if (command === "prepare_apple_speech_language") {
       window.layoutFixtureRequests.speechPrepare += 1;
@@ -207,9 +410,12 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 let generation = 0;
 window.applyLayoutCase = async next => {
   fixture = { ...next };
+  resetWorkspace(next);
   window.layoutFixtureRequests = { profileCreate: 0, translationStatus: 0, translationPrepare: 0, speechPrepare: 0, speechSave: 0, credentialSave: 0, credentialReveal: 0, connectionCheck: 0 };
   Object.defineProperty(navigator, "userAgent", { configurable: true, value: next.platform === "windows" ? "Windows NT 10.0" : next.platform === "macos" ? "Macintosh" : "Linux x86_64" });
-  const active = ["receiving", "silent", "noData"].includes(next.state);
+  const active = next.active ?? (next.diagnostics
+    ? ["listening", "silent", "translation-wait", "rate-limit", "recovered"].includes(next.diagnostics)
+    : ["receiving", "silent", "noData"].includes(next.state));
   document.body.dataset.window = next.surface === "overlay" ? "overlay-control" : "settings";
   document.documentElement.dataset.platform = next.platform;
   document.documentElement.lang = next.language === "zh" ? "zh-CN" : next.language;
@@ -228,7 +434,9 @@ window.applyLayoutCase = async next => {
       microphoneInputAvailable: next.platform === "macos", windowsAudioSource: next.state === "missing" ? "removed-output" : "fixture-output",
       sourceLanguage, targetLanguage,
       ...next.subtitleAppearance,
-      ...(next.editor || next.surface || next.listProfiles || next.provider ? { profiles: next.profiles ?? (next.listProfiles
+      ...(next.sessions ? { retainSessionHistory: next.retainHistory ?? next.sessions !== "empty",
+        recordSessionAudio: next.recordAudio ?? false, audioInput: next.audioInput ?? "system" } : {}),
+      ...(next.editor || next.surface || next.listProfiles || next.provider || next.sessions || next.diagnostics ? { profiles: next.profiles ?? (next.listProfiles
         ? [profile, { ...profile, id: "layout-other", name: next.profileName ?? "Other configuration" }]
         : [profile]), activeProfileId: next.activeProfileId ?? profile.id } : {}),
       ...(next.emptyProfiles ? { profiles: [], activeProfileId: "" } : {}),
@@ -237,9 +445,13 @@ window.applyLayoutCase = async next => {
         targetLanguages: next.targetLanguages ?? (next.textTranslation === "apple" ? ["original", ...next.appleTranslationSupport?.targetLanguages ?? []] : ["original"]),
         appleSpeechSupportRevision: 1, customSpeechSourceLanguages: profile.customSpeechSourceLanguages } } : {}),
     },
-    session: { ...initial.session, isActive: active || next.state === "paused", isPaused: next.state === "paused", status: { kind: active ? "listening" : next.state === "paused" ? "paused" : "idle" } },
+    session: { ...initial.session, isActive: active || next.state === "paused", isPaused: next.state === "paused",
+      status: { kind: next.diagnostics === "permission" ? "error" : active ? "listening" : next.state === "paused" ? "paused" : "idle" } },
   });
-  flushSync(() => root.render(React.createElement(next.surface === "overlay" ? FixtureOverlayControl : SettingsView, { key: ++generation })));
+  const content = React.createElement(next.surface === "overlay" ? FixtureOverlayControl : SettingsView, { key: ++generation });
+  // Match main.tsx's media/ref lifecycle for the workspace under review.
+  flushSync(() => root.render(["session-export", "diagnostics"].includes(next.category)
+    ? React.createElement(React.StrictMode, null, content) : content));
   await settle();
   if (next.profileDeleteConfirmation) {
     document.querySelectorAll(".service-row__more")[1].click();
@@ -300,6 +512,41 @@ window.applyLayoutCase = async next => {
     }
   }
 };
+// apply() starts a fresh case. configure()/setActive() preserve mounted views,
+// selected history and pending operations for lifecycle/race review.
+window.workspaceFixture = {
+  cases: { diagnostics: diagnosticCases, sessions: sessionCases },
+  apply: patch => window.applyLayoutCase({ ...fixture, ...patch }),
+  configure: patch => {
+    if (patch.diagnostics && !diagnosticCases.includes(patch.diagnostics)) throw new Error("fixture_unknown_diagnostic_case");
+    Object.assign(fixture, patch);
+  },
+  setDiagnostics: scenario => {
+    if (!diagnosticCases.includes(scenario)) throw new Error("fixture_unknown_diagnostic_case");
+    fixture.diagnostics = scenario;
+  },
+  setActive: (active, paused = false) => updateWorkspaceActive(active, paused),
+  snapshot: () => structuredClone({ diagnostics: fixture.diagnostics ?? "idle", sessions: workspace.scenario,
+    active: useStore.getState().session.isActive, history: workspace.history, archive: workspace.archive,
+    counts: workspace.counts, actions: workspace.actions, copiedValue: window.layoutCopiedValue ?? null,
+    pending: [...pendingWorkspaceRequests].map(([id, request]) => ({ id, command: request.command })) }),
+  holdNext: command => {
+    if (!workspaceCommands.has(command)) throw new Error("fixture_unknown_command");
+    heldCommands.add(command);
+  },
+  resolve: (id, ...value) => {
+    const request = pendingWorkspaceRequests.get(id);
+    if (!request) throw new Error("fixture_unknown_request");
+    pendingWorkspaceRequests.delete(id);
+    request.resolve({ override: value.length > 0, value: value[0] });
+  },
+  reject: (id, reason = "fixture_requested_failure") => {
+    const request = pendingWorkspaceRequests.get(id);
+    if (!request) throw new Error("fixture_unknown_request");
+    pendingWorkspaceRequests.delete(id);
+    request.reject(new Error(reason));
+  },
+};
 const query = new URLSearchParams(location.search);
 // Explicit review cases and Linux playback-stream parameters share this local fixture.
 const reviewCase = query.get("review");
@@ -307,6 +554,10 @@ await window.applyLayoutCase({ platform: query.get("platform") ?? "windows", lan
   state: query.get("state") ?? "idle", theme: query.get("theme") ?? "light", deviceName: "Fixture headphones",
   category: query.get("category") ?? undefined, surface: query.get("surface") ?? undefined,
   streamState: query.get("streamState") ?? undefined,
+  diagnostics: query.get("diagnostics") ?? undefined, sessions: query.get("sessions") ?? undefined,
+  ...(query.has("active") ? { active: query.get("active") === "1" } : {}),
+  ...(query.has("failCopy") ? { failCopy: true } : {}),
+  ...(query.has("delayMs") ? { workspaceDelayMs: Number(query.get("delayMs")) } : {}),
   ...(query.has("selectedStream") ? { systemAudioTarget: { kind: "application", id: "fixture-stream-1",
     name: "Fixture Player · Very long playback stream 音频流 ストリーム ".repeat(3) } } : {}),
   ...(reviewCase ? JSON.parse(reviewCase) : {}),

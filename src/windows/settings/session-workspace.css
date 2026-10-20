@@ -1,0 +1,103 @@
+#session-export .session-history__heading h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#session-export .session-export__details { margin-top: 20px; padding-top: 20px; }
+.session-workspace__library-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.session-workspace__library-tools input,
+.session-workspace__name-field input,
+.session-workspace__manual-copy {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--settings-border-strong);
+  border-radius: 7px;
+  outline: none;
+  background: var(--settings-control);
+  color: var(--settings-text);
+  font: inherit;
+  font-size: 13px;
+}
+.session-workspace__library-tools input { width: 100%; flex: 1; }
+.session-workspace__library-tools > .settings-select-wrap { max-width: 48%; }
+.session-workspace__library-tools input:focus-visible,
+.session-workspace__name-field input:focus-visible,
+.session-workspace__manual-copy:focus-visible { outline: 2px solid var(--settings-text-muted); outline-offset: 2px; }
+.session-workspace__catalog { max-height: 240px; overflow-y: auto; scrollbar-gutter: stable; }
+#session-export .session-history__item { gap: 12px; min-height: 42px; padding: 8px 10px; }
+#session-export .session-history__item.is-selected { box-shadow: inset 2px 0 var(--settings-text-muted); }
+.session-workspace__session-name { min-width: 0; overflow-wrap: anywhere; }
+.session-workspace__session-name time { display: block; margin-top: 3px; color: var(--settings-text-faint); font-size: 11px; }
+#session-export .session-history__item small { flex-shrink: 0; max-width: 45%; text-align: right; font-size: 11px; }
+#session-export .session-history__group h4 { font-size: 11px; }
+#session-export .session-transcript__heading { align-items: flex-start; gap: 16px; padding: 8px 0 20px; }
+#session-export .session-transcript__heading > div { min-width: 0; overflow-wrap: anywhere; }
+#session-export .session-transcript__heading h3 { font-size: 18px; line-height: 1.5; font-weight: 600; }
+#session-export .session-export__details--reader { margin-top: 0; padding-top: 0; border-top: 0; }
+#session-export .session-export__details--reader .session-transcript { margin-top: 0; }
+.session-workspace__back {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 0;
+  margin-bottom: 16px; border: 0; background: transparent; color: var(--settings-text-muted);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.session-workspace__back:hover { color: var(--settings-text); }
+.session-workspace__back:focus-visible { outline: 2px solid var(--settings-text-muted); outline-offset: 3px; border-radius: 3px; }
+.session-workspace__reader-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.session-workspace__reader-actions .service-row__action { min-height: 34px; font-size: 12px; }
+.session-workspace__reader-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--settings-text-faint); }
+.session-workspace__audio-source { font-size: 12px; color: var(--settings-text-muted); }
+#session-export .session-transcript__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 18px; margin-bottom: 8px; }
+#session-export .session-transcript__toolbar > input { flex: 1; min-width: 80px; width: auto; }
+#session-export .session-transcript__toolbar > .settings-select-wrap { width: auto; max-width: 52%; flex: 0 1 auto; }
+#session-export .session-transcript__toolbar .settings-select-wrap .mimi-select { width: auto; }
+#session-export .session-transcript__toolbar .session-workspace__search-count { flex-basis: 100%; font-size: 11px; }
+#session-export .session-transcript__entry { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 20px 0; }
+#session-export .session-transcript__meta { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
+#session-export .session-transcript__pair { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+#session-export .session-transcript__pair p { font-size: 14px; line-height: 1.8; margin-bottom: 0; }
+#session-export .session-transcript__pair span { font-size: 10px; }
+#session-export .session-transcript__pair > div:first-child:not(:last-child) p { color: var(--settings-text-muted); }
+#session-export .session-transcript__audio-source { margin: 0; font-size: 11px; font-weight: 400; color: var(--settings-text-faint); }
+.session-workspace__copy {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--settings-text-muted);
+  cursor: pointer;
+}
+.session-workspace__copy:hover { background: var(--settings-selection-soft); border-color: var(--settings-border); }
+.session-workspace__copy:focus-visible { outline: 2px solid var(--settings-text-muted); }
+.session-workspace__copy:disabled { opacity: .4; cursor: default; }
+.session-workspace__copy svg { width: 14px; height: 14px; }
+.session-workspace__name-field { display: block; color: var(--settings-text); font-size: 13px; }
+.session-workspace__name-field > .settings-help-control { margin-left: 6px; }
+.session-workspace__name-field input { display: block; width: 100%; box-sizing: border-box; margin-top: 10px; }
+.session-workspace__export-scope { font-size: 13px; line-height: 1.6; color: var(--settings-text-muted); margin: 0 0 16px; }
+.session-workspace__export-options { display: grid; gap: 14px; }
+#session-export .session-transcript > .settings-row + .settings-row { margin-top: 12px; }
+.session-workspace__manual-copy { width: 100%; min-height: 160px; box-sizing: border-box; resize: vertical; }
+#session-export .session-export__empty,
+#session-export .session-transcript__empty { font-size: 13px; }
+@media (hover: hover) and (pointer: fine) {
+  .session-workspace__copy { opacity: 0; }
+  .session-transcript__entry:hover .session-workspace__copy,
+  .session-transcript__entry:focus-within .session-workspace__copy { opacity: 1; }
+}
+@media (max-width: 600px) {
+  .session-workspace__library-tools { flex-wrap: wrap; }
+  .session-workspace__library-tools input { flex-basis: 100%; }
+  .session-workspace__library-tools > .settings-select-wrap { margin-left: auto; max-width: 100%; }
+  #session-export .session-transcript__heading { flex-wrap: wrap; gap: 12px; }
+  #session-export .session-transcript__heading > div:first-child { flex-basis: 100%; }
+  .session-workspace__reader-actions { margin-left: auto; }
+}

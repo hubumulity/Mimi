@@ -1,7 +1,9 @@
 //! Local opt-in transcript history. Files contain user content and are never logged.
 use crate::core::audio_input::AudioSource;
 use crate::core::models::SubtitlePair;
-use crate::core::session_archive::{SavedTranscript, TranscriptPage, AUDIO_BYTE_LIMIT};
+use crate::core::session_archive::{
+    SavedTranscript, TranscriptExportOptions, TranscriptPage, AUDIO_BYTE_LIMIT,
+};
 use serde::{de, Deserialize, Serialize};
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
@@ -9,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 const MAX_TRANSCRIPT_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_TITLE_CHARACTERS: usize = 120;
+const MAX_TITLE_FILE_BYTES: u64 = 4096;
 
 #[derive(Clone)]
 pub struct SessionHistory {
@@ -22,11 +26,19 @@ pub struct SessionHistory {
 pub struct HistoryItem {
     pub audio_sources: Vec<AudioSource>,
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub started_at_ms: u64,
     pub ended_at_ms: u64,
     pub count: usize,
     pub limited: bool,
     pub has_audio: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+struct HistoryTitle {
+    version: u32,
+    title: String,
 }
 
 #[derive(Deserialize)]
@@ -231,6 +243,45 @@ impl SessionHistory {
             ));
         }
         Ok(metadata)
+    }
+
+    fn read_title(&self, id: &str) -> io::Result<Option<String>> {
+        let _io = self.io.lock().unwrap();
+        let path = self.path(id, "meta.json")?;
+        let file = match fs::File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        // Read a bounded amount even if an external writer grows the sidecar.
+        let mut bytes = Vec::new();
+        file.take(MAX_TITLE_FILE_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_TITLE_FILE_BYTES {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid title"));
+        }
+        let metadata: HistoryTitle = serde_json::from_slice(&bytes)?;
+        if metadata.version != 1 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid title"));
+        }
+        normalized_title(&metadata.title)
+    }
+
+    pub fn rename(&self, id: &str, title: &str) -> io::Result<()> {
+        let title = normalized_title(title)?;
+        let path = self.path(id, "meta.json")?;
+        let _io = self.io.lock().unwrap();
+        // Never create detached annotations for an absent or deleted session.
+        self.open_transcript(id)?;
+        let Some(title) = title else {
+            return remove_if_present(&path);
+        };
+        let mut temporary = tempfile::NamedTempFile::new_in(&self.directory)?;
+        serde_json::to_writer(&mut temporary, &HistoryTitle { version: 1, title })
+            .map_err(io::Error::other)?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path).map_err(|error| error.error)?;
+        Ok(())
     }
 
     pub fn begin(&self, id: &str, started_at_ms: u64) -> io::Result<()> {
@@ -489,6 +540,9 @@ impl SessionHistory {
                 audio_sources,
                 has_audio,
                 count: saved.entries,
+                // An optional, damaged annotation must not hide the saved
+                // transcript or prevent its recovery/export.
+                title: self.read_title(&id).unwrap_or(None),
                 id,
                 started_at_ms: saved.started_at_ms,
                 ended_at_ms: saved.ended_at_ms,
@@ -506,6 +560,20 @@ impl SessionHistory {
     pub fn export_transcript(&self, id: &str) -> io::Result<Vec<u8>> {
         self.read(id)?
             .export()
+            .map(String::into_bytes)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no transcript"))
+    }
+
+    pub fn export_transcript_with_options(
+        &self,
+        id: &str,
+        options: TranscriptExportOptions,
+    ) -> io::Result<Vec<u8>> {
+        if options == TranscriptExportOptions::default() {
+            return self.export_transcript(id);
+        }
+        self.read(id)?
+            .export_with_options(options)
             .map(String::into_bytes)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no transcript"))
     }
@@ -596,6 +664,7 @@ impl SessionHistory {
         if !path.is_file() {
             return Err(io::Error::new(io::ErrorKind::NotFound, "session missing"));
         }
+        remove_if_present(&self.path(id, "meta.json")?)?;
         self.remove_audio_files(id)?;
         let journal_path = self.path(id, "jsonl")?;
         if journal_path.exists() && journal_path != path {
@@ -609,12 +678,29 @@ impl SessionHistory {
             return Ok(());
         }
         let _io = self.io.lock().unwrap();
+        remove_if_present(&self.path(id, "meta.json")?)?;
         self.remove_audio_files(id)?;
         let path = self.path(id, "jsonl")?;
         if path.exists() {
             fs::remove_file(path)?;
         }
         Ok(())
+    }
+}
+
+fn normalized_title(title: &str) -> io::Result<Option<String>> {
+    let title = title.trim();
+    if title.chars().count() > MAX_TITLE_CHARACTERS || title.chars().any(char::is_control) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid title"));
+    }
+    Ok((!title.is_empty()).then(|| title.to_owned()))
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -716,6 +802,147 @@ fn wav_header(rate: u32, length: u32) -> [u8; 44] {
 mod tests {
     use super::*;
     use crate::core::models::SubtitlePair;
+
+    fn history_with_saved_pair() -> (tempfile::TempDir, SessionHistory, String) {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().join("history"), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        history
+            .append_pair(
+                &id,
+                &SubtitlePair::new("Synthetic source".into(), "译文".into(), 150),
+            )
+            .unwrap();
+        history.finalize(&id, 200, false).unwrap();
+        (directory, history, id)
+    }
+
+    #[test]
+    fn title_updates_are_private_bounded_and_do_not_rewrite_saved_content() {
+        let (_directory, history, id) = history_with_saved_pair();
+        let transcript = fs::read(history.path(&id, "json").unwrap()).unwrap();
+        assert!(history.list().unwrap()[0].title.is_none());
+        history.rename(&id, "  日本語 / 中文 😀  ").unwrap();
+        assert_eq!(
+            history.list().unwrap()[0].title.as_deref(),
+            Some("日本語 / 中文 😀")
+        );
+        assert_eq!(
+            fs::read(history.path(&id, "json").unwrap()).unwrap(),
+            transcript
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(history.path(&id, "meta.json").unwrap())
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600,
+            );
+        }
+        let title = "😀".repeat(MAX_TITLE_CHARACTERS);
+        history.rename(&id, &title).unwrap();
+        for invalid in ["😀".repeat(MAX_TITLE_CHARACTERS + 1), "Line\nbreak".into()] {
+            assert!(history.rename(&id, &invalid).is_err());
+            assert_eq!(
+                history.list().unwrap()[0].title.as_deref(),
+                Some(title.as_str())
+            );
+        }
+        assert!(history.rename("../escape", "Title").is_err());
+        assert!(history
+            .rename(&uuid::Uuid::new_v4().to_string(), "Title")
+            .is_err());
+        assert_eq!(fs::read_dir(&history.directory).unwrap().count(), 2);
+        history.rename(&id, " \t ").unwrap();
+        assert!(history.list().unwrap()[0].title.is_none());
+        assert!(!history.path(&id, "meta.json").unwrap().exists());
+        history.rename(&id, "Delete with session").unwrap();
+        history.delete(&id).unwrap();
+        assert_eq!(fs::read_dir(&history.directory).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn damaged_or_oversized_titles_do_not_hide_readable_sessions() {
+        let (_directory, history, id) = history_with_saved_pair();
+        for contents in [
+            b"invalid json".to_vec(),
+            br#"{"version":2,"title":"Unsupported"}"#.to_vec(),
+            vec![b'x'; MAX_TITLE_FILE_BYTES as usize + 1],
+        ] {
+            fs::write(history.path(&id, "meta.json").unwrap(), contents).unwrap();
+            let items = history.list().unwrap();
+            assert_eq!(items.len(), 1);
+            assert!(items[0].title.is_none());
+            assert_eq!(history.page(&id, "", 0).unwrap().total, 1);
+        }
+        history.rename(&id, "Recovered title").unwrap();
+        assert_eq!(
+            history.list().unwrap()[0].title.as_deref(),
+            Some("Recovered title")
+        );
+    }
+
+    #[test]
+    fn failed_title_destination_leaves_transcript_and_no_temporary_copy() {
+        let (_directory, history, id) = history_with_saved_pair();
+        let destination = history.path(&id, "meta.json").unwrap();
+        fs::create_dir(&destination).unwrap();
+        let before = history.export_transcript(&id).unwrap();
+        assert!(history.rename(&id, "Cannot replace a directory").is_err());
+        assert!(destination.is_dir());
+        assert_eq!(history.export_transcript(&id).unwrap(), before);
+        assert_eq!(fs::read_dir(&history.directory).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn audio_only_and_recovered_sessions_can_have_titles() {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().join("history"), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        history
+            .append_pcm_from(&id, AudioSource::System, 16000, &[1, 0])
+            .unwrap();
+        history.rename(&id, "Audio only").unwrap();
+        let items = history.list().unwrap();
+        assert_eq!(items[0].count, 0);
+        assert!(items[0].has_audio);
+        assert_eq!(items[0].title.as_deref(), Some("Audio only"));
+        history.finalize(&id, 200, false).unwrap();
+        let restored = SessionHistory::new(history.directory.clone(), false);
+        assert_eq!(
+            restored.list().unwrap()[0].title.as_deref(),
+            Some("Audio only")
+        );
+        restored.delete(&id).unwrap();
+        assert_eq!(fs::read_dir(&history.directory).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn saved_transcript_export_options_use_the_shared_formatter() {
+        use crate::core::session_archive::{TranscriptExportContent, TranscriptExportFormat};
+        let (_directory, history, id) = history_with_saved_pair();
+        let options = TranscriptExportOptions {
+            format: TranscriptExportFormat::Markdown,
+            content: TranscriptExportContent::Translation,
+            include_timestamps: false,
+        };
+        let text = String::from_utf8(
+            history
+                .export_transcript_with_options(&id, options)
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(text.starts_with("# Mimi transcript"));
+        assert!(text.contains("译文"));
+        assert!(!text.contains("Synthetic source"));
+        assert!(!text.contains("1970-01-01"));
+    }
 
     #[derive(Default)]
     struct TranscriptWriter {

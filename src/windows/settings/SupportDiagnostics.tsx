@@ -1,15 +1,17 @@
 import { SUPPLEMENTAL_EN } from "../../lib/locales/supplemental-schema";
 import { supplemental } from "../../lib/locales/supplemental";
 import { SettingsHelp } from "./SettingsHelp";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AlertCircle, ChevronRight, Copy, ExternalLink, RotateCw } from "lucide-react";
 import { useSettingsToast } from "./useSettingsToast";
 import { invoke } from "@tauri-apps/api/core";
-import { effectiveUiLanguage, I18N } from "../../lib/i18n";
+import { effectiveUiLanguage, I18N, subscribeUiLanguage, type ResolvedUiLanguage } from "../../lib/i18n";
 import { isTauri } from "../../lib/ipc";
 import { useDocumentVisibility } from "../../lib/useDocumentVisibility";
 import { writeDiagnosticClipboard } from "../../lib/diagnosticClipboard";
-import { supportDiagnosticSummary, type DiagnosticStatus, type DiagnosticSummaryEvent } from "./supportDiagnosticSummary";
+import { diagnosticAudioState, diagnosticNextStep, supportDiagnosticSummary, type DiagnosticFailureCategory, type DiagnosticStatus, type DiagnosticSummaryEvent } from "./supportDiagnosticSummary";
+import { diagnosticsCopy, type DiagnosticsCopy } from "./diagnosticsCopy";
+import "./support-diagnostics.css";
 
 const copy = {
   en: SUPPLEMENTAL_EN.SupportDiagnostics_copy,
@@ -59,11 +61,19 @@ function statusLabel(status: DiagnosticStatus): string {
   }[status];
 }
 
-function eventLabel(event: DiagnosticSummaryEvent, text: typeof copy.en | typeof copy.zh | typeof copy.ja): string {
+function failureLabel(category: DiagnosticFailureCategory, text: typeof copy.en | typeof copy.zh | typeof copy.ja, added: DiagnosticsCopy): string {
+  if (category === "permission") return added.permission;
+  if (category === "user_stopped") return added.userStopped;
+  if (category === "start") return added.startFailed;
+  if (category === "device_unavailable") return added.deviceUnavailable;
+  return text.failures[category];
+}
+
+function eventLabel(event: DiagnosticSummaryEvent, text: typeof copy.en | typeof copy.zh | typeof copy.ja, added: DiagnosticsCopy): string {
   switch (event.kind) {
     case "status": return statusLabel(event.status);
     case "lifecycle": return text.lifecycle[event.action];
-    case "failure": return text.failures[event.category];
+    case "failure": return failureLabel(event.category, text, added);
     case "recovery": return text.recovery[event.action];
     case "translation_backoff": return event.reason === "rateLimited"
       ? event.retryScheduled ? I18N.overlay.translationRateLimited : I18N.overlay.translationLimited
@@ -71,7 +81,21 @@ function eventLabel(event: DiagnosticSummaryEvent, text: typeof copy.en | typeof
   }
 }
 
-export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
+function relativeTime(milliseconds: number, language: ResolvedUiLanguage): string {
+  const seconds = Math.floor(milliseconds / 1000);
+  const unit = seconds >= 3600 ? "hour" : seconds >= 60 ? "minute" : "second";
+  const value = unit === "hour" ? Math.floor(seconds / 3600) : unit === "minute" ? Math.floor(seconds / 60) : seconds;
+  return new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(-value, unit);
+}
+
+export interface SupportDiagnosticsProps {
+  visible?: boolean;
+  onOpenAudio?: () => void;
+  onOpenServices?: () => void;
+}
+
+export function SupportDiagnostics({ visible = false, onOpenAudio, onOpenServices }: SupportDiagnosticsProps) {
+  const language = useSyncExternalStore(subscribeUiLanguage, effectiveUiLanguage);
   const documentVisible = useDocumentVisibility();
   const pageVisible = visible && documentVisible;
   const [report, setReport] = useState<string | null>(null);
@@ -79,6 +103,9 @@ export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
   const { beginToast, clearToast } = useSettingsToast();
   const [manualCopy, setManualCopy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [eventsExpanded, setEventsExpanded] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [readFailed, setReadFailed] = useState(false);
   const operation = useRef(false);
   const request = useRef(0);
   const lifetime = useRef(0);
@@ -112,17 +139,26 @@ export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
     const notify = (value: Feedback) => {
       if (value && currentRequest === request.current && currentLifetime === lifetime.current) showToast(copy[effectiveUiLanguage()][value], isFailure(value));
     };
+    const applyReport = (value: string) => {
+      if (currentRequest !== request.current || currentView !== viewGeneration.current) return;
+      setReport(value);
+      setUpdatedAt(new Date());
+      setReadFailed(false);
+    };
+    const failedRead = () => {
+      if (currentRequest === request.current && currentView === viewGeneration.current) setReadFailed(true);
+    };
     try {
       if (action === "issue") {
         // Backend builds the fixed public destination from typed whitelist facts.
         const issue = await invoke<SupportIssue>("app_open_support_issue");
         const value = diagnosticReport(issue.report);
-        if (currentRequest === request.current && currentView === viewGeneration.current) setReport(value);
+        applyReport(value);
         notify(issue.requiresPaste ? "paste" : "opened");
       } else {
         const value = invoke<string>("support_diagnostics").then((result) => {
           const report = diagnosticReport(result);
-          if (currentRequest === request.current && currentView === viewGeneration.current) setReport(report);
+          applyReport(report);
           return report;
         });
         if (action === "refresh") {
@@ -136,11 +172,11 @@ export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
               await value;
               if (currentRequest === request.current && currentLifetime === lifetime.current) setManualCopy(true);
               notify("failed");
-            } catch { notify("prepareFailed"); }
+            } catch { failedRead(); notify("prepareFailed"); }
           }
         }
       }
-    } catch { notify(action === "issue" ? "openFailed" : "prepareFailed"); }
+    } catch { if (action !== "issue") failedRead(); notify(action === "issue" ? "openFailed" : "prepareFailed"); }
     finally {
       if (currentRequest === request.current) {
         operation.current = false;
@@ -174,18 +210,43 @@ export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
       if (queuedEntryRefresh.current === refresh) queuedEntryRefresh.current = null;
     };
   }, [pageVisible, perform, clearToast]);
-  const text = copy[effectiveUiLanguage()];
+  const text = copy[language];
+  const added = diagnosticsCopy[language];
   const summary = useMemo(() => supportDiagnosticSummary(report), [report]);
   const busy = pendingAction !== null;
+  const nextStep = summary && diagnosticNextStep(summary);
+  const nextAction = nextStep === "audio" ? onOpenAudio : nextStep === "services" ? onOpenServices : undefined;
+  const nextLabel = nextStep === "audio" ? added.openAudio : added.openServices;
+  const nextHelp = nextStep === "audio" ? added.audioAction : added.servicesAction;
+  const audioState = summary ? diagnosticAudioState(summary) : "unknown";
+  const audioLabel = { unavailable: added.unavailable, past: added.pastAudio, unknown: added.notObserved, sound: added.sound, quiet: added.quiet, noAudio: added.noAudio }[audioState];
+  const live = summary?.status === "listening";
+  const translationState = !live ? added.notObserved : summary?.translationRecovery
+    ? eventLabel({ kind: "translation_backoff", sequence: 0, elapsedMs: 0, ...summary.translationRecovery }, text, added)
+    : summary?.translationTimedOut ? added.timedOut
+      : summary?.translationPending ? added.waiting
+        : summary?.translationPreviewPending ? added.previewWaiting
+          : summary?.translationPending === false && summary.translationPreviewPending === false ? added.noPending : added.notObserved;
+  const events = summary ? eventsExpanded ? summary.allEvents : summary.recentEvents : [];
   if (!isTauri) return null;
-  return <section className="settings-support-diagnostics settings-diagnostics-page" aria-label={text.title} aria-busy={busy}>
-    {summary && <div className="settings-diagnostic-overview">
-      <dl className="settings-diagnostic-summary">
-        <div><dt>{text.status}</dt><dd className={`settings-diagnostic-status${summary.status === "error" ? " is-error" : ""}`}><span aria-hidden="true" />{statusLabel(summary.status)}</dd></div>
-        {summary.status === "listening" && summary.apiLatencyMs !== null && <div><dt>{I18N.overlay.apiLatency}<SettingsHelp text={I18N.overlay.apiLatencyHelp} label={I18N.settings.helpLabel} /></dt><dd>{summary.apiLatencyMs}<span className="settings-diagnostic-unit"> ms</span></dd></div>}
-        {summary.status === "listening" && summary.translationLatencyMs !== null && <div><dt>{summary.translationLatencyKind === "follow" ? I18N.overlay.translationFollowLatency : I18N.overlay.translationLatency}<SettingsHelp text={summary.translationLatencyKind === "follow" ? I18N.overlay.translationFollowLatencyHelp : I18N.overlay.translationLatencyHelp} label={I18N.settings.helpLabel} /></dt><dd>{summary.translationLatencyMs}<span className="settings-diagnostic-unit"> ms</span></dd></div>}
-      </dl>
-      {summary.lastError && <p className="settings-diagnostic-error"><AlertCircle size={16} aria-hidden="true" /><span>{text.lastError}</span><strong>{text.failures[summary.lastError]}</strong></p>}
+  return <section className="settings-support-diagnostics settings-diagnostics-page support-diagnostics" aria-label={text.title} aria-busy={busy}>
+    {summary && <header className="diagnostics-overview">
+      <div className="diagnostics-overview__heading"><span>{added.snapshot}</span><SettingsHelp text={added.snapshotHelp} label={I18N.settings.helpLabel} /></div>
+      <div className="diagnostics-overview__body">
+        <dl className="settings-diagnostic-summary"><div><dt>{text.status}</dt><dd className={`settings-diagnostic-status${summary.status === "error" ? " is-error" : ""}`}><span aria-hidden="true" />{statusLabel(summary.status)}</dd></div></dl>
+        {updatedAt && <span className="diagnostics-updated">{added.updated} <time dateTime={updatedAt.toISOString()}>{updatedAt.toLocaleTimeString(language)}</time></span>}
+      </div>
+      {readFailed && <p className="diagnostics-read-state" role="alert">{added.staleRead}</p>}
+      {summary.lastError && <div className={`diagnostics-last-error${summary.status === "error" && !summary.recoveredAfterError && summary.lastError !== "user_stopped" ? " is-current" : ""}`}>
+        <AlertCircle size={16} aria-hidden="true" /><div><span>{added.recentError}{summary.lastErrorAgeMs !== null && <> · {relativeTime(summary.lastErrorAgeMs, language)}</>}</span><strong>{failureLabel(summary.lastError, text, added)}</strong>{summary.recoveredAfterError && <span>{added.recoveredAfter}</span>}</div>
+      </div>}
+    </header>}
+    {!summary && (busy || readFailed || report !== null) && <div className="diagnostics-read-state" role={readFailed && !busy ? "alert" : undefined}>
+      {busy ? text.refreshing : readFailed ? text.prepareFailed : added.unsupported}
+    </div>}
+    {summary && nextAction && !readFailed && <div className="diagnostics-next-step">
+      <div><span>{added.nextStep}</span><p>{nextHelp}</p></div>
+      <button type="button" className="settings-button settings-button--quiet settings-button--compact" data-action={`open-${nextStep}`} disabled={busy} onClick={nextAction}>{nextLabel}<ChevronRight size={14} aria-hidden="true" /></button>
     </div>}
     <div className="settings-diagnostic-toolbar">
       <div className="settings-support-diagnostics__actions">
@@ -197,9 +258,28 @@ export function SupportDiagnostics({ visible = false }: { visible?: boolean }) {
           onClick={() => void perform("copy")}><Copy size={14} aria-hidden="true" /><span>{text.copy}</span></button>
       </div>
     </div>
+    {summary && <section className="diagnostics-facts" aria-label={added.facts}>
+      <h2>{added.facts}</h2>
+      <dl>
+        <div className="diagnostics-fact" data-fact="audio"><dt>{added.audio}<SettingsHelp text={added.audioHelp} label={I18N.settings.helpLabel} /></dt><dd>{audioLabel}{audioState === "past" && summary.capture?.ageMs !== null && summary.capture?.ageMs !== undefined && <span className="diagnostics-secondary">{relativeTime(summary.capture.ageMs, language)}</span>}</dd></div>
+        <div className="diagnostics-fact" data-fact="translation"><dt>{added.translation}</dt><dd>{translationState}</dd></div>
+        <div className="diagnostics-fact" data-fact="records"><dt>{added.records}<SettingsHelp text={added.recordsHelp} label={I18N.settings.helpLabel} /></dt><dd className="diagnostics-counts">
+          {([[added.sourceEvents, summary.textEvents.source], [added.translationEvents, summary.textEvents.translation], [added.confirmedEvents, summary.textEvents.confirmed]] as const).map(([label, value]) => <span key={label}><span>{label}</span><strong>{value === null ? "—" : value.toLocaleString(language)}</strong></span>)}
+        </dd></div>
+        <div className="diagnostics-fact" data-fact="measurements"><dt>{added.measurements}<SettingsHelp text={added.measurementsHelp} label={I18N.settings.helpLabel} /></dt><dd className="diagnostics-measurements">
+          {live && summary.apiLatencyMs !== null && <span><span>{I18N.overlay.apiLatency}<SettingsHelp text={I18N.overlay.apiLatencyHelp} label={I18N.settings.helpLabel} /></span><strong>{summary.apiLatencyMs.toLocaleString(language)} ms</strong></span>}
+          {live && summary.translationLatencyMs !== null && <span><span>{summary.translationLatencyKind === "follow" ? I18N.overlay.translationFollowLatency : I18N.overlay.translationLatency}<SettingsHelp text={summary.translationLatencyKind === "follow" ? I18N.overlay.translationFollowLatencyHelp : I18N.overlay.translationLatencyHelp} label={I18N.settings.helpLabel} /></span><strong>{summary.translationLatencyMs.toLocaleString(language)} ms</strong></span>}
+          {(!live || summary.apiLatencyMs === null && summary.translationLatencyMs === null) && added.notObserved}
+        </dd></div>
+      </dl>
+    </section>}
     {summary && <section className="settings-diagnostic-events" aria-label={text.recent}>
-      <div className="settings-diagnostic-events__heading"><h2>{text.recent}</h2><SettingsHelp text={text.sinceStart} label={I18N.settings.helpLabel} /></div>
-      {summary.recentEvents.length > 0 ? <ol>{summary.recentEvents.map((event, index) => <li key={`${event.sequence}-${index}`} className={event.kind === "failure" ? "is-error" : undefined}><span className="settings-diagnostic-events__time">{(event.elapsedMs / 1000).toFixed(1)} s</span><span className="settings-diagnostic-events__rail" aria-hidden="true" /><span>{eventLabel(event, text)}</span></li>)}</ol> : <p className="settings-diagnostic-events__empty">{text.noEvents}</p>}
+      <div className="settings-diagnostic-events__heading"><h2>{text.recent}</h2><SettingsHelp text={added.eventsHelp} label={I18N.settings.helpLabel} /></div>
+      {events.length > 0 ? <ol id="diagnostic-recent-events">{events.map((event, index) => <li key={`${event.sequence}-${index}`} className={event.kind === "failure" && event.category !== "user_stopped" ? "is-error" : undefined}><span className="settings-diagnostic-events__time" title={`${text.sinceStart}: ${(event.elapsedMs / 1000).toFixed(1)} s`}>{summary.elapsedMs !== null && summary.elapsedMs >= event.elapsedMs ? relativeTime(summary.elapsedMs - event.elapsedMs, language) : `${(event.elapsedMs / 1000).toFixed(1)} s`}</span><span className="settings-diagnostic-events__rail" aria-hidden="true" /><span>{eventLabel(event, text, added)}</span></li>)}</ol> : <p className="settings-diagnostic-events__empty">{text.noEvents}</p>}
+      {(summary.allEvents.length > 6 || (summary.omittedEvents ?? 0) > 0) && <div className="diagnostics-event-footer">
+        {(summary.omittedEvents ?? 0) > 0 && <span>{added.omitted}: {summary.omittedEvents!.toLocaleString(language)}</span>}
+        {summary.allEvents.length > 6 && <button type="button" className="settings-link" aria-expanded={eventsExpanded} aria-controls="diagnostic-recent-events" onClick={() => setEventsExpanded(value => !value)}>{eventsExpanded ? added.showLess : added.showAll}</button>}
+      </div>}
     </section>}
     {report !== null && <details className="settings-diagnostic-preview" open={manualCopy || detailsOpen} onToggle={(event) => { const open = event.currentTarget.open; setDetailsOpen(open); if (!open) setManualCopy(false); }}>
       <summary><ChevronRight size={16} aria-hidden="true" /><span>{text.preview}</span></summary>

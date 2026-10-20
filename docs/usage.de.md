@@ -73,6 +73,12 @@ Unter macOS und Windows build 20348+ kannst du mit der App-Auswahl das Audio ein
 
 Unter Einstellungen → Speichern & Exportieren kannst du Untertitel speichern oder die ausgewählten Audioeingänge aufnehmen. Beide Optionen sind standardmäßig aus. Aktivierte Inhalte werden fortlaufend in private lokale Sitzungsdateien geschrieben; Systemaudio und Mikrofon bleiben getrennt. Ausschalten löscht den entsprechenden Inhalt der aktuellen Sitzung. Bereits gespeicherte Aufzeichnungen musst du ausdrücklich löschen.
 
+Suche gespeicherte Sitzungen nach Namen oder filtere nach Sitzungen mit Text oder Audio. Wähle eine Sitzung zum Lesen aus; Zurück stellt die Listenposition wieder her. Du kannst Original und Übersetzung durchsuchen, eine oder beide Fassungen lesen und einzelne Untertitel kopieren. Die Leseansicht bietet Exportieren und Mehr; unter Mehr kannst du gespeicherte Sitzungen umbenennen oder löschen.
+
+Wähle unter Exportieren eines der verfügbaren Formate TXT, Markdown oder WAV. Textexporte enthalten die gesamte ausgewählte Sitzung unabhängig von Suchergebnissen: Original, Übersetzung oder beides, auf Wunsch mit Bestätigungszeiten. Wurden beide Audioquellen aufgenommen, wählst du für WAV eine Quelle aus. Gespeicherte Sitzungen lassen sich auch bei laufenden Live-Untertiteln exportieren; für den Export der aktuellen Sitzung musst du diese zuerst stoppen.
+
+Stoppe die Live-Untertitel vor der Wiedergabe. Mit Wiedergabe in der Leseansicht lädst und startest du die Aufnahme. Du kannst pausieren, verstrichene Zeit und Gesamtdauer ablesen sowie mit dem Regler die Position ändern. Nach Lade- oder Wiedergabefehlern kannst du es erneut versuchen. Auch eine gestoppte aktuelle Sitzung kann noch vorhandenes Audio abspielen; nach einem normalen Stopp findest du die gespeicherte Aufnahme üblicherweise in der Sitzungsliste.
+
 Eine neue Desktop-Sitzung behält die begrenzten bestätigten Untertitel auf dem Bildschirm. Leeren entfernt sie. Das aktiviert keine Speicherung, kopiert keine alten Zeilen in die neue Aufzeichnung und stellt ungespeicherte Untertitel nach dem Beenden nicht wieder her.
 
 Die Grenzen sind 10.000 bestätigte Untertitelpaare / 2 MiB Text und 64 MiB Audio. Beim Erreichen stoppt die Speicherung mit einem Hinweis. Untertitelzeiten markieren die Bestätigung; WAV lässt Pausen und Verbindungslücken aus. Beide Zeitachsen sind daher nicht direkt synchronisiert.
@@ -96,6 +102,8 @@ Untertitel früher anzeigen zeigt veränderliche Entwürfe. Ausgeschaltet wartet
 ## Erkennungsfehler
 
 Bei Erkennungsfehlern bleiben vorhandene Untertitel und der Fehlergrund sichtbar. Öffne die schwebende Steuerung für Details und Wiederherstellung. Erkannte Konfigurationsfehler bieten Modelle & Dienste, vorübergehende Verbindungs- oder Dienstfehler bieten Wiederholen. Das Korrigieren oder Wechseln der Konfiguration bringt die fehlgeschlagene Sitzung in den Leerlauf, ohne Audio zu starten. Aktiviere Live-Untertitel erneut, wenn du bereit bist.
+
+Einstellungen → Diagnose zeigt eine Momentaufnahme von Audioeingang, Übersetzungsstatus, letzten Messungen und Ereignissen mit Verknüpfungen zu passenden Einstellungen. Aktualisiere sie oder kopiere den Bericht für GitHub-Feedback; prüfe ihn vor dem Absenden. Zugangsdaten und Untertiteltexte sind nicht enthalten. Die Beobachtungen bestimmen keine Ursache: Ereigniszahlen sind keine Satzzahlen, und Messwerte geben nicht die gesamte Untertitelverzögerung an.
 
 ## Weitere Dokumentation
 

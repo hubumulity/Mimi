@@ -42,6 +42,11 @@ These project rules apply to implementation and review.
   redundant help icons; show missing or unavailable state when the user needs
   to act. A provider mark does not need a repeated brand-name subtitle under a
   configuration alias. Retain distinct user-defined recognition names.
+- Reading and playback surfaces should give space to the content. Separate
+  finding a saved session from reading it; keep export in one entry and put
+  occasional rename/delete actions under More. Playback should present one
+  stable player, not replace a “Play” action with a second unstarted player.
+  Check actual available text width before choosing bilingual columns.
 - Navigation must define scroll and focus together. Enter settings subpages at
   the top after content replacement; return to a list at its saved position and
   entry control. Category switches start at the top without stealing sidebar
@@ -113,6 +118,11 @@ These project rules apply to implementation and review.
   controller at a time. Inspecting another page or native app can pause frames
   or playback; restore focus before retrying and record interrupted playback
   as incomplete acceptance.
+  Media fixtures must match the app's StrictMode lifecycle. Ref cleanup must
+  stop and release media on detach while restoring a valid source if React
+  reattaches that same node during its development checks. A mocked `play()`
+  resolving, or a loaded player after hot reload, does not establish first-play
+  acceptance: test from an unloaded record in the signed native app.
   Memoized children that read localized copy must subscribe to the locale or
   receive it as a prop. Check paused/static content too; do not remount subtitle
   history to refresh labels and lose the reader's scroll position.
@@ -212,6 +222,14 @@ Use [useSettingsToast](../../src/windows/settings/useSettingsToast.ts):
 - A modal makes the background inert. Keep the same toast inside the active
   dialog so it is visible, announced and dismissible. Preserve the focus trap,
   Tab/Escape handling and the destructive-action confirmation.
+- A picker inside a modal must keep its menu inside that modal's interaction
+  and focus boundary. A body portal can look correct while inert/background
+  interception silently prevents selecting an option. Check pointer selection,
+  searchable input, Tab/Shift+Tab and Escape: close the menu first, then the
+  dialog on a subsequent Escape. Keep unrelated background controls inert.
+- Stop history audio explicitly before detaching its player on navigation,
+  source changes or a new capture session. Removing an element or revoking its
+  URL alone does not guarantee buffered playback has stopped.
 
 Use each product surface's existing shared feedback mechanism. Do not import
 settings UI into the overlay or replace an actionable capture state with a

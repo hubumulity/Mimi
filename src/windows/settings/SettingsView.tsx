@@ -103,6 +103,7 @@ export function SettingsView() {
   const [appleResourcesRequest, setAppleResourcesRequest] = useState(0);
   const appleResourcesSequence = useRef(0);
   const [profileEditorRequest, setProfileEditorRequest] = useState(0);
+  const [sessionReaderOpen, setSessionReaderOpen] = useState(false);
   const profileEditorSequence = useRef(0);
   const diagnosticNavigationFocus = useRef<string | null>(null);
 
@@ -256,10 +257,10 @@ export function SettingsView() {
       </aside>
       <div className="settings-console__scroll" ref={contentScrollRef}>
         <div className="settings-console__frame">
-          <header className="settings-page-header settings-page-header--help">
+          {!(activeCategory === "export" && sessionReaderOpen) && <header className="settings-page-header settings-page-header--help">
             <h1>{activeCategory === "guide" ? I18N.settings.quickStartTitle : activeCategory === "diagnostics" ? I18N.settings.diagnosticsTitle : categories.find((category) => category.id === activeCategory)?.label}</h1>
             <SettingsHelp text={pageDescriptions[activeCategory]} label={I18N.settings.helpLabel} />
-          </header>
+          </header>}
           {initializationReady && <SubtitleSessionControls visible={activeCategory === "subtitles"} onConfigure={navigateToSettings} />}
           <div className="settings-layout">
             {!initializationReady ? <SettingsInitializationStatus status={initializationStatus} error={initializationError} onRetry={() => { void initialize(); }} /> : <>
@@ -466,7 +467,9 @@ export function SettingsView() {
               }}>
                 <Icon name="chevron-left" />{I18N.settings.backToGeneral}
               </button>
-              <SupportDiagnostics visible={activeCategory === "diagnostics"} />
+              <SupportDiagnostics visible={activeCategory === "diagnostics"}
+                onOpenAudio={() => navigateToSettings("voice")}
+                onOpenServices={() => navigateToSettings("service")} />
               {activeCategory === "diagnostics" && DevelopmentDebugger !== null && (
                 <Suspense fallback={null}><DevelopmentDebugger visible /></Suspense>
               )}
@@ -544,7 +547,7 @@ export function SettingsView() {
               id="session-export-panel"
               className={`settings-category-panel${activeCategory !== "export" ? " is-inactive" : ""}`}
             >
-              <SessionExport visible={activeCategory === "export"} />
+              <SessionExport visible={activeCategory === "export"} onReaderChange={setSessionReaderOpen} />
             </div>
             </>}
           </div>

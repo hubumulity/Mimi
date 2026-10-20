@@ -28,7 +28,7 @@ Oberflächenillustration mit Beispieldialog. [Untertitel und immersiven Modus an
 - **Verstehen, was läuft**: schwebende Untertitel für Sprache in Filmen, Streams und Unterricht. Zeige beide Sprachen, nur die Übersetzung oder nur das Original.
 - **Audio auswählen**: standardmäßig den Computerton; Mikrofon oder beide Quellen aktivierst du selbst. Unter macOS / Windows 11 kannst du eine einzelne App wählen. Unter Linux kannst du einen einzelnen Wiedergabestream auswählen.
 - **Lesbarkeit anpassen**: ändere Position, Schriftgröße und Farbe. Im immersiven Modus bleibt nur der Text; mit Klickdurchleitung bedienst du die App darunter.
-- **Untertitel und Audio speichern**: Speichere am Desktop Untertitel als TXT oder nimm die gewählte Audioquelle als WAV auf. Beide Funktionen sind zunächst ausgeschaltet.
+- **Untertitel und Audio speichern**: Exportiere am Desktop Untertitel als TXT oder Markdown oder nimm die gewählte Audioquelle als WAV auf. Beide Speicherfunktionen sind zunächst ausgeschaltet.
 
 ## Erste Schritte
 

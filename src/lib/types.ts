@@ -683,7 +683,7 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/** Content-free metadata for the opt-in in-memory session archive. */
+/** Content-free metadata for the opt-in local session files. */
 export interface SessionArchiveState {
   audioSources?: AudioSource[];
   transcriptCount: number;
@@ -709,6 +709,7 @@ export interface TranscriptPage {
 }
 
 export interface SessionHistoryItem {
+  title?: string;
   audioSources?: AudioSource[];
   id: string;
   startedAtMs: number;
@@ -719,3 +720,9 @@ export interface SessionHistoryItem {
 }
 
 export type SessionExportKind = "transcript" | "audio";
+
+export interface TranscriptExportOptions {
+  format: "txt" | "markdown";
+  content: "bilingual" | "source" | "translation";
+  includeTimestamps: boolean;
+}

@@ -28,7 +28,7 @@ Illustration de l’interface avec un dialogue d’exemple. [Voir les sous-titre
 - **Comprendre ce qui passe** : des sous-titres flottants pour les voix des films, diffusions et cours. Affichez les deux langues, la traduction seule ou l’original seul.
 - **Choisir la source** : le son de l’ordinateur par défaut ; activez vous-même le microphone ou les deux sources. Sélectionnez une application sous macOS / Windows 11. Sous Linux, choisissez un flux de lecture individuel.
 - **Adapter l’affichage** : réglez la position, la taille et la couleur. Le mode immersif ne garde que le texte ; la transparence aux clics permet d’utiliser l’application dessous.
-- **Enregistrer les sous-titres et le son** : sur ordinateur, sauvegardez les sous-titres en TXT ou enregistrez la source audio choisie en WAV. Ces deux options doivent être activées manuellement.
+- **Enregistrer les sous-titres et le son** : sur ordinateur, exportez les sous-titres en TXT ou Markdown, ou enregistrez la source audio choisie en WAV. Ces deux options d’enregistrement doivent être activées manuellement.
 
 ## Premiers pas
 

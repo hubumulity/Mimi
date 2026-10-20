@@ -19,6 +19,7 @@ import type {
   SessionStateEvent,
   SessionArchiveState,
   SessionExportKind,
+  TranscriptExportOptions,
   TranscriptPage,
   SessionHistoryItem,
   ServiceProvider,
@@ -376,6 +377,10 @@ export function sessionHistoryPage(id: string, query: string, page: number): Pro
   return invoke("session_history_page", { id, query, page });
 }
 
+export function sessionArchiveAudio(audioSource?: AudioSource): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("session_archive_audio", { audioSource: audioSource ?? null });
+}
+
 export function sessionHistoryAudio(id: string, audioSource?: AudioSource): Promise<ArrayBuffer> {
   return invoke("session_history_audio", { id, audioSource: audioSource ?? null });
 }
@@ -384,8 +389,12 @@ export function sessionHistoryDelete(id: string): Promise<void> {
   return invoke("session_history_delete", { id });
 }
 
-export function sessionExport(kind: SessionExportKind, id?: string, audioSource?: AudioSource): Promise<boolean> {
-  return invoke("session_export", { kind, id: id ?? null, audioSource: audioSource ?? null });
+export function sessionHistoryRename(id: string, title: string): Promise<void> {
+  return invoke("session_history_rename", { id, title });
+}
+
+export function sessionExport(kind: SessionExportKind, id?: string, audioSource?: AudioSource, options?: TranscriptExportOptions): Promise<boolean> {
+  return invoke("session_export", { kind, id: id ?? null, audioSource: audioSource ?? null, options: options ?? null });
 }
 
 export function sessionArchiveClear(): Promise<void> {

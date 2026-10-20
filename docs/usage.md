@@ -75,6 +75,12 @@ On macOS and Windows build 20348+, use the application picker to translate a sel
 
 Under Settings → Save & export, choose whether to save subtitles or record the selected audio inputs. Both switches are off by default. When enabled, content is written incrementally to private local session files; system and microphone audio stay separate. Turning an option off clears its current-session content; saved sessions require explicit deletion.
 
+Find saved sessions by name or filter for sessions with text or audio. Select a session to open its reading view; Back restores the list position. Search the original text and translation, read either language or both, and copy individual passages. The reading view has Export and More; More contains Rename and Delete for saved sessions.
+
+Use Export to choose TXT, Markdown or WAV from the available formats. Text exports include the whole selected session, regardless of search results: choose original text, translation or both, with optional confirmation timestamps. For WAV, choose the audio source when both were recorded. Saved sessions can be exported while live subtitles are running; stop live subtitles before exporting the current session.
+
+Stop live subtitles before playing a recording. Press Play in the reading view to load and play the audio, then pause, check elapsed and total time, or drag the progress slider to seek. Retry if loading or playback fails. A stopped current session can also play audio that is still available; normal Stop usually moves it to the saved session list.
+
 Starting another desktop session keeps the bounded confirmed subtitles already on screen. Clear removes them. This does not enable transcript saving, copy old lines into the new session's saved transcript, or restore unsaved subtitles after quitting the app.
 
 Transcript retention is limited to 10,000 confirmed pairs / 2 MiB of text and audio to 64 MiB. Reaching a limit stops retention and shows a notice. Transcript timestamps mark confirmation time; WAV omits pauses and reconnect gaps, so the two are not synchronized.
@@ -109,6 +115,8 @@ actions. A recognized configuration error offers Models & Services settings;
 temporary connection or service errors offer Retry. Correcting or switching the
 affected configuration returns the failed session to idle without starting audio.
 Start Live Subtitles again when ready.
+
+Settings → Diagnostics shows a snapshot of sound input, translation status, recent measurements and events, with shortcuts to relevant settings. Refresh it or copy the report for GitHub feedback; review it before submitting. Reports exclude credentials and subtitle text. These observations do not establish a cause: event counts are not sentence counts, and measurements are not total subtitle delay.
 
 ## More docs
 
