@@ -150,7 +150,7 @@ export const SUPPLEMENTAL = {
     title: "診斷", copy: "複製診斷資訊", issue: "GitHub 意見回饋",
     refresh: "重新整理診斷", refreshing: "正在準備診斷資訊…", refreshed: "診斷資訊已重新整理。",
     status: "字幕狀態", lastError: "最近錯誤", recent: "最近事件", sinceStart: "自應用程式啟動以來", noEvents: "還沒有事件",
-    failures: { unknown: "未分類錯誤", configuration: "需要調整設定", authentication: "身分驗證失敗", credential_storage: "認證資訊儲存區不可用", device_unavailable: "聲音輸出不可用", timeout: "服務逾時", request_rejected: "請求被拒絕", service_error: "服務不可用", rate_limit: "服務請求受限", backlog: "處理速度落後", transport: "連線中斷", stopped: "音訊擷取停止", processing: "音訊處理失敗", size_limit: "字幕回應過長" },
+    failures: { recognition: "語音辨識失敗", unknown: "未分類錯誤", configuration: "需要調整設定", authentication: "身分驗證失敗", credential_storage: "認證資訊儲存區不可用", device_unavailable: "聲音輸出不可用", timeout: "服務逾時", request_rejected: "請求被拒絕", service_error: "服務不可用", rate_limit: "服務請求受限", backlog: "處理速度落後", transport: "連線中斷", stopped: "音訊擷取停止", processing: "音訊處理失敗", size_limit: "字幕回應過長" },
     lifecycle: { start_requested: "請求啟動", start_busy: "啟動處理中", start_already_active: "已在執行", start_superseded: "啟動已取消", stop_requested: "請求停止", pause_requested: "請求暫停", resume_requested: "請求繼續" },
     recovery: { retrying: "正在重新連線", recovered: "連線已恢復", retries_exhausted: "自動重試次數已用盡", user_stopped: "使用者已停止" },
     copied: "複製成功", failed: "複製失敗，請再試一次或手動複製下方文字。",

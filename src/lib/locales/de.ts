@@ -417,7 +417,7 @@ export const SETTINGS = {
   sessionListening: "Untertitel laufen",
   sessionPaused: "Untertitel pausiert",
   sessionStopping: "Wird gestoppt…",
-  sessionError: "Untertitel konnten nicht gestartet werden",
+  sessionError: "Untertitelfehler",
   sessionSetupRequired: "Richte zuerst einen Sprachdienst ein",
   sessionCredentialUnavailable: "Dienstzugangsdaten sind vorübergehend nicht verfügbar",
   sessionActionFailed: "Die Aktion ist fehlgeschlagen. Prüfe die Diensteinstellungen und versuche es erneut.",

@@ -153,7 +153,7 @@ export const SUPPLEMENTAL = {
     title: "Diagnostic", copy: "Copier le diagnostic", issue: "Signaler sur GitHub",
     refresh: "Actualiser le diagnostic", refreshing: "Préparation du diagnostic…", refreshed: "Diagnostic actualisé.",
     status: "État de la session", lastError: "Dernière erreur", recent: "Événements récents", sinceStart: "Depuis le lancement", noEvents: "Aucun événement pour le moment",
-    failures: {
+    failures: { recognition: "Échec de la reconnaissance vocale",
       unknown: "Erreur non classée", configuration: "Configuration non prise en charge", authentication: "Échec de l’authentification", credential_storage: "Stockage des identifiants indisponible", device_unavailable: "Sortie audio indisponible", timeout: "Délai du service dépassé", request_rejected: "Requête refusée", service_error: "Service indisponible", rate_limit: "Requêtes limitées par le service", backlog: "Traitement en retard", transport: "Connexion interrompue", stopped: "Capture audio arrêtée", processing: "Échec du traitement audio", size_limit: "Réponse de sous-titres trop volumineuse",
     },
     lifecycle: {

@@ -417,7 +417,7 @@ export const SETTINGS = {
   sessionListening: "자막 실행 중",
   sessionPaused: "자막 일시 정지됨",
   sessionStopping: "중지 중…",
-  sessionError: "자막을 시작할 수 없음",
+  sessionError: "자막 오류",
   sessionSetupRequired: "먼저 음성 서비스를 설정하세요",
   sessionCredentialUnavailable: "서비스 인증 정보를 일시적으로 사용할 수 없음",
   sessionActionFailed: "작업을 완료할 수 없습니다. 서비스 설정을 확인하고 다시 시도하세요.",

@@ -23,17 +23,36 @@ it.each(["zh", "en", "ja"] as const)("gives Tencent activation, quota and concur
   expect(sessionErrorSettingsTarget("tencent_capacity_exceeded")).toBeNull();
 });
 
-it.each(["zh", "en", "ja"] as const)("gives Apple resource and language recovery in %s without exposing runtime labels", language => {
+it.each(UI_LANGUAGES)("gives Apple resource and language recovery in %s without exposing runtime labels", language => {
   setStoredUiLanguage(language);
   expect(credentialErrorMessage("apple_speech_assets_missing")).toBe(I18N.settings.appleSpeechAssetsMissing);
   expect(profileErrorMessage("apple_speech_language_unsupported")).toBe(I18N.settings.appleSpeechLanguageUnsupported);
   expect(profileErrorMessage("apple_speech_translation_language_unsupported")).toBe(I18N.settings.appleSpeechTranslationLanguageUnsupported);
   expect(I18N.settings.appleSpeechAssetsMissing).toContain(I18N.settings.appleSpeechDownloadAndUse);
   expect(credentialErrorMessage("apple_speech_unavailable")).toBe(I18N.settings.appleSpeechUnavailable);
-  for (const suffix of ["setup_timeout", "start_failed", "recognition_failed", "audio_failed", "not_connected", "result_backlog", "invalid_result", "finalize_timeout"]) {
+  for (const suffix of ["setup_timeout", "start_failed", "recognition_failed", "runtime_timeout", "stream_closed", "audio_failed", "not_connected", "result_backlog", "invalid_result", "finalize_timeout"]) {
     expect(credentialErrorMessage(`apple_speech_${suffix}`)).toBe(I18N.settings.appleSpeechRecognitionFailed);
   }
   expect(profileErrorMessage("apple_speech_prepare_failed: private-native-path")).not.toContain("private-native-path");
+});
+
+it.each(UI_LANGUAGES)("localizes only exact Apple runtime labels without suggesting a configuration cause in %s", language => {
+  setStoredUiLanguage(language);
+  const messages = {
+    apple_speech_runtime_service_unavailable: I18N.settings.appleSpeechServiceUnavailable,
+    apple_speech_runtime_timeout: I18N.settings.appleSpeechRecognitionFailed,
+    apple_speech_stream_closed: I18N.settings.appleSpeechRecognitionFailed,
+    apple_speech_recognition_failed: I18N.settings.appleSpeechRecognitionFailed,
+    apple_speech_result_backlog: I18N.settings.appleSpeechRecognitionFailed,
+  };
+  for (const [label, message] of Object.entries(messages)) {
+    expect(sessionActionErrorMessage(new Error(label), "fallback")).toBe(message);
+    expect(sessionErrorSettingsTarget(label)).toBeNull();
+    for (const unsafe of [`${label}: private-native-description`, `${label}_unknown`, `private-prefix ${label}`]) {
+      expect(credentialErrorMessage(unsafe)).toBeNull();
+      expect(sessionActionErrorMessage(new Error(unsafe), "fallback")).toBe("fallback");
+    }
+  }
 });
 
 it.each(["zh", "en", "ja"] as const)("keeps Apple translation recovery separate from speech packs and private in %s", language => {

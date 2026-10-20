@@ -230,6 +230,22 @@ impl AudioSendPipeline {
         Fut: Future<Output = Result<(), E>> + Send + 'static,
         E: Send + 'static,
     {
+        Self::spawn_with_error_handler(send_audio, move |_| {
+            on_error(AudioPipelineFailure::TransportStopped);
+        })
+    }
+
+    /// Preserve a typed provider failure when the owner must distinguish a
+    /// permanent recognition error from a reconnectable transport interruption.
+    pub fn spawn_with_error_handler<F, Fut, E>(
+        send_audio: F,
+        on_error: impl Fn(E) + Send + Sync + 'static,
+    ) -> Self
+    where
+        F: Fn(Vec<u8>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), E>> + Send + 'static,
+        E: Send + 'static,
+    {
         let (tx, mut rx) = mpsc::channel::<PendingAudio>(QUEUE_CAPACITY);
         let (finish_tx, mut finish_rx) = oneshot::channel();
         let failed = Arc::new(AtomicBool::new(false));
@@ -291,11 +307,11 @@ impl AudioSendPipeline {
                             pipeline_log!("audio send blockedMs={} bytes={}", send_ms, bytes);
                         }
                     }
-                    Err(_) => {
+                    Err(error) => {
                         accepting_worker.store(false, Ordering::SeqCst);
-                        pipeline_log!("audio send failed label=audio_pipeline.transport_stopped");
+                        pipeline_log!("audio send failed");
                         if !failed_worker.swap(true, Ordering::SeqCst) {
-                            on_error_worker(AudioPipelineFailure::TransportStopped);
+                            on_error_worker(error);
                         }
                         return false;
                     }
@@ -509,6 +525,28 @@ mod tests {
         assert!(!pipeline.finish(Duration::from_millis(200)).await);
         assert_eq!(pending.pending_count(), 0);
         assert_eq!(pipeline.progress.completed_ago_ms(Instant::now()), None);
+    }
+
+    #[tokio::test]
+    async fn typed_send_failure_is_delivered_once_and_releases_queued_pcm() {
+        #[derive(Debug, PartialEq, Eq)]
+        enum Failure {
+            PermanentRecognition,
+        }
+        let failures = Arc::new(Mutex::new(Vec::new()));
+        let recorded = failures.clone();
+        let pipeline = AudioSendPipeline::spawn_with_error_handler(
+            |_| async { Err::<(), _>(Failure::PermanentRecognition) },
+            move |failure| recorded.lock().unwrap().push(failure),
+        );
+        let pending = pipeline.pending_pcm_gate();
+        let ingress = pipeline.ingress().unwrap();
+        ingress.try_send(vec![1, 0]).unwrap();
+        ingress.try_send(vec![2, 0]).unwrap();
+        assert!(!pipeline.finish(Duration::from_millis(200)).await);
+        assert_eq!(*failures.lock().unwrap(), [Failure::PermanentRecognition]);
+        assert_eq!(pending.pending_count(), 0);
+        assert_eq!(ingress.try_send(vec![3, 0]), Err(AudioIngressError::Closed));
     }
 
     #[tokio::test]

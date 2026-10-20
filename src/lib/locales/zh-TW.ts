@@ -420,7 +420,7 @@ export const SETTINGS = {
   sessionListening: "字幕執行中",
   sessionPaused: "字幕已暫停",
   sessionStopping: "正在停止…",
-  sessionError: "字幕啟動失敗",
+  sessionError: "字幕發生錯誤",
   sessionSetupRequired: "請先設定語音服務",
   sessionCredentialUnavailable: "暫時無法讀取服務認證資訊",
   sessionActionFailed: "操作未完成，請檢查服務設定後再試一次。",

@@ -267,24 +267,25 @@ impl Session {
         let (ready, ready_rx) = watch::channel(false);
         let sender = client.clone();
         let failures = events.clone();
-        let pipeline = AudioSendPipeline::spawn(
+        let pipeline = AudioSendPipeline::spawn_with_error_handler(
             move |data| {
                 let sender = sender.clone();
                 let mut ready = ready_rx.clone();
                 async move {
                     while !*ready.borrow_and_update() {
-                        ready.changed().await.map_err(|_| "transport_error")?;
+                        ready.changed().await.map_err(|_| None)?;
                     }
-                    sender
-                        .send_audio(&data)
-                        .await
-                        .map_err(|_| "transport_error")
+                    sender.send_audio(&data).await.map_err(Some)
                 }
             },
-            move |_| {
+            move |error| {
+                let label = error
+                    .as_ref()
+                    .and_then(|error| error.recognition_failure_label())
+                    .unwrap_or("transport_error");
                 let _ = failures.send(LiveTranslateServerEvent::Error {
-                    code: "transport_error".into(),
-                    message: "transport_error".into(),
+                    code: label.into(),
+                    message: label.into(),
                 });
             },
         );
@@ -460,7 +461,9 @@ impl Session {
                             mimi_runtime::core::health::probe_connection_health(&health_client)
                                 .await
                         {
-                            let code = error.safe_code();
+                            let code = error
+                                .recognition_failure_label()
+                                .unwrap_or_else(|| error.safe_code());
                             let _ = health_events.send(LiveTranslateServerEvent::Error {
                                 code: code.into(),
                                 message: code.into(),
