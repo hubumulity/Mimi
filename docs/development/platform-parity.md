@@ -32,6 +32,11 @@ pause, target switching, confirmed subtitles and recording consent retain their
 common implementation. Discovery and capture remain native adapters, separate
 from shared provider/translation rules.
 
+All three desktop application/stream pickers use optional bounded embedded PNG
+icons. Linux resolves stream properties and installed desktop entries through
+GTK's local icon theme; missing artwork keeps a selectable neutral fallback.
+Android keeps its native capture UI and has no desktop stream/icon picker.
+
 ## Preventing maintenance forks
 
 A desktop business fix belongs in the shared crates, so an Android build uses

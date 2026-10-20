@@ -23,8 +23,8 @@ const IDLE_POLL: Duration = Duration::from_millis(250);
 struct Metadata {
     index: u32,
     sink: u32,
-    application: Option<String>,
     stream: Option<String>,
+    icon_source: super::linux_application_icons::IconSource,
 }
 
 #[derive(Default)]
@@ -93,7 +93,7 @@ impl Registry {
             .map(|(_, item)| {
                 format!(
                     "{} · {}",
-                    item.application.as_deref().unwrap_or(unknown_app),
+                    item.icon_source.name.as_deref().unwrap_or(unknown_app),
                     item.stream.as_deref().unwrap_or(unknown_stream)
                 )
             })
@@ -157,7 +157,7 @@ fn clean_name(value: Option<&str>) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn application_name(properties: &pulse::proplist::Proplist) -> Option<String> {
+pub(super) fn application_name(properties: &pulse::proplist::Proplist) -> Option<String> {
     // Native PipeWire clients can expose their name only on the playback node.
     ["application.name", "node.name"]
         .into_iter()
@@ -203,6 +203,28 @@ pub(super) fn cached(language: &str) -> ApplicationSnapshot {
             applications: Vec::new(),
         },
     }
+}
+
+/// Copy presentation hints for these exact live tokens, without discovery or
+/// holding the registry lock during GTK/disk access. Retired tokens have none.
+pub(super) fn icon_sources(
+    applications: &[AudioApplication],
+) -> Vec<Option<super::linux_application_icons::IconSource>> {
+    let registry = SERVICE
+        .get()
+        .and_then(|service| service.as_ref().ok())
+        .map(|service| service.registry.lock().unwrap());
+    applications
+        .iter()
+        .map(|app| {
+            registry
+                .as_ref()?
+                .entries
+                .values()
+                .find(|(id, _)| id == &app.id)
+                .map(|(_, metadata)| metadata.icon_source.clone())
+        })
+        .collect()
 }
 
 pub async fn list(language: String) -> Result<ApplicationSnapshot, Error> {
@@ -359,8 +381,11 @@ impl Connection {
                                 Metadata {
                                     index: info.index,
                                     sink: info.sink,
-                                    application: application_name(&info.proplist),
                                     stream: clean_name(info.name.as_deref()),
+                                    icon_source:
+                                        super::linux_application_icons::IconSource::from_properties(
+                                            &info.proplist,
+                                        ),
                                 },
                             );
                         }
@@ -525,8 +550,8 @@ mod tests {
         Metadata {
             index,
             sink: 7,
-            application: None,
             stream: None,
+            icon_source: Default::default(),
         }
     }
     #[test]
@@ -681,7 +706,7 @@ mod tests {
             ..Default::default()
         };
         let mut named = metadata(3);
-        named.application = Some("Player".into());
+        named.icon_source.name = Some("Player".into());
         named.stream = Some("Music".into());
         registry.reconcile(
             0,

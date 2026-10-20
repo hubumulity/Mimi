@@ -12,19 +12,15 @@ pub struct AudioApplication {
     pub icon_data_url: Option<String>,
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 pub(super) const MAX_APPLICATION_ICON_PNG_BYTES: usize = 8 * 1024;
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 const MAX_APPLICATION_ICON_SNAPSHOT_BYTES: usize = 1024 * 1024;
 
 /// A fresh budget for one already sorted/bounded application snapshot. There is
 /// no persistent icon cache; the frontend replaces its previous snapshot.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 pub(super) struct ApplicationIconBudget {
     remaining_bytes: usize,
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 impl Default for ApplicationIconBudget {
     fn default() -> Self {
         Self {
@@ -33,7 +29,6 @@ impl Default for ApplicationIconBudget {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 impl ApplicationIconBudget {
     pub fn encode_png(&mut self, png: &[u8]) -> Option<String> {
         use base64::Engine as _;

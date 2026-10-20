@@ -261,11 +261,40 @@ it("restores the selected Windows application's icon without changing capture or
   expect(switchTarget).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
 });
 
-it("checks Linux cached choices without refreshing discovery or requesting icons", async () => {
+it("restores Linux icons from cached live choices without refreshing discovery or capture", async () => {
   vi.stubGlobal("navigator", { userAgent: "Linux" });
   await mount();
   expect(invoke).toHaveBeenCalledExactlyOnceWith("audio_applications", { cachedOnly: true });
+  expect(icon()).toBe(player.iconDataUrl);
+  expect(applicationIconCache.read().get(player.id)).toBe(player.iconDataUrl);
+  expect(switchTarget).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
+  await mount(false); await mount();
+  expect(icon()).toBe(player.iconDataUrl);
+  expect(vi.mocked(invoke).mock.calls.every(([, args]) => (args as { cachedOnly?: boolean })?.cachedOnly)).toBe(true);
+});
+
+it("ignores a delayed Linux cached icon after an explicit refresh returns newer artwork", async () => {
+  vi.stubGlobal("navigator", { userAgent: "Linux" });
+  const cached = deferred(); vi.mocked(invoke).mockReturnValueOnce(cached.promise);
+  await mount();
+  const currentIcon = "data:image/png;base64,bmV3";
+  vi.mocked(invoke).mockResolvedValueOnce({ supported: true, applications: [{ ...player, iconDataUrl: currentIcon }] });
+  await act(async () => trigger().click());
+  await act(async () => cached.resolve(snapshot));
+  expect(icon()).toBe(currentIcon);
+  expect(applicationIconCache.read().get(player.id)).toBe(currentIcon);
+  expect(invoke).toHaveBeenCalledTimes(2);
+});
+
+it("clears a Linux icon when its live stream is no longer cached on reopen", async () => {
+  vi.stubGlobal("navigator", { userAgent: "Linux" });
+  await mount(); await mount(false);
+  vi.mocked(invoke).mockResolvedValueOnce({ supported: true, applications: [] });
+  await mount();
   expect(icon()).toBeUndefined();
+  expect(applicationIconCache.read().size).toBe(0);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(switchTarget).not.toHaveBeenCalled();
 });
 
 it("waits for initialized settings and skips automatic enumeration for all applications", async () => {

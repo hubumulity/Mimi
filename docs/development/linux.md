@@ -87,6 +87,22 @@ Native PipeWire clients may omit `application.name`; the same playback stream's
 `node.name` is then used so its application remains searchable. Missing both
 properties falls back to the localized unknown-application label.
 
+Both pickers display local application icons from playback properties and the
+installed desktop entries, resolved through the current GTK icon theme. PNG and
+SVG artwork becomes a bounded 32px embedded PNG; missing, damaged or oversized
+icons use the neutral fallback. Icons are presentation metadata only and are
+never saved with the selected stream. Restoring a selected icon reads only
+already discovered live streams and does not initialize audio discovery.
+When an audio product name omits a desktop variant suffix (for example, Brave
+versus Brave Origin), a unique installed variant can supply the icon after exact
+ID, executable and name matching fail. Multiple variants keep the neutral
+fallback; icon matching never changes the selected playback-stream identity.
+Flatpak launchers use `flatpak` as their executable. If the stream reports the
+application binary instead, Mimi matches the exported launcher's declared
+`--command` only when the candidate is unique. Read `X-Flatpak` and parse the
+arguments with GLib; never execute the launcher or interpret the sandbox's
+process ID as a host PID to resolve artwork.
+
 UI-only mode (`MIMI_UI_TEST=1`) returns a synthetic `Test Player · Test stream`
 and never queries the desktop sound server. To test real discovery, quit that
 instance normally and launch a regular development build with

@@ -2920,6 +2920,7 @@ pub async fn capture_status(
 /// returns synthetic choices and never invokes OS capture APIs.
 #[tauri::command]
 pub async fn audio_applications(
+    _app: AppHandle,
     state: State<'_, AppState>,
     cached_only: Option<bool>,
 ) -> Result<crate::audio::applications::ApplicationSnapshot, String> {
@@ -2938,9 +2939,12 @@ pub async fn audio_applications(
             }],
         });
     }
-    state
+    let snapshot = state
         .session
         .audio_applications(cached_only.unwrap_or(false))
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "linux")]
+    let snapshot = crate::audio::linux_application_icons::populate(&_app, snapshot).await;
+    Ok(snapshot)
 }
