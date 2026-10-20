@@ -7,9 +7,9 @@ const savedTitle = "Synthetic product review · 字幕と書き出し · ".repea
 async function openWorkspaceFixture(page, baseUrl) {
   await page.goto(new URL("/", baseUrl).href);
   await page.goto(new URL("/scripts/fixtures/settings-layout.html", baseUrl).href);
-  await page.waitForFunction(() => window.layoutReady === true);
   await page.cdp("Page.bringToFront", {});
   await page.cdp("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await page.waitForFunction(() => window.layoutReady === true);
   await page.evaluate(() => {
     window.workspaceReviewStage = "ready";
     window.workspaceReviewFrameFallbacks = 0;
@@ -26,6 +26,23 @@ async function openWorkspaceFixture(page, baseUrl) {
       };
       const timer = setTimeout(() => finish(true), 80);
       frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => finish(false)); });
+    });
+    // Scroll events can wait for rendering even after geometry has changed.
+    // Opening a portal menu before that event arrives would correctly dismiss
+    // it as outside scrolling. Require actual frames at this boundary; a
+    // suspended renderer is incomplete verification, never a passing wait.
+    window.workspaceReviewAfterScroll = () => new Promise((resolve, reject) => {
+      let frame = 0;
+      const timer = setTimeout(() => {
+        cancelAnimationFrame(frame);
+        reject(new Error("scroll rendering deadline exceeded: two animation frames required"));
+      }, 3_000);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
     });
   });
 }
@@ -122,15 +139,15 @@ async function selectSavedSession(page) {
     await settle();
     window.workspaceFixture.setActive(false);
     if (!await waitFor(() => button()?.textContent.includes(title), "saved long title did not load")) return { issues, id: item.id };
-    button().scrollIntoView({ block: "nearest" });
-    await settle();
+    button().scrollIntoView({ block: "nearest", behavior: "instant" });
+    await window.workspaceReviewAfterScroll();
     button().click();
     await waitFor(() => document.querySelector(".session-transcript__heading h3")?.textContent === title
       && document.querySelectorAll(".session-transcript__pair p").length >= 2
       && window.workspaceFixture.snapshot().actions.filter(action => action.command === "session_history_page").at(-1)?.args.id === item.id,
     "saved reader did not load");
-    document.querySelector(".session-transcript__heading")?.scrollIntoView({ block: "start" });
-    await settle();
+    document.querySelector(".session-transcript__heading")?.scrollIntoView({ block: "start", behavior: "instant" });
+    await window.workspaceReviewAfterScroll();
     return { issues, id: item.id };
   }, savedTitle);
 }
@@ -235,8 +252,8 @@ export async function verifySessionWorkspaceDialogs(page, baseUrl = "http://127.
           const rect = element.getBoundingClientRect();
           if (rect.top < 0 || rect.bottom > innerHeight || rect.left < 0 || rect.right > innerWidth) {
             element.scrollIntoView({ block: "nearest", behavior: "instant" });
-          }
-          await settle();
+            await window.workspaceReviewAfterScroll();
+          } else await settle();
           if (!element.isConnected) {
             issues.push(`${stage}: action detached after scrolling`);
             return false;

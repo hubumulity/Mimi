@@ -118,6 +118,10 @@ These project rules apply to implementation and review.
   controller at a time. Inspecting another page or native app can pause frames
   or playback; restore focus before retrying and record interrupted playback
   as incomplete acceptance.
+  After a fixture scrolls, wait for actual rendering frames before opening a
+  menu. A timer fallback does not drain pending scroll events: a late event
+  can correctly dismiss the newly opened menu. Bound that wait and report a
+  timeout as incomplete test infrastructure, preserving the original assertions.
   Media fixtures must match the app's StrictMode lifecycle. Ref cleanup must
   stop and release media on detach while restoring a valid source if React
   reattaches that same node during its development checks. A mocked `play()`
