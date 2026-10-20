@@ -27,7 +27,7 @@ Oberflächenillustration mit Beispieldialog. [Untertitel und immersiven Modus an
 
 - **Verstehen, was läuft**: schwebende Untertitel für Sprache in Filmen, Streams und Unterricht. Zeige beide Sprachen, nur die Übersetzung oder nur das Original.
 - **Audio auswählen**: standardmäßig den Computerton; Mikrofon oder beide Quellen aktivierst du selbst. Unter macOS / Windows 11 kannst du eine einzelne App wählen. Unter Linux kannst du einen einzelnen Wiedergabestream auswählen.
-- **Lesbarkeit anpassen**: ändere Position, Schriftgröße und Farbe. Im immersiven Modus bleibt nur der Text; mit Klickdurchleitung bedienst du die App darunter.
+- **Lesbarkeit anpassen**: Ändere am Desktop Position, Schriftgröße von 14–48 px und Farbe. Zeige alle zuletzt erfassten Untertitel oder nur die neuesten 1–10 Einträge und scrolle nach oben, um den verfügbaren Verlauf zu lesen. Im immersiven Modus bleibt nur der Text; mit Klickdurchleitung bedienst du die App darunter.
 - **Untertitel und Audio speichern**: Speichere am Desktop Untertitel als TXT oder nimm die gewählte Audioquelle als WAV auf. Beide Funktionen sind zunächst ausgeschaltet.
 
 ## Erste Schritte
@@ -56,9 +56,11 @@ Besonderer Dank gilt [@yebuwudong](https://github.com/yebuwudong) für die [Andr
 
 Danke auch an [@Chtholly000](https://github.com/Chtholly000) für die Verbesserungen an [Geminis fortlaufenden Untertiteln und dem geplanten Verbindungswechsel](https://github.com/yuxino/Mimi/pull/176).
 
-Danke an [@EmmetZ](https://github.com/EmmetZ) für die [Korrektur der Wayland-Untertitelsteuerung](https://github.com/yuxino/Mimi/pull/242) und die [Aufnahme einzelner Wiedergabestreams unter Linux](https://github.com/yuxino/Mimi/pull/275).
+Danke an [@EmmetZ](https://github.com/EmmetZ) für die [Korrektur der Wayland-Untertitelsteuerung](https://github.com/yuxino/Mimi/pull/242), die [Aufnahme einzelner Wiedergabestreams unter Linux](https://github.com/yuxino/Mimi/pull/275) und die [App-Symbole für Wiedergabestreams](https://github.com/yuxino/Mimi/pull/304).
 
 Danke an [@wangmian0](https://github.com/wangmian0) für die [Deaktivierung des Denkmodus von DeepSeek bei der Live-Untertitelübersetzung](https://github.com/yuxino/Mimi/pull/270).
+
+Danke an [@hubumulity](https://github.com/hubumulity) für die [Einstellung der Anzahl sichtbarer Untertitel](https://github.com/yuxino/Mimi/pull/303).
 
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
@@ -68,6 +70,7 @@ Danke an [@wangmian0](https://github.com/wangmian0) für die [Deaktivierung des 
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
   <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
 </p>
 
 [Alle Mitwirkenden](https://github.com/yuxino/mimi/graphs/contributors)

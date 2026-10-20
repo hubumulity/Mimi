@@ -27,7 +27,7 @@
 
 - **再生中の内容を理解する**：映画、配信、授業の音声をフローティング字幕に。二言語、訳文のみ、原文のみを選べます。
 - **音源を選ぶ**：初期設定はパソコンの音声。マイクや両方の音源も自分で有効にできます。macOS / Windows 11 ではアプリを指定できます。Linux では個別の再生ストリームを選べます。
-- **読みやすく調整する**：位置、文字サイズ、色を変更。イマーシブモードは字幕だけを表示し、クリック透過で背後のアプリを操作できます。
+- **読みやすく調整する**：デスクトップ版では位置、14–48 px の文字サイズ、色を変更できます。最近の字幕をすべて、または最新の 1–10 件だけ表示し、上にスクロールして保持されている履歴を読めます。イマーシブモードは字幕だけを表示し、クリック透過で背後のアプリを操作できます。
 - **字幕と音声を保存する**：デスクトップ版では字幕を TXT、選択した音源の録音を WAV で保存できます。どちらも自分で有効にするまで保存・録音しません。
 
 ## はじめに
@@ -56,9 +56,11 @@ Mimi は無料ですが、クラウドサービスは有料の場合がありま
 
 [@Chtholly000](https://github.com/Chtholly000) さんによる [Gemini の連続字幕と計画的な接続切り替えの改善](https://github.com/yuxino/Mimi/pull/176)にも感謝します。
 
-[@EmmetZ](https://github.com/EmmetZ) さんによる [Wayland の字幕操作パネルの修正](https://github.com/yuxino/Mimi/pull/242)と [Linux での個別再生ストリームの音声取得](https://github.com/yuxino/Mimi/pull/275)に感謝します。
+[@EmmetZ](https://github.com/EmmetZ) さんによる [Wayland の字幕操作パネルの修正](https://github.com/yuxino/Mimi/pull/242)、[Linux での個別再生ストリームの音声取得](https://github.com/yuxino/Mimi/pull/275)、[再生ストリームのアプリアイコン表示](https://github.com/yuxino/Mimi/pull/304)に感謝します。
 
 [@wangmian0](https://github.com/wangmian0) さんは、[DeepSeek によるリアルタイム字幕翻訳の思考モードを無効化](https://github.com/yuxino/Mimi/pull/270)してくださいました。
+
+[@hubumulity](https://github.com/hubumulity) さんによる[字幕表示件数の設定](https://github.com/yuxino/Mimi/pull/303)に感謝します。
 
 <p>
   <a href="https://github.com/yuxino"><img src="../assets/contributors/yuxino.svg" width="64" height="64" alt="@yuxino"></a>
@@ -68,6 +70,7 @@ Mimi は無料ですが、クラウドサービスは有料の場合がありま
   <a href="https://github.com/inhome"><img src="../assets/contributors/inhome.svg" width="64" height="64" alt="@inhome"></a>
   <a href="https://github.com/EmmetZ"><img src="../assets/contributors/EmmetZ.svg" width="64" height="64" alt="@EmmetZ"></a>
   <a href="https://github.com/wangmian0"><img src="../assets/contributors/wangmian0.svg" width="64" height="64" alt="@wangmian0"></a>
+  <a href="https://github.com/hubumulity"><img src="../assets/contributors/hubumulity.svg" width="64" height="64" alt="@hubumulity"></a>
 </p>
 
 [すべての貢献者を見る](https://github.com/yuxino/mimi/graphs/contributors)
