@@ -6,6 +6,7 @@ import { I18N, setStoredUiLanguage } from "../../lib/i18n";
 import { useStore } from "../../lib/store";
 import { OverlayWindow } from "./OverlayWindow";
 import { audioInputLabel } from "../../lib/audioInput";
+import { recordingStatusLabel } from "../../lib/recordingStatus";
 
 vi.mock("../../lib/ipc", async (original) => ({
   ...await original<typeof import("../../lib/ipc")>(),
@@ -37,6 +38,26 @@ afterEach(async () => {
   host.remove(); useStore.setState(initial, true); setStoredUiLanguage("system"); vi.unstubAllGlobals();
 });
 function button(label: string) { return host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!; }
+
+it("keeps recording state accessible when collapsed without adding another action", async () => {
+  vi.stubGlobal("innerWidth", 280);
+  vi.stubGlobal("innerHeight", 54);
+  useStore.setState(state => ({ session: { ...state.session, isOverlayCollapsed: true } }));
+  await act(async () => root.render(<OverlayWindow />));
+  const actionCount = host.querySelectorAll("button").length;
+  for (const audioRecording of ["starting", "recording", "paused", "limited", "error", "off"] as const) {
+    await act(async () => useStore.setState(state => ({ session: { ...state.session, audioRecording } })));
+    expect(host.querySelectorAll("button")).toHaveLength(actionCount);
+    const indicator = host.querySelector<HTMLElement>("[data-recording-status]");
+    const label = recordingStatusLabel(audioRecording, "en");
+    if (!label) expect(indicator).toBeNull();
+    else {
+      expect(indicator?.title).toBe(label);
+      expect(indicator?.textContent).toBe("");
+      expect(host.querySelector('[role="group"]')?.getAttribute("aria-label")).toContain(label);
+    }
+  }
+});
 
 it("shows the independent translation mark and opens settings with guarded failure feedback", async () => {
   const showSettings = vi.fn().mockRejectedValueOnce(new Error("synthetic-private-error")).mockResolvedValue(undefined);

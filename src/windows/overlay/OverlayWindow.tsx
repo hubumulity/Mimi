@@ -1,8 +1,10 @@
 import { isSystemAudioPermissionDenied } from "../../lib/systemAudioPermissions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { subtitleBackgroundColor } from "../../lib/subtitleColor";
-import { I18N } from "../../lib/i18n";
+import { effectiveUiLanguage, I18N } from "../../lib/i18n";
 import { AudioInputIndicator } from "../../components/AudioInputIndicator";
+import { RecordingIndicator } from "../../components/RecordingIndicator";
+import { recordingStatusLabel } from "../../lib/recordingStatus";
 import { SessionErrorFeedback } from "../../components/SessionErrorFeedback";
 import { sessionErrorSettingsTarget } from "../../lib/connectionDiagnostics";
 import { audioInputLabel } from "../../lib/audioInput";
@@ -567,11 +569,12 @@ export function OverlayWindow() {
   }
 
   function renderCompact() {
+    const recordingLabel = recordingStatusLabel(session.audioRecording, effectiveUiLanguage());
     return (
       <div
         className="relative h-full w-full"
         role="group"
-        aria-label={`${I18N.overlay.collapsedAccessibilityPrefix}${phaseLabel} · ${audioInputLabel(settings.audioInput, settings.systemAudioTarget)}`}
+        aria-label={`${I18N.overlay.collapsedAccessibilityPrefix}${phaseLabel} · ${audioInputLabel(settings.audioInput, settings.systemAudioTarget)}${recordingLabel ? ` · ${recordingLabel}` : ""}`}
         style={{
           borderRadius: 14,
           background: subtitleBackgroundColor(settings.subtitleBackgroundOpacity),
@@ -588,12 +591,13 @@ export function OverlayWindow() {
       >
         <div
           className="relative flex h-full items-center"
-          style={{ gap: 8, padding: "0 10px" }}
+          style={{ gap: recordingLabel ? (settings.audioInput === "system" ? 6 : 4) : 8, padding: "0 10px" }}
         >
           <DragHandle onToggleCollapsed={toggleCollapsed} compact
             disabled={controlAction.pending} busy={pendingControl === "collapse"} />
           <PulseRing phase={phase} compact motionEnabled={pulseOn} pulseStyle={settings.pulseStyle} />
           <AudioInputIndicator input={settings.audioInput} target={settings.systemAudioTarget} />
+          <RecordingIndicator status={session.audioRecording} language={effectiveUiLanguage()} compact />
           <span
             className="truncate"
             role={sessionAction.failed || controlAction.failed ? "alert" : undefined}

@@ -77,7 +77,11 @@ export interface SubtitleSnapshot {
   history: SubtitleHistoryItem[];
 }
 
+/** Actual local audio-writing state; absent in older snapshots means off. */
+export type AudioRecordingStatus = "off" | "starting" | "recording" | "paused" | "limited" | "error";
+
 export interface SessionStateEvent {
+  audioRecording?: AudioRecordingStatus;
   /** Preview policy selected by the shared Rust provider factory. */
   atomicPreview?: boolean | null;
   debugSnapshotId?: number | null;

@@ -52,9 +52,11 @@ use tokio::sync::{Mutex as TokioMutex, Notify, OwnedMutexGuard};
 use tokio::task::JoinHandle;
 
 mod cleanup_owner;
+mod recording_state;
 mod recovery_cleanup;
 
 use cleanup_owner::{CleanupOwners, CleanupTicket};
+use recording_state::{AudioRecordingStatus, RecordingEvidence};
 use recovery_cleanup::{
     activate_start_if_current, cancel_recovery_task, prepare_recovery_cleanup,
     retire_recovery_for_start,
@@ -108,6 +110,8 @@ pub struct SessionStateEvent {
     pub is_active: bool,
     #[serde(rename = "isPaused")]
     pub is_paused: bool,
+    #[serde(rename = "audioRecording", skip_serializing_if = "Option::is_none")]
+    pub audio_recording: Option<AudioRecordingStatus>,
     #[serde(rename = "isOverlayCollapsed")]
     pub is_overlay_collapsed: bool,
     pub subtitles: crate::core::models::SubtitleSnapshot,
@@ -742,6 +746,7 @@ impl From<&TranslationSessionState> for SessionStateEvent {
             is_active: state.status.is_active(),
             status,
             is_paused: false,
+            audio_recording: None,
             is_overlay_collapsed: false,
             subtitles: state.subtitles.clone(),
             atomic_preview: state.atomic_preview,
@@ -783,6 +788,61 @@ struct LocalCaptureStats {
     audio_bytes: usize,
     audio_limited: bool,
     sample_rate: u32,
+    audio_evidence: RecordingEvidence,
+}
+
+#[derive(Default)]
+struct AudioWriteOutcome {
+    status_changed: bool,
+    write_failed: bool,
+}
+
+/// Update only bounded metadata after the owning source's actual append.
+fn append_recorded_audio(
+    stats: &mut LocalCaptureStats,
+    owner: (u64, u64),
+    source: AudioSource,
+    sample_rate: u32,
+    data: &[u8],
+    append: impl FnOnce(&[u8]) -> std::io::Result<()>,
+) -> AudioWriteOutcome {
+    if !stats.audio_evidence.owns(owner.0, owner.1, source)
+        || stats.audio_limited
+        || data.is_empty()
+    {
+        return AudioWriteOutcome::default();
+    }
+    let before = stats.audio_evidence.write_status(stats.audio_limited);
+    let mut write_failed = false;
+    if !matches!(sample_rate, 16_000 | 24_000)
+        || !data.len().is_multiple_of(2)
+        || (stats.sample_rate != 0 && stats.sample_rate != sample_rate)
+    {
+        stats.audio_limited = true;
+        // Invalid PCM stops retention too, but must not look like a full disk
+        // quota to the indicator.
+        stats.audio_evidence.record(owner.0, owner.1, source, false);
+    } else {
+        let available =
+            crate::core::session_archive::AUDIO_BYTE_LIMIT.saturating_sub(stats.audio_bytes);
+        let accepted = data.len().min(available);
+        if accepted == 0 {
+            stats.audio_limited = true;
+        } else if append(&data[..accepted]).is_err() {
+            write_failed = true;
+            stats.audio_evidence.record(owner.0, owner.1, source, false);
+        } else {
+            stats.sample_rate = sample_rate;
+            stats.audio_bytes += accepted;
+            stats.audio_limited =
+                stats.audio_bytes == crate::core::session_archive::AUDIO_BYTE_LIMIT;
+            stats.audio_evidence.record(owner.0, owner.1, source, true);
+        }
+    }
+    AudioWriteOutcome {
+        status_changed: stats.audio_evidence.write_status(stats.audio_limited) != before,
+        write_failed,
+    }
 }
 
 fn finalize_pending_history(
@@ -1717,7 +1777,10 @@ impl SessionManager {
             .store(preferences.retain_session_history, Ordering::SeqCst);
         self.history_pending_audio
             .store(preferences.record_session_audio, Ordering::SeqCst);
-        *self.history_stats.lock().unwrap() = LocalCaptureStats::default();
+        *self.history_stats.lock().unwrap() = LocalCaptureStats {
+            audio_evidence: RecordingEvidence::new(preferences.audio_input),
+            ..Default::default()
+        };
         self.history_save_error.store(false, Ordering::SeqCst);
         self.archive_revision.fetch_add(1, Ordering::SeqCst);
         self.controller.lock().unwrap().archive_mut().begin(
@@ -1878,6 +1941,11 @@ impl SessionManager {
                 let _transition = self.generation_transition.lock().unwrap();
                 self.ensure_generation_current(generation)?;
                 *self.audio_attempt.lock().unwrap() = Some((generation, attempt));
+                self.history_stats
+                    .lock()
+                    .unwrap()
+                    .audio_evidence
+                    .begin_attempt(generation, attempt);
             }
             if *self.active_audio_input.lock().unwrap() == AudioInput::Both {
                 let echo = Arc::new(
@@ -2006,6 +2074,7 @@ impl SessionManager {
                         manager.record_audio(
                             source,
                             generation,
+                            attempt,
                             audio_format.sample_rate_hz,
                             &data,
                         );
@@ -3008,47 +3077,51 @@ impl SessionManager {
         }
     }
 
-    fn record_audio(&self, source: AudioSource, generation: u64, sample_rate: u32, data: &[u8]) {
-        if (self.is_generation_current(generation)
-            || self.stopping_tail_generation.load(Ordering::SeqCst) == generation)
-            && !self.is_paused()
-        {
+    fn record_audio(
+        self: &Arc<Self>,
+        source: AudioSource,
+        generation: u64,
+        attempt: u64,
+        sample_rate: u32,
+        data: &[u8],
+    ) {
+        let outcome = {
             let pending = self.history_pending_id.lock().unwrap();
-            if !self.history_pending_audio.load(Ordering::SeqCst) {
+            // Recheck after acquiring the archive owner: a delayed old queue
+            // must not write into a newly started session's files or evidence.
+            if !self.history_pending_audio.load(Ordering::SeqCst)
+                || self.is_paused()
+                || !(self.is_generation_current(generation)
+                    || self.stopping_tail_generation.load(Ordering::SeqCst) == generation)
+            {
                 return;
             }
             let Some(id) = pending.as_deref() else { return };
             let mut stats = self.history_stats.lock().unwrap();
-            if stats.audio_limited || data.is_empty() {
-                return;
-            }
-            if !matches!(sample_rate, 16_000 | 24_000)
-                || !data.len().is_multiple_of(2)
-                || (stats.sample_rate != 0 && stats.sample_rate != sample_rate)
-            {
-                stats.audio_limited = true;
-                return;
-            }
-            let available =
-                crate::core::session_archive::AUDIO_BYTE_LIMIT.saturating_sub(stats.audio_bytes);
-            let accepted = data.len().min(available);
-            if accepted == 0 {
-                stats.audio_limited = true;
-                return;
-            }
-            if self
-                .history
-                .append_pcm_from(id, source, sample_rate, &data[..accepted])
-                .is_err()
-            {
+            let outcome = append_recorded_audio(
+                &mut stats,
+                (generation, attempt),
+                source,
+                sample_rate,
+                data,
+                |accepted| {
+                    self.history
+                        .append_pcm_from(id, source, sample_rate, accepted)
+                },
+            );
+            if outcome.write_failed {
+                // Commit failure to this archive before releasing its owner;
+                // a later start may reset the shared error flag.
                 self.history_save_error.store(true, Ordering::SeqCst);
-                pipeline_log!("session history audio append failed label=write_failed");
-                return;
             }
-            stats.sample_rate = sample_rate;
-            stats.audio_bytes += accepted;
-            stats.audio_limited =
-                stats.audio_bytes == crate::core::session_archive::AUDIO_BYTE_LIMIT;
+            outcome
+        };
+        if outcome.write_failed {
+            pipeline_log!("session history audio append failed label=write_failed");
+        }
+        if outcome.status_changed {
+            // Steady PCM writes do not publish full subtitle snapshots.
+            self.publish_state();
         }
     }
 
@@ -3056,7 +3129,7 @@ impl SessionManager {
         self.archive_revision.load(Ordering::SeqCst)
     }
 
-    pub fn apply_archive_opt_out(&self, history: Option<bool>, audio: Option<bool>) {
+    pub fn apply_archive_opt_out(self: &Arc<Self>, history: Option<bool>, audio: Option<bool>) {
         if history == Some(false) || audio == Some(false) {
             self.archive_revision.fetch_add(1, Ordering::SeqCst);
         }
@@ -3087,6 +3160,9 @@ impl SessionManager {
             stats.audio_bytes = 0;
             stats.audio_limited = false;
             stats.sample_rate = 0;
+            stats.audio_evidence = RecordingEvidence::default();
+            drop(stats);
+            self.publish_state();
         }
     }
 
@@ -3265,7 +3341,7 @@ impl SessionManager {
         }
     }
 
-    pub fn clear_archive(&self) -> std::io::Result<()> {
+    pub fn clear_archive(self: &Arc<Self>) -> std::io::Result<()> {
         let mut pending = self.history_pending_id.lock().unwrap();
         if let Some(id) = pending.as_deref() {
             self.history.discard(id)?;
@@ -3280,6 +3356,8 @@ impl SessionManager {
         for recording in self.recording.lock().unwrap().iter_mut() {
             recording.clear();
         }
+        drop(pending);
+        self.publish_state();
         Ok(())
     }
 
@@ -4573,15 +4651,44 @@ impl SessionManager {
     /// Builds the current session state snapshot without emitting it (used by
     /// windows that boot after the last broadcast, e.g. the overlay control).
     pub fn current_state_event(&self) -> SessionStateEvent {
-        let (mut event, status) = {
+        let (mut event, status, recording_owner, stopping_tail_generation) = {
+            let _transition = self.generation_transition.lock().unwrap();
             let controller = self.controller.lock().unwrap();
+            let mut event = SessionStateEvent::from(&controller.state);
+            event.is_active |= self.is_recovering.load(Ordering::SeqCst);
+            event.is_paused = self.is_paused();
+            let active_generation = self.active_generation.load(Ordering::SeqCst);
+            let active_owner = self
+                .audio_attempt
+                .lock()
+                .unwrap()
+                .filter(|(generation, _)| {
+                    *generation == active_generation && active_generation != NO_GENERATION
+                });
             (
-                SessionStateEvent::from(&controller.state),
+                event,
                 controller.state.status.clone(),
+                active_owner,
+                self.stopping_tail_generation.load(Ordering::SeqCst),
             )
         };
-        event.is_active |= self.is_recovering.load(Ordering::SeqCst);
-        event.is_paused = self.is_paused();
+        // Appending audio holds these counters during file I/O. Never wait for
+        // that work with the subtitle controller or lifecycle gate held.
+        {
+            let stats = self.history_stats.lock().unwrap();
+            let owner = recording_owner.or_else(|| {
+                stats
+                    .audio_evidence
+                    .owner_for_generation(stopping_tail_generation)
+            });
+            event.audio_recording = Some(stats.audio_evidence.status(
+                self.history_pending_audio.load(Ordering::SeqCst),
+                &status,
+                event.is_paused,
+                owner,
+                stats.audio_limited,
+            ));
+        }
         event.is_overlay_collapsed = self.is_overlay_collapsed();
         let generation = self.active_generation.load(Ordering::SeqCst);
         let translation_latency = self
@@ -4739,6 +4846,18 @@ impl SessionManager {
     fn establish_ui_test_session(self: &Arc<Self>) -> Result<(), String> {
         self.cancel_translation_timeout();
         self.clear_active_settings();
+        let generation = self.active_generation.load(Ordering::SeqCst);
+        let attempt = self.next_background_task_id();
+        {
+            let _transition = self.generation_transition.lock().unwrap();
+            self.ensure_generation_current(generation)?;
+            *self.audio_attempt.lock().unwrap() = Some((generation, attempt));
+            self.history_stats
+                .lock()
+                .unwrap()
+                .audio_evidence
+                .begin_attempt(generation, attempt);
+        }
         self.controller.lock().unwrap().begin_connecting();
         self.publish_state();
         #[cfg(all(target_os = "macos", feature = "development-debugger"))]
@@ -4805,6 +4924,13 @@ impl SessionManager {
                 let mut recordings = self.recording.lock().unwrap();
                 recordings[slot].begin(true);
                 recordings[slot].append(16_000, &samples);
+                if !recordings[slot].is_empty() {
+                    self.history_stats
+                        .lock()
+                        .unwrap()
+                        .audio_evidence
+                        .record(generation, attempt, source, true);
+                }
             }
         }
         self.publish_state();
@@ -4869,6 +4995,134 @@ fn seed_ui_test_live_subtitles(
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    fn recording_stats(input: AudioInput) -> LocalCaptureStats {
+        let mut evidence = RecordingEvidence::new(input);
+        evidence.begin_attempt(7, 11);
+        LocalCaptureStats {
+            audio_evidence: evidence,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn recording_status_changes_only_after_all_selected_files_receive_audio() {
+        let directory = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(directory.path().to_path_buf(), false);
+        let id = uuid::Uuid::new_v4().to_string();
+        history.begin(&id, 100).unwrap();
+        let mut stats = recording_stats(AudioInput::Both);
+        for (source, changed) in [
+            (AudioSource::System, false),
+            (AudioSource::Microphone, true),
+            (AudioSource::System, false),
+            (AudioSource::Microphone, false),
+        ] {
+            let result =
+                append_recorded_audio(&mut stats, (7, 11), source, 16_000, &[1, 0], |data| {
+                    history.append_pcm_from(&id, source, 16_000, data)
+                });
+            assert_eq!(result.status_changed, changed);
+            assert!(!result.write_failed);
+        }
+        assert_eq!(stats.audio_bytes, 8);
+        assert_eq!(
+            stats.audio_evidence.write_status(false),
+            AudioRecordingStatus::Recording
+        );
+        for source in [AudioSource::System, AudioSource::Microphone] {
+            assert_eq!(
+                &history.audio_from(&id, source).unwrap()[44..],
+                &[1, 0, 1, 0]
+            );
+        }
+    }
+
+    #[test]
+    fn recording_write_failure_does_not_count_samples_or_claim_a_complete_dual_recording() {
+        let mut stats = recording_stats(AudioInput::Both);
+        let failed = append_recorded_audio(
+            &mut stats,
+            (7, 11),
+            AudioSource::System,
+            16_000,
+            &[1, 0],
+            |_| Err(std::io::Error::other("synthetic write failure")),
+        );
+        assert!(failed.status_changed && failed.write_failed);
+        assert_eq!(stats.audio_bytes, 0);
+        for source in [AudioSource::Microphone, AudioSource::System] {
+            let recovered =
+                append_recorded_audio(&mut stats, (7, 11), source, 16_000, &[1, 0], |_| Ok(()));
+            assert!(!recovered.status_changed);
+        }
+        assert_eq!(
+            stats.audio_evidence.write_status(false),
+            AudioRecordingStatus::Error
+        );
+    }
+
+    #[test]
+    fn recording_limit_stops_writes_and_publishes_the_transition_once() {
+        let mut stats = recording_stats(AudioInput::System);
+        stats.audio_bytes = crate::core::session_archive::AUDIO_BYTE_LIMIT - 2;
+        let outcome = append_recorded_audio(
+            &mut stats,
+            (7, 11),
+            AudioSource::System,
+            16_000,
+            &[1, 0, 2, 0],
+            |accepted| {
+                assert_eq!(accepted, &[1, 0]);
+                Ok(())
+            },
+        );
+        assert!(outcome.status_changed);
+        assert!(!outcome.write_failed);
+        assert_eq!(
+            stats.audio_evidence.write_status(stats.audio_limited),
+            AudioRecordingStatus::Limited
+        );
+        let repeated = append_recorded_audio(
+            &mut stats,
+            (7, 11),
+            AudioSource::System,
+            16_000,
+            &[1, 0],
+            |_| panic!("the recording limit must stop later writes"),
+        );
+        assert!(!repeated.status_changed);
+    }
+
+    #[test]
+    fn recording_rejects_stale_attempts_and_empty_or_invalid_pcm_without_success_evidence() {
+        let mut stats = recording_stats(AudioInput::System);
+        for (owner, data) in [
+            ((6, 11), &[1, 0][..]),
+            ((7, 10), &[1, 0][..]),
+            ((7, 11), &[][..]),
+        ] {
+            let outcome =
+                append_recorded_audio(&mut stats, owner, AudioSource::System, 16_000, data, |_| {
+                    panic!("stale or empty audio must not be appended")
+                });
+            assert!(!outcome.status_changed);
+        }
+        let invalid = append_recorded_audio(
+            &mut stats,
+            (7, 11),
+            AudioSource::System,
+            16_000,
+            &[1],
+            |_| panic!("unaligned audio must not be appended"),
+        );
+        assert!(invalid.status_changed);
+        assert_eq!(stats.audio_bytes, 0);
+        assert_eq!(
+            stats.audio_evidence.write_status(stats.audio_limited),
+            AudioRecordingStatus::Error
+        );
+    }
 
     fn verify_failed_opt_out_cleanup_is_retried(retain_text: bool, retain_audio: bool) {
         let directory = tempfile::tempdir().unwrap();
@@ -6455,8 +6709,10 @@ mod lifecycle_tests {
                     16_000 * 2 * if retain_for_export { 8 } else { 1 }
                 );
                 let pcm: Vec<_> = samples
-                    .chunks_exact(2)
-                    .map(|sample| i16::from_le_bytes([sample[0], sample[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|sample| i16::from_le_bytes(*sample))
                     .collect();
                 assert!(pcm.iter().any(|sample| *sample != 0));
                 assert!(pcm.iter().all(|sample| sample.abs() <= 1000));
