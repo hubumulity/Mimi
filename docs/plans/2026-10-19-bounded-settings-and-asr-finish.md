@@ -48,3 +48,24 @@ ordinary/mixed ordering barriers, rollback and external events. For ASR, cover
 draft identity, reliable final precedence, Clear and both receive APIs. Run the
 canonical source checks and actual host-JNI coverage with bounded concurrency.
 Record final results and native/provider limitations in the integration ledger.
+
+
+## Custom recognition final-publication boundary
+
+A later Android JNI run exposed a second boundary before the provider event
+queue. The custom recognition reader retired a completed turn under its content
+lock, then released that lock before publishing the authoritative result.
+Concurrent finish could observe an empty turn queue, publish SessionFinished,
+and invalidate the reader before its final event reached the queue. The earlier
+receiver drain policy cannot protect an event that has not been published.
+
+Retire the turn and publish its bounded result under the same synchronous
+content lock. Release that lock before entering the protocol-error path, whose
+event lock has other callers. No lock crosses an await; finish deadlines and
+normal event-lane policies remain unchanged.
+
+A controlled test pauses exactly between retirement and publication. Before the
+fix, finish overtakes the empty completion. After the fix, empty, whitespace and
+nonempty authoritative completions all precede SessionFinished. Real providers
+and native capture are outside this deterministic loopback case; actual Android
+JNI validation remains required.
