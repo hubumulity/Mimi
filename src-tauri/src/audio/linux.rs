@@ -2072,7 +2072,6 @@ mod tests {
                 // matches too, so its bounded test sink cannot stall capture.
                 while !system_matched || !mic_matched {
                     tokio::select! {
-                        biased;
                         Some(failure) = system_failures.recv() => {
                             panic!("native dual system capture failed, rate={rate}: {failure:?}");
                         }
