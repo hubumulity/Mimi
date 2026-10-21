@@ -155,7 +155,7 @@ and CI requirements remain recorded below.
 
 ## Build and verification
 
-Install Rust 1.88+, Node.js 22.13+, and the native dependencies listed by
+Install Rust 1.90+, Node.js 22.13+, and the native dependencies listed by
 `scripts/linux-ci-deps.sh` (Ubuntu). Then:
 
 ```bash

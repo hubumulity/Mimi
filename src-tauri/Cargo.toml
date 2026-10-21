@@ -4,7 +4,7 @@ version = "1.6.6"
 description = "Live translated subtitles for anything playing on your Mac or PC."
 authors = ["yuxino <nbsawz@gmail.com>"]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 
 [lib]
 name = "mimi_lib"
