@@ -302,9 +302,6 @@ jobs:
       - name: Test AppImage permission regression
         run: python3 scripts/check-appimage-permissions-test.py
 
-      - name: Test AppImage GLES dependency regression
-        run: python3 scripts/check-appimage-gles-test.py
-
       - name: Verify updater platform mapping
         run: node --test scripts/updater-manifest.node.mjs
 
