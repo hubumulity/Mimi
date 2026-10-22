@@ -15,12 +15,6 @@ Download the `.deb` or `.AppImage` from [Releases](https://github.com/yuxino/mim
   installer, or `sudo apt install ./mimi_<version>_amd64.deb`.
 - AppImage: make the downloaded file executable and open it. Older FUSE-based
   AppImage launchers need FUSE 2 support (`libfuse2` on Ubuntu 22.04).
-  The desktop must provide its normal EGL/GLVND graphics stack and GPU drivers.
-  New packages built with the GLES packaging fix include the vendor-neutral
-  entry library that WebKit loads dynamically. Existing v1.5.6/v1.5.7 packages
-  do not include this fix. If they report `Couldn't open libGLESv2.so.2`,
-  install your distribution's `libgles2` package
-  (`sudo apt install libgles2` on Ubuntu/Debian).
 - AppImage supports signed updates in Settings. Quit before updating `.deb`
   with a newer package; its Settings button opens Releases.
 
@@ -155,7 +149,7 @@ and CI requirements remain recorded below.
 
 ## Build and verification
 
-Install Rust 1.88+, Node.js 22.13+, and the native dependencies listed by
+Install Rust 1.90+, Node.js 22.13+, and the native dependencies listed by
 `scripts/linux-ci-deps.sh` (Ubuntu). Then:
 
 ```bash
@@ -228,10 +222,11 @@ linuxdeploy preserves that mode as `AppRun.wrapped`, blocking execution by
 users outside the build owner's UID/group (reported in #66).
 `verify-linux-bundles.sh` extracts the final AppImage and checks read/execute
 bits for owner, group, and other on both launchers and `usr/bin/mimi` before
-running the existing tray-free X11 smoke tests. It also checks the bundled
-`libGLESv2.so.2` and its copyright notice, independently of libraries installed
-on the build host. Only the GLVND entry library is included; EGL, GLdispatch,
-and Mesa/NVIDIA GPU drivers remain supplied by the host.
+running the existing tray-free X11 smoke tests. It also rejects any bundled
+GL/GLES/EGL/GLX/GLdispatch/GBM/DRM or vendor driver library, and the old
+`libgles2` copyright notice, independently of libraries installed on the build
+host. The AppImage relies on the host's graphics stack, including the GLVND
+`libGLESv2.so.2` entry library; WebKit loads it at runtime.
 FUSE availability, other runtime dependencies, and glibc compatibility remain
 separate checks.
 
