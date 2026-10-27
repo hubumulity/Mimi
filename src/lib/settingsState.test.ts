@@ -90,6 +90,14 @@ describe("mergeSettingsSnapshot", () => {
     expect(enabled.translationMode).toBe(SETTINGS.translationMode);
   });
 
+  it("defaults scream/gasp filtering off and preserves the choice across unrelated saves", () => {
+    expect(mergeSettingsSnapshot(SETTINGS, {}).filterDegenerateUtterances).toBe(false);
+    const enabled = mergeSettingsSnapshot(SETTINGS, { filterDegenerateUtterances: true });
+    expect(mergeSettingsSnapshot(enabled, { fontSize: 20 }).filterDegenerateUtterances).toBe(true);
+    const disabled = mergeSettingsSnapshot(enabled, { filterDegenerateUtterances: false });
+    expect(mergeSettingsSnapshot(disabled, { fontSize: 20 }).filterDegenerateUtterances).toBe(false);
+  });
+
   it("defaults the custom subtitle count off and preserves the choice across unrelated saves", () => {
     expect(mergeSettingsSnapshot(SETTINGS, {}).customSubtitleCountEnabled).toBe(false);
     expect(mergeSettingsSnapshot(SETTINGS, {}).visibleSubtitleCount).toBe(3);

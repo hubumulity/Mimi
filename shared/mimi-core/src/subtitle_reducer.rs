@@ -64,6 +64,12 @@ pub struct SubtitleReducer<A: ArchiveSink = NoopArchive> {
     #[serde(skip)]
     pub archive: A,
     max_history_count: usize,
+    /// When true, utterances that are nothing but a continuous filler run
+    /// (screams, gasps) never enter history, display, or the archive. This is
+    /// a presentation preference, not session state: session boundaries never
+    /// reset it.
+    #[serde(default)]
+    filter_degenerate_utterances: bool,
     source_draft_since_confirmation: bool,
     /// A manually started session may begin with an identical ID-less final.
     /// Reconnection alone must not rearm that admission boundary.
@@ -107,6 +113,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             snapshot: SubtitleSnapshot::empty(),
             archive: Default::default(),
             max_history_count,
+            filter_degenerate_utterances: false,
             source_draft_since_confirmation: false,
             has_session_confirmation: false,
             last_confirmed_id: None,
@@ -310,11 +317,67 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         }
     }
 
+    /// Returns true when `event` would confirm a degenerate pair. Streaming
+    /// finals pair with the recognition line currently on screen, so their
+    /// source side comes from the snapshot rather than the event itself.
+    fn event_is_degenerate_final(&self, event: &SubtitleEvent) -> bool {
+        if !self.filter_degenerate_utterances {
+            return false;
+        }
+        let pair = match event {
+            SubtitleEvent::FinalPair {
+                source,
+                translation,
+            }
+            | SubtitleEvent::IdentifiedFinalPair {
+                source,
+                translation,
+                ..
+            }
+            | SubtitleEvent::ConfirmedPair {
+                source,
+                translation,
+                ..
+            } => Some((source.as_str(), translation.as_str())),
+            SubtitleEvent::TranslationFinal(translation) => {
+                Some((self.snapshot.source.text.as_str(), translation.as_str()))
+            }
+            SubtitleEvent::UtteranceText {
+                role: UtteranceRole::Translation,
+                text,
+                is_final: true,
+                ..
+            } => Some((self.snapshot.source.text.as_str(), text.as_str())),
+            _ => None,
+        };
+        pair.is_some_and(|(source, translation)| pair_is_degenerate(source, translation))
+    }
+
+    /// Empties a degenerate preview line while leaving every other line
+    /// untouched. Callers keep their own ordering and flag bookkeeping, so a
+    /// scream preview suppresses only its own text.
+    fn filtered_display_text(&self, text: &str) -> String {
+        if self.filter_degenerate_utterances
+            && crate::degenerate_utterance::is_degenerate_utterance(text)
+        {
+            String::new()
+        } else {
+            text.to_string()
+        }
+    }
+
     /// Presentation retention is platform-selected; persistence is independent.
     pub fn set_history_limit(&mut self, limit: usize) {
         self.max_history_count = limit;
         let overflow = self.snapshot.history.len().saturating_sub(limit);
         self.snapshot.history.drain(0..overflow);
+    }
+
+    /// Opt-in scream/gasp filtering, applied at every history, display, and
+    /// preview gate below. Off by default: ordinary interjections keep
+    /// working until the user enables it.
+    pub fn set_filter_degenerate_utterances(&mut self, enabled: bool) {
+        self.filter_degenerate_utterances = enabled;
     }
 
     /// Reject oversized opaque bridge state before applying any new operation.
@@ -480,6 +543,11 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         if !event.text_within_limit() {
             return;
         }
+        // A degenerate pair never becomes a line, a display pair, or history,
+        // no matter which provider path confirmed it.
+        if self.event_is_degenerate_final(&event) {
+            return;
+        }
         let realtime = matches!(
             &event,
             SubtitleEvent::SourceDraft(_)
@@ -556,7 +624,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 // sentence. Its final is distinct from a duplicate final sent
                 // without any intervening recognition draft.
                 self.source_draft_since_confirmation |= !text.is_empty();
-                self.snapshot.source = SubtitleLine::new(text, false);
+                self.snapshot.source = SubtitleLine::new(self.filtered_display_text(&text), false);
             }
             SubtitleEvent::SourceUtteranceDraft { utterance_id, text } => {
                 if self
@@ -575,7 +643,7 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 self.source_owner_order = None;
                 self.source_draft_since_confirmation |= !text.trim().is_empty();
                 self.snapshot.source = SubtitleLine::for_utterance(
-                    trim(&text),
+                    self.filtered_display_text(&trim(&text)),
                     false,
                     self.source_layout_identity(utterance_id),
                 );
@@ -583,15 +651,17 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
             SubtitleEvent::SourceFinal(text) => {
                 self.latest_source_ordinal = None;
                 self.source_owner_order = None;
-                self.snapshot.source = SubtitleLine::new(trim(&text), true);
+                self.snapshot.source =
+                    SubtitleLine::new(self.filtered_display_text(&trim(&text)), true);
             }
             SubtitleEvent::TranslationDraft(text) => {
                 let trimmed = trim(&text);
+                let display = self.filtered_display_text(&trimmed);
                 // A blank draft must not overwrite an already-confirmed final.
-                if trimmed.is_empty() && self.snapshot.translation.is_final {
+                if display.is_empty() && self.snapshot.translation.is_final {
                     return;
                 }
-                self.snapshot.translation = SubtitleLine::new(trimmed, false);
+                self.snapshot.translation = SubtitleLine::new(display, false);
                 self.translation_owner_order = None;
             }
             SubtitleEvent::PreviewPair {
@@ -602,6 +672,14 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 let source = trim(&source);
                 let translation = trim(&translation);
                 if source.is_empty() || translation.is_empty() {
+                    return;
+                }
+                // A degenerate preview is a scream in progress, not a sentence
+                // waiting for confirmation: clear it instead of displaying it.
+                if self.filter_degenerate_utterances && pair_is_degenerate(&source, &translation) {
+                    self.snapshot.preview_pair = None;
+                    self.preview_source_utterance_id = None;
+                    self.clear_unconfirmed_display_pair();
                     return;
                 }
                 if source_utterance_id.is_some_and(|preview_id| {
@@ -688,6 +766,10 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
                 if self.discarded_source_ids.contains(&utterance_id) {
                     return;
                 }
+                // A degenerate translation final never reaches this arm (see
+                // apply). This substitution empties previews and source-side
+                // lines, including degenerate source finals.
+                let text = self.filtered_display_text(&text);
                 match role {
                     UtteranceRole::Source => {
                         let (ordinal, confirmed) = self.identify_source(&utterance_id);
@@ -1150,6 +1232,10 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         source_id: Option<u64>,
         is_new: bool,
     ) {
+        // Backstop for any confirm path that bypasses the apply-level filter.
+        if self.filter_degenerate_utterances && pair_is_degenerate(&source, &translation) {
+            return;
+        }
         let duplicate = !is_new
             && self.snapshot.display_pair_final
             && self
@@ -1171,6 +1257,11 @@ impl<A: ArchiveSink> SubtitleReducer<A> {
         is_new_utterance: bool,
     ) -> Option<u64> {
         if source.is_empty() || translation.is_empty() {
+            return None;
+        }
+        // Backstop: no path may archive a degenerate pair, even one that
+        // bypassed the apply-level filter.
+        if self.filter_degenerate_utterances && pair_is_degenerate(&source, &translation) {
             return None;
         }
         // Timestamps also identify the frontend's bounded history rows. Two
@@ -1205,6 +1296,15 @@ impl<A: ArchiveSink> Default for SubtitleReducer<A> {
     fn default() -> Self {
         Self::new(20)
     }
+}
+
+/// Returns true when either side of a confirmed pair is a degenerate filler
+/// run. A pair is dropped when either side degenerates: the source side
+/// covers recognition, the translation side covers live-translate providers
+/// that render a scream directly into the target language.
+fn pair_is_degenerate(source: &str, translation: &str) -> bool {
+    crate::degenerate_utterance::is_degenerate_utterance(source)
+        || crate::degenerate_utterance::is_degenerate_utterance(translation)
 }
 
 /// Trims leading and trailing Unicode whitespace.
@@ -2678,6 +2778,106 @@ mod tests {
             reducer.snapshot.translation,
             SubtitleLine::for_utterance("你好。", true, "item_source".into())
         );
+    }
+
+    #[test]
+    fn degenerate_final_pairs_never_enter_history_display_or_archive_when_enabled() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.set_filter_degenerate_utterances(true);
+        reducer.archive.begin(true, 0);
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "啊啊啊".into(),
+            translation: "ah ah ah".into(),
+        });
+        reducer.apply(SubtitleEvent::ConfirmedPair {
+            utterance_id: 1,
+            source_utterance_id: None,
+            source: "嗯嗯嗯嗯".into(),
+            translation: "mm mm mm".into(),
+        });
+        reducer.register_source_identity("scream");
+        reducer.apply(SubtitleEvent::IdentifiedFinalPair {
+            utterance_id: "scream".into(),
+            source: "あああ".into(),
+            translation: "あああ".into(),
+        });
+        assert!(reducer.snapshot.history.is_empty());
+        assert!(reducer.snapshot.display_pair.is_none());
+        assert_eq!(reducer.archive.count(), 0);
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "今天天气很好".into(),
+            translation: "The weather is nice today.".into(),
+        });
+        assert_eq!(reducer.snapshot.history.len(), 1);
+        assert_eq!(reducer.archive.count(), 1);
+        assert_eq!(
+            reducer.snapshot.display_pair.as_ref().unwrap().source,
+            "今天天气很好"
+        );
+    }
+
+    #[test]
+    fn degenerate_pairs_enter_history_when_filter_is_off() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "啊啊啊".into(),
+            translation: "ah ah ah".into(),
+        });
+        assert_eq!(reducer.snapshot.history.len(), 1);
+    }
+
+    #[test]
+    fn degenerate_drafts_and_previews_are_suppressed_but_real_text_returns() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.set_filter_degenerate_utterances(true);
+        reducer.apply(SubtitleEvent::SourceDraft("啊啊啊".into()));
+        assert_eq!(reducer.snapshot.source.text, "");
+        reducer.apply(SubtitleEvent::TranslationDraft("ah ah ah".into()));
+        assert_eq!(reducer.snapshot.translation.text, "");
+        reducer.apply(SubtitleEvent::PreviewPair {
+            source_utterance_id: Some(7),
+            source: "嗯嗯嗯".into(),
+            translation: "mm mm mm".into(),
+        });
+        assert!(reducer.snapshot.preview_pair.is_none());
+        reducer.apply(SubtitleEvent::SourceFinal("啊啊啊".into()));
+        assert_eq!(reducer.snapshot.source.text, "");
+        reducer.apply(SubtitleEvent::SourceDraft("你好".into()));
+        assert_eq!(reducer.snapshot.source.text, "你好");
+        reducer.apply(SubtitleEvent::SourceFinal("你好".into()));
+        assert_eq!(reducer.snapshot.source.text, "你好");
+    }
+
+    #[test]
+    fn degenerate_filter_survives_session_boundaries() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.set_filter_degenerate_utterances(true);
+        reducer.begin_new_session();
+        reducer.reset_transient();
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "啊啊啊".into(),
+            translation: "ah ah ah".into(),
+        });
+        assert!(reducer.snapshot.history.is_empty());
+    }
+
+    #[test]
+    fn ordinary_fillers_inside_real_sentences_are_kept_when_enabled() {
+        let mut reducer = SubtitleReducer::default();
+        reducer.set_filter_degenerate_utterances(true);
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "嗯，我觉得很好".into(),
+            translation: "Hmm, I think it is good.".into(),
+        });
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "啊".into(),
+            translation: "Oh".into(),
+        });
+        reducer.apply(SubtitleEvent::FinalPair {
+            source: "哈哈哈".into(),
+            translation: "Hahaha".into(),
+        });
+        assert_eq!(reducer.snapshot.history.len(), 3);
     }
 }
 

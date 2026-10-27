@@ -262,6 +262,10 @@ pub struct Preferences {
     pub custom_subtitle_count_enabled: bool,
     /// 1..=10; ignored while `custom_subtitle_count_enabled` is false.
     pub visible_subtitle_count: u8,
+    /// Drop utterances that are nothing but a continuous filler run
+    /// (screams, gasps). Off by default; ordinary interjections inside real
+    /// sentences are untouched either way.
+    pub filter_degenerate_utterances: bool,
     /// Animation switches: `None` follows the system reduce-motion setting.
     pub pulse_animation: Option<bool>,
     pub pulse_style: PulseStyle,
@@ -303,6 +307,7 @@ impl Default for Preferences {
             show_subtitle_timestamps: false,
             custom_subtitle_count_enabled: false,
             visible_subtitle_count: DEFAULT_VISIBLE_SUBTITLE_COUNT,
+            filter_degenerate_utterances: false,
             pulse_animation: None,
             pulse_style: PulseStyle::Ribbon,
             subtitle_animation: None,

@@ -361,6 +361,13 @@ export function SettingsView() {
                           onChange={(value) => void savePreference(visibleSubtitleCountDraft(value), I18N.settings.visibleSubtitleCount)}
                         />
                       </SettingsRow>
+                      <SettingsRow label={I18N.settings.filterDegenerateUtterances} description={I18N.settings.filterDegenerateUtterancesHelp}>
+                        <Switch
+                          checked={settings.filterDegenerateUtterances ?? false}
+                          aria-label={I18N.settings.filterDegenerateUtterances}
+                          onChange={(filterDegenerateUtterances) => void savePreference({ filterDegenerateUtterances }, I18N.settings.filterDegenerateUtterances)}
+                        />
+                      </SettingsRow>
                       <SettingsRow
                         label={I18N.settings.pulseAnimation}
                       >

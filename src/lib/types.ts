@@ -145,6 +145,8 @@ export interface SettingsSnapshot {
   /** 1..10 recent subtitles; used only while the custom count is enabled.
    * Missing legacy settings use the default count. */
   visibleSubtitleCount?: number;
+  /** Missing legacy settings keep scream/gasp filtering off. */
+  filterDegenerateUtterances?: boolean;
   /** `null` follows the system reduce-motion setting. */
   pulseAnimation: boolean | null;
   pulseStyle: PulseStyle;
@@ -198,6 +200,7 @@ export interface SettingsDraft {
   showSubtitleTimestamps?: boolean;
   customSubtitleCountEnabled?: boolean;
   visibleSubtitleCount?: number;
+  filterDegenerateUtterances?: boolean;
   pulseAnimation?: boolean;
   pulseStyle?: PulseStyle;
   subtitleAnimation?: boolean;

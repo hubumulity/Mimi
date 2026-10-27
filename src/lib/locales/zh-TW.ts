@@ -189,6 +189,8 @@ export const SETTINGS = {
   visibleSubtitleCountAll: "全部",
   visibleSubtitleCountRecent: (count: number) => `最近 ${count} 條`,
   visibleSubtitleCountHelp: "僅限制即時跟隨時顯示的已確認字幕。向上捲動仍可查看現有歷史，不影響儲存和匯出。",
+  filterDegenerateUtterances: "過濾慘叫/喘息",
+  filterDegenerateUtterancesHelp: "開啟後，整句只有語氣詞的慘叫、喘息不再顯示；正常句子裡的單個語氣詞不受影響。",
   subtitleTimestampsHelp: "在已確認字幕旁顯示本機時間（HH:mm:ss），適用於系統聲音和麥克風。時間以字幕確認為準，並非精確的說話起點；沉浸模式也跟隨此開關。",
 
   sessionAudioTiming: "WAV 會省略暫停和重新連線間隙，音訊與字幕時間戳記不直接對齊。",

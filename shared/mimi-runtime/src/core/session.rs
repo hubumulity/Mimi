@@ -84,6 +84,11 @@ impl SourceSessionController {
         self.state.is_translation_timed_out = false;
     }
 
+    pub fn set_filter_degenerate_utterances(&mut self, enabled: bool) {
+        self.subtitle_reducer
+            .set_filter_degenerate_utterances(enabled);
+    }
+
     pub fn begin_session(&mut self) {
         self.subtitle_reducer.begin_new_session();
         self.begin_connecting();
@@ -540,6 +545,14 @@ impl TranslationSessionController {
     pub fn set_atomic_preview(&mut self, paired: bool) {
         self.atomic_preview = Some(paired);
         self.state.atomic_preview = Some(paired);
+    }
+
+    /// Forwards the scream/gasp filter to both input lanes. Lanes are a fixed
+    /// pair, so one call covers every session the controller owns.
+    pub fn set_filter_degenerate_utterances(&mut self, enabled: bool) {
+        for source in &mut self.sources {
+            source.set_filter_degenerate_utterances(enabled);
+        }
     }
 
     pub fn set_audio_input(&mut self, audio_input: AudioInput) {
@@ -1776,6 +1789,35 @@ mod tests {
                 .map(|value| value.code.as_str()),
             Some("en")
         );
+    }
+
+    #[test]
+    fn degenerate_filter_setter_suppresses_scream_previews_and_finals() {
+        let mut controller = SourceSessionController::default();
+        controller.set_filter_degenerate_utterances(true);
+        controller.handle(LiveTranslateServerEvent::UtteranceText {
+            utterance_id: "scream".into(),
+            role: UtteranceRole::Source,
+            text: "啊啊啊".into(),
+            is_final: false,
+            language: Some("zh".into()),
+        });
+        assert_eq!(controller.state.subtitles.source.text, "");
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: "scream".into(),
+            source: "啊啊啊".into(),
+            translation: "ah ah ah".into(),
+            language: Some("zh".into()),
+        });
+        assert!(controller.state.subtitles.history.is_empty());
+        controller.set_filter_degenerate_utterances(false);
+        controller.handle(LiveTranslateServerEvent::SubtitleIdentifiedFinalPair {
+            utterance_id: "scream".into(),
+            source: "啊啊啊".into(),
+            translation: "ah ah ah".into(),
+            language: Some("zh".into()),
+        });
+        assert_eq!(controller.state.subtitles.history.len(), 1);
     }
 }
 

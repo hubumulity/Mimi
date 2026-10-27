@@ -189,6 +189,8 @@ export const SETTINGS = {
   visibleSubtitleCountAll: "Alle",
   visibleSubtitleCountRecent: (count: number) => `Letzte ${count}`,
   visibleSubtitleCountHelp: "Begrenzt bestätigte Untertitel nur in der Live-Ansicht. Nach oben scrollen, um den vorhandenen Verlauf zu lesen. Speichern und Export bleiben unverändert.",
+  filterDegenerateUtterances: "Schrei- und Keuchäußerungen filtern",
+  filterDegenerateUtterancesHelp: "Wenn aktiviert, werden Äußerungen, die nur aus Fülllauten (Schreie, Keuchen) bestehen, ausgeblendet. Füllwörter in normalen Sätzen bleiben unberührt.",
   subtitleTimestampsHelp: "Zeigt die lokale Uhrzeit (HH:mm:ss) neben bestätigten Untertiteln für Systemaudio und Mikrofon. Dies ist die Bestätigungszeit, nicht der genaue Sprechbeginn. Gilt auch im immersiven Modus.",
   sessionAudioTiming: "WAV enthält keine Pausen oder Verbindungslücken. Die Zeitleiste stimmt daher nicht direkt mit Untertitelzeitstempeln überein.",
   sessionTranscriptTiming: "TXT / Markdown-Zeitstempel zeigen die Bestätigungszeit seit Sitzungsbeginn, keine Wiedergabepositionen des Mediums.",

@@ -2,6 +2,7 @@
 //! Platform capture, network transport, persistence and presentation stay outside.
 
 pub mod bridge;
+pub mod degenerate_utterance;
 pub mod live_pair_aligner;
 pub mod models;
 pub mod openai_transcript_committer;

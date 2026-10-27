@@ -160,6 +160,9 @@ pub fn exchange(input: &str) -> Result<String, &'static str> {
         "history_limit" => reducer.set_history_limit(history_limit(
             op["limit"].as_u64().ok_or("core_invalid_history_limit")?,
         )?),
+        "filter_degenerate_utterances" => reducer.set_filter_degenerate_utterances(
+            op["enabled"].as_bool().ok_or("core_invalid_filter_flag")?,
+        ),
         "reset" => reducer.reset_transient(),
         "begin_session" => reducer.begin_new_session(),
         _ => return Err("core_invalid_operation"),
@@ -209,6 +212,45 @@ mod tests {
         let reset = call(applied["state"].as_str(), json!({"type":"reset"}));
         assert_eq!(reset["snapshot"]["source"]["text"], "");
     }
+    #[test]
+    fn degenerate_filter_op_drops_scream_pairs_but_keeps_real_ones() {
+        let created = call(None, json!({"type":"create","history_limit":6}));
+        let enabled = call(
+            created["state"].as_str(),
+            json!({"type":"filter_degenerate_utterances","enabled":true}),
+        );
+        let applied = call(
+            enabled["state"].as_str(),
+            json!({"type":"apply","event":{"type":"final_pair","source":"啊啊啊","translation":"ah ah ah"}}),
+        );
+        assert!(applied["snapshot"]["history"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let applied = call(
+            applied["state"].as_str(),
+            json!({"type":"apply","event":{"type":"final_pair","source":"你好","translation":"Hello"}}),
+        );
+        assert_eq!(applied["snapshot"]["history"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn state_without_filter_flag_deserializes_as_filter_off() {
+        let created = call(None, json!({"type":"create","history_limit":6}));
+        let mut state_value: Value =
+            serde_json::from_str(created["state"].as_str().unwrap()).unwrap();
+        state_value
+            .as_object_mut()
+            .unwrap()
+            .remove("filter_degenerate_utterances");
+        let old_state = serde_json::to_string(&state_value).unwrap();
+        let applied = call(
+            Some(&old_state),
+            json!({"type":"apply","event":{"type":"final_pair","source":"啊啊啊","translation":"ah ah ah"}}),
+        );
+        assert_eq!(applied["snapshot"]["history"].as_array().unwrap().len(), 1);
+    }
+
     #[test]
     fn invalid_state_and_unbounded_history_fail_without_echoing_content() {
         assert_eq!(

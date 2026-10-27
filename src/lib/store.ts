@@ -128,6 +128,7 @@ const INITIAL_SETTINGS: SettingsSnapshot = {
   showSubtitleTimestamps: false,
   customSubtitleCountEnabled: false,
   visibleSubtitleCount: 3,
+  filterDegenerateUtterances: false,
   pulseAnimation: null,
   pulseStyle: "ribbon",
   subtitleAnimation: null,

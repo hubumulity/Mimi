@@ -162,6 +162,18 @@ it("keeps the confirmed subtitle count on save failure and allows a quiet retry"
   expect(host.querySelector(".settings-toast")).toBeNull();
 });
 
+it("keeps scream/gasp filtering off by default and toggles it with a switch", async () => {
+  await render();
+  const filterSwitch = () => host.querySelector<HTMLButtonElement>(`[aria-label="${I18N.settings.filterDegenerateUtterances}"][role="switch"]`)!;
+  expect(filterSwitch().getAttribute("aria-checked")).toBe("false");
+  await act(async () => filterSwitch().click());
+  expect(save).toHaveBeenLastCalledWith({ filterDegenerateUtterances: true });
+  expect(filterSwitch().getAttribute("aria-checked")).toBe("true");
+  await act(async () => filterSwitch().click());
+  expect(save).toHaveBeenLastCalledWith({ filterDegenerateUtterances: false });
+  expect(filterSwitch().getAttribute("aria-checked")).toBe("false");
+});
+
 it("keeps time display off by default and saves a quiet retry while subtitles are running", async () => {
   useStore.setState({ session: { ...initial.session, isActive: true, status: { kind: "listening" } } });
   save.mockRejectedValueOnce(new Error("synthetic-private-time-error"));

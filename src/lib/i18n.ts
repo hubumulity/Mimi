@@ -434,6 +434,8 @@ const SETTINGS_ZH = {
   visibleSubtitleCountAll: "全部",
   visibleSubtitleCountRecent: (count: number) => `最近 ${count} 条`,
   visibleSubtitleCountHelp: "仅限制实时跟随时显示的已确认字幕。上翻仍可查看现有历史，不影响保存和导出。",
+  filterDegenerateUtterances: "过滤惨叫/喘息",
+  filterDegenerateUtterancesHelp: "开启后，整句只有语气词的惨叫、喘息不再显示；正常句子里的单个语气词不受影响。",
 
   sessionAudioTiming: "WAV 会省略暂停和重连间隙，音频与字幕时间戳不直接对齐。",
   sessionTranscriptTiming: "TXT / Markdown 时间戳表示字幕确认时距会话开始的时间，并非媒体播放位置。",
@@ -1003,6 +1005,8 @@ const SETTINGS_EN = {
   visibleSubtitleCountAll: "All",
   visibleSubtitleCountRecent: (count: number) => `Latest ${count}`,
   visibleSubtitleCountHelp: "Limits confirmed subtitles while following live speech. Scroll up to read available history. Saving and export are unaffected.",
+  filterDegenerateUtterances: "Filter scream and gasp utterances",
+  filterDegenerateUtterancesHelp: "When on, utterances made only of filler sounds (screams, gasps) are hidden. Fillers inside normal sentences are untouched.",
 
   sessionAudioTiming: "WAV omits pauses and reconnect gaps. Its timeline does not directly align with subtitle timestamps.",
   sessionTranscriptTiming: "TXT / Markdown timestamps mark final confirmation time since session start, not media playback positions.",
@@ -1570,6 +1574,8 @@ const SETTINGS_JA = {
   visibleSubtitleCountAll: "すべて",
   visibleSubtitleCountRecent: (count: number) => `直近 ${count} 件`,
   visibleSubtitleCountHelp: "リアルタイム表示中の確定字幕の数だけを制限します。上にスクロールすると残っている履歴を読めます。保存や書き出しには影響しません。",
+  filterDegenerateUtterances: "叫び・喘ぎの発話を除外",
+  filterDegenerateUtterancesHelp: "オンにすると、間投詞だけで構成される叫びや喘ぎの発話は表示されません。通常の文の中の間投詞には影響しません。",
 
   sessionAudioTiming: "WAV は一時停止や再接続中の空白を省くため、字幕のタイムスタンプとは一致しません。",
   sessionTranscriptTiming: "TXT / Markdown の時刻はセッション開始から字幕確定までの経過時間で、メディアの再生位置ではありません。",

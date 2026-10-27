@@ -1750,6 +1750,10 @@ impl SessionManager {
             .lock()
             .unwrap()
             .set_audio_input(preferences.audio_input);
+        self.controller
+            .lock()
+            .unwrap()
+            .set_filter_degenerate_utterances(preferences.filter_degenerate_utterances);
         let started_at_ms = crate::core::subtitle_reducer::now_epoch_ms();
         let history_id = (preferences.retain_session_history || preferences.record_session_audio)
             .then(|| uuid::Uuid::new_v4().to_string());
@@ -3148,6 +3152,15 @@ impl SessionManager {
 
     pub fn archive_revision(&self) -> u64 {
         self.archive_revision.load(Ordering::SeqCst)
+    }
+
+    /// Applies the scream/gasp filter to a live session when the user flips
+    /// the switch. Sessions started afterwards pick it up from preferences.
+    pub fn set_filter_degenerate_utterances(self: &Arc<Self>, enabled: bool) {
+        self.controller
+            .lock()
+            .unwrap()
+            .set_filter_degenerate_utterances(enabled);
     }
 
     pub fn apply_archive_opt_out(self: &Arc<Self>, history: Option<bool>, audio: Option<bool>) {

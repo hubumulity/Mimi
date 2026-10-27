@@ -209,6 +209,8 @@ export function mergeSettingsSnapshot(
     visibleSubtitleCount: clampVisibleSubtitleCount(
       draft.visibleSubtitleCount ?? current.visibleSubtitleCount ?? DEFAULT_VISIBLE_SUBTITLE_COUNT,
     ),
+    filterDegenerateUtterances:
+      draft.filterDegenerateUtterances ?? current.filterDegenerateUtterances ?? false,
     pulseAnimation: draft.pulseAnimation ?? current.pulseAnimation,
     pulseStyle: draft.pulseStyle ?? current.pulseStyle,
     subtitleAnimation: draft.subtitleAnimation ?? current.subtitleAnimation,

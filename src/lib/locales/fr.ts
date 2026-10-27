@@ -189,6 +189,8 @@ export const SETTINGS = {
   visibleSubtitleCountAll: "Tous",
   visibleSubtitleCountRecent: (count: number) => count === 1 ? "Le plus récent" : `${count} plus récents`,
   visibleSubtitleCountHelp: "Limite les sous-titres confirmés pendant le suivi en direct. Faites défiler vers le haut pour lire l’historique disponible. L’enregistrement et l’export restent inchangés.",
+  filterDegenerateUtterances: "Filtrer les cris et halètements",
+  filterDegenerateUtterancesHelp: "Lorsqu’il est activé, les énoncés composés uniquement de sons de remplissage (cris, halètements) sont masqués. Les interjections dans les phrases normales ne sont pas touchées.",
   subtitleTimestampsHelp: "Afficher l’heure locale (HH:mm:ss) à côté des sous-titres confirmés pour l’audio du système et le microphone. Il s’agit de l’heure de confirmation, pas du début exact de la parole. Ce réglage s’applique aussi en mode immersif.",
   sessionAudioTiming: "Le fichier WAV omet les pauses et les interruptions de reconnexion. Sa chronologie ne correspond pas directement aux horodatages des sous-titres.",
   sessionTranscriptTiming: "Les horodatages TXT / Markdown indiquent l’heure de confirmation finale depuis le début de la session, pas la position de lecture du média.",

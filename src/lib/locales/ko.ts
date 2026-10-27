@@ -189,6 +189,8 @@ export const SETTINGS = {
   visibleSubtitleCountAll: "전체",
   visibleSubtitleCountRecent: (count: number) => `최근 ${count}개`,
   visibleSubtitleCountHelp: "실시간 표시 중 확정 자막 수만 제한합니다. 위로 스크롤하면 남아 있는 기록을 볼 수 있습니다. 저장과 내보내기에는 영향을 주지 않습니다.",
+  filterDegenerateUtterances: "비명·헐떡임 발화 걸러내기",
+  filterDegenerateUtterancesHelp: "켜면 간투사로만 이루어진 비명·헐떡임 발화는 표시되지 않습니다. 정상 문장 속 간투사는 영향을 받지 않습니다.",
   subtitleTimestampsHelp: "시스템 오디오와 마이크의 확정 자막 옆에 현지 시간(HH:mm:ss)을 표시합니다. 발화 시작 시점이 아닌 확정 시점입니다. 몰입 모드에도 적용됩니다.",
   sessionAudioTiming: "WAV에는 일시 정지와 재연결 구간이 포함되지 않습니다. 자막 타임스탬프와 시간이 직접 일치하지 않습니다.",
   sessionTranscriptTiming: "TXT / Markdown 타임스탬프는 미디어 재생 위치가 아닌 세션 시작 후 최종 확정된 시간을 나타냅니다.",
